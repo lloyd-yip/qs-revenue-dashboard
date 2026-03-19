@@ -103,8 +103,8 @@ class GHLClient:
                            If None, fetches all opportunities (full sync).
         """
         params: dict = {
-            "locationId": self._location_id,
-            "pipelineId": self._pipeline_id,
+            "location_id": self._location_id,
+            "pipeline_id": self._pipeline_id,
             "limit": settings.ghl_page_size,
         }
         if updated_after:
