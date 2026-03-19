@@ -43,8 +43,8 @@ async def sync_status(db: AsyncSession = Depends(get_db)):
 
 @router.post("/trigger", response_model=SyncTriggerResponse)
 async def trigger_sync(
+    background_tasks: BackgroundTasks,
     sync_type: str = "full",
-    background_tasks: BackgroundTasks = BackgroundTasks(),
 ):
     """Manually trigger a sync. Runs in the background — returns immediately."""
     if sync_type not in ("full", "incremental"):
