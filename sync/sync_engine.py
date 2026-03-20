@@ -219,7 +219,7 @@ async def run_sync(sync_type: str = "incremental") -> dict:
                     completed_at = :completed_at,
                     opportunities_synced = :synced,
                     errors_count = :errors,
-                    error_details = :details::jsonb
+                    error_details = CAST(:details AS jsonb)
                 WHERE id = :id
             """),
             {
