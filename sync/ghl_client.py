@@ -112,14 +112,18 @@ class GHLClient:
             params["startAfter"] = int(updated_after.timestamp() * 1000)
 
         last_id: str | None = None
+        last_updated_at_ms: int | None = None
         page = 0
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             while True:
                 page += 1
                 page_params = dict(params)
-                if last_id:
+                if last_id and last_updated_at_ms is not None:
+                    # GHL requires BOTH params together for cursor pagination to advance.
+                    # Passing only startAfterId is silently ignored by the API.
                     page_params["startAfterId"] = last_id
+                    page_params["startAfter"] = last_updated_at_ms
 
                 try:
                     data = await self._get(client, "/opportunities/search", page_params)
@@ -137,7 +141,13 @@ class GHLClient:
                 for opp in opportunities:
                     yield opp
 
-                last_id = opportunities[-1].get("id")
+                last_opp = opportunities[-1]
+                last_id = last_opp.get("id")
+                raw_updated_at = last_opp.get("updatedAt") or last_opp.get("dateUpdated")
+                if raw_updated_at:
+                    last_updated_at_ms = int(
+                        datetime.fromisoformat(raw_updated_at.replace("Z", "+00:00")).timestamp() * 1000
+                    )
                 total = data.get("meta", {}).get("total", 0)
                 fetched_so_far = (page - 1) * settings.ghl_page_size + len(opportunities)
                 logger.info("GHL sync: fetched %d / %d opportunities", fetched_so_far, total)
