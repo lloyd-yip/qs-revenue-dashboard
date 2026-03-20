@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.schemas.responses import (
     ByRepResponse,
+    ChannelClosesResponse,
     ChannelQualityResponse,
     ComplianceResponse,
     LeadSourceResponse,
@@ -25,6 +26,7 @@ from api.schemas.responses import (
 )
 from db.queries.compliance import get_compliance_by_rep, get_compliance_failures, get_compliance_summary
 from db.queries.lead_source import (
+    get_channel_closes,
     get_channel_quality_breakdown,
     get_lead_source_breakdown,
     get_qualification_breakdown,
@@ -134,6 +136,18 @@ async def qualification(
     start, end, date_by = params
     data = await get_qualification_breakdown(db, start, end, date_by, rep_id)
     return QualificationResponse(data=data, meta=_meta(start, end, date_by))
+
+
+@router.get("/channels/closes", response_model=ChannelClosesResponse)
+async def channel_closes(
+    channel: str = Query(..., description="Channel name (use 'Unknown' for null)"),
+    params: tuple = Depends(_date_params),
+    db: AsyncSession = Depends(get_db),
+):
+    """Closed deals for a specific channel — drill-down popup."""
+    start, end, date_by = params
+    data = await get_channel_closes(db, channel, start, end, date_by)
+    return ChannelClosesResponse(data=data)
 
 
 @router.get("/compliance", response_model=ComplianceResponse)

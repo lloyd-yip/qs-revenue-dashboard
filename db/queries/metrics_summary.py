@@ -73,6 +73,21 @@ async def get_summary(
                     1,
                 ))
             ).label("dq_count"),
+            # DQ'd immediately after 1st call (never made it to a 2nd call)
+            func.count(
+                case((
+                    and_(
+                        is_1st,
+                        showed_1st,
+                        or_(
+                            Opportunity.lead_quality == "DQ",
+                            Opportunity.pipeline_stage_id == DISQUALIFIED_STAGE_ID,
+                        ),
+                        Opportunity.call2_appointment_date.is_(None),
+                    ),
+                    1,
+                ))
+            ).label("dq_after_call1_count"),
             # Units closed
             func.count(
                 case((Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID, 1))
@@ -115,6 +130,7 @@ async def get_summary(
         "show_rate_2nd": safe_rate(row.shows_2nd, row.calls_booked_2nd),
         "qualification_rate": safe_rate(row.qualified_shows, row.shows_1st),
         "dq_rate": safe_rate(row.dq_count, row.shows_1st),
+        "dq_after_call1_rate": safe_rate(row.dq_after_call1_count, row.shows_1st),
         "close_rate": safe_rate(row.units_closed, row.total_shows),
         "units_closed": row.units_closed,
         "projected_contract_value": float(row.projected_contract_value),

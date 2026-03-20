@@ -2,11 +2,13 @@
 
 from datetime import date
 
-from sqlalchemy import case, func, select
+from datetime import datetime
+
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Opportunity
-from db.queries.common import base_filter, has_1st_call, showed_1st_call_expr
+from db.queries.common import QUALIFIED_LEAD_QUALITY, base_filter, has_1st_call, showed_1st_call_expr
 
 
 async def get_lead_source_breakdown(
@@ -18,12 +20,13 @@ async def get_lead_source_breakdown(
 ) -> list[dict]:
     """Attribution breakdown by canonical_channel.
 
-    Returns counts for: total ops, shows, units closed, projected value.
-    Sorted by total ops descending.
+    Returns counts for: total ops, shows, units closed, projected value,
+    qual_rate, dq_rate. Sorted by total ops descending.
     """
-    from sync.ghl_client import DEAL_WON_STAGE_ID
+    from sync.ghl_client import DEAL_WON_STAGE_ID, DISQUALIFIED_STAGE_ID
 
     bf = base_filter(start, end, date_by, rep_id)
+    is_1st = has_1st_call(start, end, date_by)
     showed_1st = showed_1st_call_expr()
 
     result = await session.execute(
@@ -43,11 +46,37 @@ async def get_lead_source_breakdown(
                 ),
                 0,
             ).label("projected_contract_value"),
+            # Qual/DQ per channel (1st call shows only)
+            func.count(
+                case((and_(is_1st, showed_1st, ~Opportunity.outcome_unfilled), 1))
+            ).label("shows_1st"),
+            func.count(
+                case((
+                    and_(is_1st, showed_1st, Opportunity.lead_quality.in_(QUALIFIED_LEAD_QUALITY)),
+                    1,
+                ))
+            ).label("qualified_shows"),
+            func.count(
+                case((
+                    and_(
+                        is_1st,
+                        showed_1st,
+                        or_(
+                            Opportunity.lead_quality == "DQ",
+                            Opportunity.pipeline_stage_id == DISQUALIFIED_STAGE_ID,
+                        ),
+                    ),
+                    1,
+                ))
+            ).label("dq_count"),
         )
         .where(bf)
         .group_by(Opportunity.canonical_channel)
         .order_by(func.count(Opportunity.id).desc())
     )
+
+    def safe_rate(num: int, den: int) -> float | None:
+        return round(num / den, 4) if den else None
 
     return [
         {
@@ -56,6 +85,8 @@ async def get_lead_source_breakdown(
             "shows": row.shows,
             "units_closed": row.units_closed,
             "projected_contract_value": float(row.projected_contract_value),
+            "qual_rate": safe_rate(row.qualified_shows, row.shows_1st),
+            "dq_rate": safe_rate(row.dq_count, row.shows_1st),
         }
         for row in result.all()
     ]
@@ -141,3 +172,52 @@ async def get_qualification_breakdown(
         "dq_reason": await field_breakdown(Opportunity.dq_reason),
         "deal_lost_reasons": await field_breakdown(Opportunity.deal_lost_reasons),
     }
+
+
+async def get_channel_closes(
+    session: AsyncSession,
+    channel: str,
+    start: date,
+    end: date,
+    date_by: str,
+) -> list[dict]:
+    """Closed deals for a specific channel — for the drill-down popup.
+
+    Returns: opportunity name, rep name, close date (updated_at_ghl), deal value.
+    Ordered by close date descending.
+    """
+    from sync.ghl_client import DEAL_WON_STAGE_ID
+
+    bf = base_filter(start, end, date_by)
+    channel_filter = (
+        Opportunity.canonical_channel == channel
+        if channel != "Unknown"
+        else Opportunity.canonical_channel.is_(None)
+    )
+
+    result = await session.execute(
+        select(
+            Opportunity.opportunity_name,
+            Opportunity.opportunity_owner_name,
+            Opportunity.updated_at_ghl,
+            Opportunity.monetary_value,
+        )
+        .where(
+            and_(
+                bf,
+                channel_filter,
+                Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID,
+            )
+        )
+        .order_by(Opportunity.updated_at_ghl.desc())
+    )
+
+    return [
+        {
+            "name": row.opportunity_name or "—",
+            "rep": row.opportunity_owner_name or "Unassigned",
+            "close_date": row.updated_at_ghl.strftime("%b %d, %Y") if row.updated_at_ghl else "—",
+            "value": float(row.monetary_value) if row.monetary_value else None,
+        }
+        for row in result.all()
+    ]

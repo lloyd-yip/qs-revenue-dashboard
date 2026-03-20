@@ -62,6 +62,9 @@ async def _build_opportunity_row(
     custom = extract_custom_fields(opp)
     attrs = extract_attributions(opp)
 
+    # Opportunity name (lead/contact name from GHL)
+    opportunity_name = opp.get("name")
+
     # Stage info
     stage = opp.get("pipelineStage") or {}
     stage_id = stage.get("id") or opp.get("pipelineStageId")
@@ -129,6 +132,7 @@ async def _build_opportunity_row(
     return {
         "ghl_opportunity_id": opp["id"],
         "ghl_contact_id": opp.get("contactId"),
+        "opportunity_name": opportunity_name,
         "pipeline_stage_id": stage_id,
         "pipeline_stage_name": stage_name,
         "is_excluded": is_excluded_stage(stage_id, stage_name),

@@ -87,6 +87,25 @@ async def get_by_rep(
             func.count(
                 case((Opportunity.rep_compliance_failure.is_(True), 1))
             ).label("compliance_failures"),
+            # DQ'd immediately after 1st call (never booked 2nd)
+            func.count(
+                case((
+                    and_(
+                        is_1st,
+                        showed_1st,
+                        or_(
+                            Opportunity.lead_quality == "DQ",
+                            Opportunity.pipeline_stage_id == DISQUALIFIED_STAGE_ID,
+                        ),
+                        Opportunity.call2_appointment_date.is_(None),
+                    ),
+                    1,
+                ))
+            ).label("dq_after_call1_count"),
+            # Call outcome not logged (show/no-show never marked by rep)
+            func.count(
+                case((and_(is_1st, Opportunity.outcome_unfilled.is_(True)), 1))
+            ).label("outcome_not_logged_count"),
         )
         .where(bf)
         .group_by(Opportunity.opportunity_owner_id, Opportunity.opportunity_owner_name)
@@ -109,11 +128,13 @@ async def get_by_rep(
             "show_rate_2nd": safe_rate(row.shows_2nd, row.calls_booked_2nd),
             "qualification_rate": safe_rate(row.qualified_shows, row.shows_1st),
             "dq_rate": safe_rate(row.dq_count, row.shows_1st),
+            "dq_after_call1_rate": safe_rate(row.dq_after_call1_count, row.shows_1st),
             "close_rate": safe_rate(row.units_closed, row.total_shows),
             "units_closed": row.units_closed,
             "projected_contract_value": float(row.projected_contract_value),
             "total_shows": row.total_shows,
             "compliance_failures": row.compliance_failures,
+            "outcome_not_logged_count": row.outcome_not_logged_count,
         }
         for row in result.all()
     ]

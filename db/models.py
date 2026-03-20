@@ -25,6 +25,7 @@ class Opportunity(Base):
     # GHL identifiers
     ghl_opportunity_id: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
     ghl_contact_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    opportunity_name: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # Pipeline stage
     pipeline_stage_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)

@@ -23,6 +23,7 @@ class SummaryData(BaseModel):
     show_rate_2nd: float | None
     qualification_rate: float | None
     dq_rate: float | None
+    dq_after_call1_rate: float | None
     close_rate: float | None
     units_closed: int
     projected_contract_value: float
@@ -47,11 +48,13 @@ class RepMetrics(BaseModel):
     show_rate_2nd: float | None
     qualification_rate: float | None
     dq_rate: float | None
+    dq_after_call1_rate: float | None
     close_rate: float | None
     units_closed: int
     projected_contract_value: float
     total_shows: int
     compliance_failures: int
+    outcome_not_logged_count: int
 
 
 class ByRepResponse(BaseModel):
@@ -65,6 +68,8 @@ class ChannelBreakdown(BaseModel):
     shows: int
     units_closed: int
     projected_contract_value: float
+    qual_rate: float | None
+    dq_rate: float | None
 
 
 class LeadSourceResponse(BaseModel):
@@ -188,3 +193,14 @@ class ChannelQualityRow(BaseModel):
 class ChannelQualityResponse(BaseModel):
     data: list[ChannelQualityRow]
     meta: MetaMixin
+
+
+class ClosedDealRow(BaseModel):
+    name: str
+    rep: str
+    close_date: str
+    value: float | None
+
+
+class ChannelClosesResponse(BaseModel):
+    data: list[ClosedDealRow]

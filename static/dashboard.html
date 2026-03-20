@@ -162,6 +162,16 @@
     .ghl-link { color: var(--accent2); text-decoration: none; font-family: monospace; font-size: 12px; }
     .ghl-link:hover { text-decoration: underline; }
 
+    /* Clickable rows / cards */
+    .clickable-row { cursor: pointer; }
+    .clickable-row:hover td { background: var(--surface2); }
+    .compliance-kpi.clickable { cursor: pointer; transition: border-color 0.15s; }
+    .compliance-kpi.clickable:hover { border-color: var(--accent); }
+    .compliance-kpi.clickable.active-filter { border-color: var(--accent); background: rgba(99,102,241,0.08); }
+
+    /* kpi-sub for multi-line sub values */
+    .kpi-sub-stack { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+
     @media (max-width: 768px) {
       .charts-row { grid-template-columns: 1fr; }
       .kpi-row { grid-template-columns: repeat(2, 1fr); }
@@ -234,14 +244,10 @@
 
 <!-- TAB: Lead Quality by Channel -->
 <div id="tab-channels" class="tab-content">
-  <div class="charts-row">
+  <div class="charts-row" style="grid-template-columns: 1fr;">
     <div class="chart-box">
       <h3>Channel Distribution</h3>
-      <canvas id="chart-channel-dist"></canvas>
-    </div>
-    <div class="chart-box">
-      <h3>Lead Quality by Channel</h3>
-      <canvas id="chart-channel-quality"></canvas>
+      <canvas id="chart-channel-dist" style="max-height:220px;"></canvas>
     </div>
   </div>
 
@@ -250,6 +256,17 @@
       <h3>Conversion by Channel</h3>
     </div>
     <div id="channel-table"></div>
+  </div>
+</div>
+
+<!-- Closes drill-down modal -->
+<div id="closes-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:1000; align-items:center; justify-content:center;">
+  <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); width:640px; max-width:94vw; max-height:80vh; display:flex; flex-direction:column;">
+    <div style="display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid var(--border);">
+      <h3 id="closes-modal-title" style="font-size:14px; font-weight:600;"></h3>
+      <button onclick="closeClosesModal()" style="background:none; border:none; color:var(--text2); font-size:20px; cursor:pointer; line-height:1;">×</button>
+    </div>
+    <div id="closes-modal-body" style="overflow-y:auto; padding:0;"></div>
   </div>
 </div>
 
@@ -439,7 +456,7 @@ function renderKPICards(d) {
     <div class="kpi-card"><div class="kpi-label">1st Call Shows</div><div class="kpi-value">${num(d.shows_1st)}</div></div>
     <div class="kpi-card"><div class="kpi-label">Show Rate</div><div class="kpi-value ${rateClass(d.show_rate_1st)}">${pct(d.show_rate_1st)}</div><div class="kpi-sub">No-show: ${pct(d.no_show_rate_1st)}</div></div>
     <div class="kpi-card"><div class="kpi-label">2nd Calls Booked</div><div class="kpi-value">${num(d.calls_booked_2nd)}</div><div class="kpi-sub">Shows: ${num(d.shows_2nd)} (${pct(d.show_rate_2nd)})</div></div>
-    <div class="kpi-card"><div class="kpi-label">Qual Rate</div><div class="kpi-value ${rateClass(d.qualification_rate)}">${pct(d.qualification_rate)}</div><div class="kpi-sub">DQ rate: ${pct(d.dq_rate)}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Qual Rate</div><div class="kpi-value ${rateClass(d.qualification_rate)}">${pct(d.qualification_rate)}</div><div class="kpi-sub-stack"><span>DQ after call 1: ${pct(d.dq_after_call1_rate)}</span><span>Overall DQ: ${pct(d.dq_rate)}</span></div></div>
     <div class="kpi-card"><div class="kpi-label">Close Rate</div><div class="kpi-value ${rateClass(d.close_rate)}">${pct(d.close_rate)}</div></div>
     <div class="kpi-card highlight"><div class="kpi-label">Units Closed</div><div class="kpi-value">${num(d.units_closed)}</div></div>
     <div class="kpi-card"><div class="kpi-label">Proj. Contract Value</div><div class="kpi-value" style="font-size:20px;">${money(d.projected_contract_value)}</div><div class="kpi-sub">Rep-estimated</div></div>
@@ -519,11 +536,12 @@ function renderRepBreakdown(reps) {
       <td class="num ${rateClass(r.qualification_rate)}">${pct(r.qualification_rate)}</td>
       <td class="num ${rateClass(r.close_rate)}">${pct(r.close_rate)}</td>
       <td class="num">${num(r.units_closed)}</td>
+      <td class="num ${r.outcome_not_logged_count > 0 ? 'rate-warn' : ''}">${num(r.outcome_not_logged_count)}</td>
     </tr>
   `).join('');
   document.getElementById('rep-table-view').innerHTML = `
     <table>
-      <thead><tr><th>Rep</th><th class="num">Booked</th><th class="num">Showed</th><th class="num">Show Rate</th><th class="num">Qual Rate</th><th class="num">Close Rate</th><th class="num">Closed</th></tr></thead>
+      <thead><tr><th>Rep</th><th class="num">Booked</th><th class="num">Showed</th><th class="num">Show Rate</th><th class="num">Qual Rate</th><th class="num">Close Rate</th><th class="num">Closed</th><th class="num">Not Logged</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
   `;
@@ -556,12 +574,8 @@ function renderRepBreakdown(reps) {
 async function renderChannels() {
   const repParam = AppState.repId ? `&rep_id=${AppState.repId}` : '';
   try {
-    const [channels, quality] = await Promise.all([
-      apiFetch(`/api/dashboard/channels?${qs()}${repParam}`),
-      apiFetch(`/api/dashboard/channel-quality?${qs()}${repParam}`),
-    ]);
+    const channels = await apiFetch(`/api/dashboard/channels?${qs()}${repParam}`);
     renderChannelDistChart(channels.data);
-    renderChannelQualityChart(quality.data);
     renderChannelTable(channels.data);
   } catch (e) {
     document.getElementById('channel-table').innerHTML = `<div class="empty">Failed to load. ${e.message}</div>`;
@@ -590,33 +604,6 @@ function renderChannelDistChart(data) {
   });
 }
 
-function renderChannelQualityChart(data) {
-  destroyChart('channelQuality');
-  const ctx = document.getElementById('chart-channel-quality').getContext('2d');
-  Charts.channelQuality = new Chart(ctx, {
-    type: 'bar',
-    data: {
-      labels: data.map(d => d.channel),
-      datasets: [
-        { label: 'Great',          data: data.map(d => d.Great),           backgroundColor: '#22c55e', borderRadius: 2 },
-        { label: 'Ok',             data: data.map(d => d.Ok),              backgroundColor: '#84cc16', borderRadius: 2 },
-        { label: 'Barely Passable',data: data.map(d => d['Barely Passable']), backgroundColor: '#f59e0b', borderRadius: 2 },
-        { label: 'Bad',            data: data.map(d => d.Bad),             backgroundColor: '#f97316', borderRadius: 2 },
-        { label: 'DQ',             data: data.map(d => d.DQ),              backgroundColor: '#ef4444', borderRadius: 2 },
-        { label: 'Not Set',        data: data.map(d => d['Not Set']),      backgroundColor: '#475569', borderRadius: 2 },
-      ],
-    },
-    options: {
-      responsive: true,
-      plugins: { legend: { labels: { color: '#94a3b8', boxWidth: 12 } } },
-      scales: {
-        x: { stacked: true, ticks: { color: '#94a3b8' }, grid: { display: false } },
-        y: { stacked: true, ticks: { color: '#94a3b8' }, grid: { color: '#2e3347' } },
-      },
-    },
-  });
-}
-
 function renderChannelTable(data) {
   if (!data.length) {
     document.getElementById('channel-table').innerHTML = '<div class="empty">No channel data for this period.</div>';
@@ -625,23 +612,68 @@ function renderChannelTable(data) {
   const rows = data.map(d => {
     const showRate = d.total_ops > 0 ? d.shows / d.total_ops : null;
     return `
-      <tr>
-        <td>${d.channel}</td>
+      <tr class="clickable-row" onclick="showClosesModal('${d.channel.replace(/'/g, "\\'")}')">
+        <td>${d.channel} <span style="font-size:11px; color:var(--text2);">↗</span></td>
         <td class="num">${num(d.total_ops)}</td>
         <td class="num">${num(d.shows)}</td>
         <td class="num ${rateClass(showRate)}">${pct(showRate)}</td>
         <td class="num">${num(d.units_closed)}</td>
         <td class="num">${money(d.projected_contract_value)}</td>
+        <td class="num ${rateClass(d.qual_rate)}">${pct(d.qual_rate)}</td>
+        <td class="num ${d.dq_rate !== null && d.dq_rate > 0.3 ? 'rate-bad' : ''}">${pct(d.dq_rate)}</td>
       </tr>
     `;
   }).join('');
   document.getElementById('channel-table').innerHTML = `
     <table>
-      <thead><tr><th>Channel</th><th class="num">Total Opps</th><th class="num">Shows</th><th class="num">Show Rate</th><th class="num">Units Closed</th><th class="num">Proj. Value</th></tr></thead>
+      <thead><tr><th>Channel</th><th class="num">Total Opps</th><th class="num">Shows</th><th class="num">Show Rate</th><th class="num">Units Closed</th><th class="num">Proj. Value</th><th class="num">Qual Rate</th><th class="num">DQ Rate</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
   `;
 }
+
+async function showClosesModal(channel) {
+  const modal = document.getElementById('closes-modal');
+  const body = document.getElementById('closes-modal-body');
+  const title = document.getElementById('closes-modal-title');
+  title.textContent = `Closed Deals — ${channel}`;
+  body.innerHTML = '<div class="loading">Loading...</div>';
+  modal.style.display = 'flex';
+
+  try {
+    const enc = encodeURIComponent(channel);
+    const data = await apiFetch(`/api/dashboard/channels/closes?channel=${enc}&${qs()}`);
+    if (!data.data.length) {
+      body.innerHTML = '<div class="empty">No closed deals for this channel in the selected period.</div>';
+      return;
+    }
+    const rows = data.data.map(d => `
+      <tr>
+        <td>${d.name}</td>
+        <td>${d.rep}</td>
+        <td>${d.close_date}</td>
+        <td class="num">${d.value !== null ? money(d.value) : '–'}</td>
+      </tr>
+    `).join('');
+    body.innerHTML = `
+      <table>
+        <thead><tr><th>Opportunity</th><th>Closer</th><th>Close Date</th><th class="num">Deal Value</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+  } catch (e) {
+    body.innerHTML = `<div class="empty">Failed to load. ${e.message}</div>`;
+  }
+}
+
+function closeClosesModal() {
+  document.getElementById('closes-modal').style.display = 'none';
+}
+
+// Close modal on backdrop click
+document.getElementById('closes-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeClosesModal();
+});
 
 // ─── Tab 3: Compliance ────────────────────────────────────────────────────────
 async function renderCompliance() {
@@ -656,21 +688,55 @@ async function renderCompliance() {
   }
 }
 
+let activeComplianceFilter = null;
+
 function renderComplianceKPIs(s) {
   document.getElementById('compliance-kpis').innerHTML = `
-    <div class="kpi-card"><div class="kpi-label">Outcome Unfilled</div>
+    <div class="kpi-card clickable" id="ckpi-outcome" onclick="filterComplianceTable('outcome_unfilled')">
+      <div class="kpi-label">Call Outcome Not Logged</div>
       <div class="kpi-value ${s.outcome_unfilled_count > 0 ? 'rate-bad' : 'rate-good'}">${num(s.outcome_unfilled_count)}</div>
       <div class="kpi-sub">${pct(s.outcome_unfilled_rate)} of booked</div></div>
-    <div class="kpi-card"><div class="kpi-label">Non-Compliant Opps</div>
+    <div class="kpi-card clickable" id="ckpi-noncompliance" onclick="filterComplianceTable('non_compliance')">
+      <div class="kpi-label">Non-Compliant Opps</div>
       <div class="kpi-value ${s.non_compliance_count > 0 ? 'rate-bad' : 'rate-good'}">${num(s.non_compliance_count)}</div>
       <div class="kpi-sub">${pct(s.non_compliance_rate)} of all opps</div></div>
-    <div class="kpi-card"><div class="kpi-label">Missing Post-Call Note</div>
+    <div class="kpi-card clickable" id="ckpi-note" onclick="filterComplianceTable('missing_note')">
+      <div class="kpi-label">Missing Post-Call Note</div>
       <div class="kpi-value ${s.note_missing_count > 0 ? 'rate-warn' : 'rate-good'}">${num(s.note_missing_count)}</div>
       <div class="kpi-sub">Showed opps only</div></div>
-    <div class="kpi-card"><div class="kpi-label">Qual Fields Empty</div>
+    <div class="kpi-card clickable" id="ckpi-qual" onclick="filterComplianceTable('qual_missing')">
+      <div class="kpi-label">Qual Fields Empty</div>
       <div class="kpi-value ${s.qual_missing_count > 0 ? 'rate-warn' : 'rate-good'}">${num(s.qual_missing_count)}</div>
       <div class="kpi-sub">Showed opps only</div></div>
   `;
+}
+
+function filterComplianceTable(filter) {
+  const kpiIds = { outcome_unfilled: 'ckpi-outcome', non_compliance: 'ckpi-noncompliance', missing_note: 'ckpi-note', qual_missing: 'ckpi-qual' };
+  const filterKeywords = {
+    outcome_unfilled: 'Call Outcome Not Logged',
+    non_compliance: null,  // show all non-compliant
+    missing_note: 'Missing Post-Call Note',
+    qual_missing: 'Qual Fields Empty',
+  };
+  if (activeComplianceFilter === filter) {
+    // Toggle off
+    activeComplianceFilter = null;
+    Object.values(kpiIds).forEach(id => document.getElementById(id)?.classList.remove('active-filter'));
+    if (Charts._complianceTabulator) Charts._complianceTabulator.clearFilter();
+    return;
+  }
+  activeComplianceFilter = filter;
+  Object.entries(kpiIds).forEach(([k, id]) => {
+    document.getElementById(id)?.classList.toggle('active-filter', k === filter);
+  });
+  if (!Charts._complianceTabulator) return;
+  const keyword = filterKeywords[filter];
+  if (keyword) {
+    Charts._complianceTabulator.setFilter('violations', 'like', keyword);
+  } else {
+    Charts._complianceTabulator.clearFilter();
+  }
 }
 
 function renderComplianceByRepChart(byRep) {
@@ -682,7 +748,7 @@ function renderComplianceByRepChart(byRep) {
       labels: byRep.map(r => r.rep_name),
       datasets: [
         { label: 'Non-Compliance', data: byRep.map(r => r.non_compliance), backgroundColor: '#ef4444', borderRadius: 3 },
-        { label: 'Outcome Unfilled', data: byRep.map(r => r.outcome_unfilled), backgroundColor: '#f97316', borderRadius: 3 },
+        { label: 'Call Outcome Not Logged', data: byRep.map(r => r.outcome_unfilled), backgroundColor: '#f97316', borderRadius: 3 },
       ],
     },
     options: {
