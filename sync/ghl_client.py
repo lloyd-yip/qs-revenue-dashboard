@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import AsyncGenerator
 
 import httpx
@@ -111,19 +111,20 @@ class GHLClient:
             # GHL expects milliseconds epoch
             params["startAfter"] = int(updated_after.timestamp() * 1000)
 
-        last_id: str | None = None
-        last_updated_at_ms: int | None = None
+        # GHL provides its own cursor values in meta — do NOT compute from last record.
+        # The meta cursor may differ from the last record's id/updatedAt due to
+        # GHL's internal sort logic. Using the wrong values causes cursor stall.
+        cursor_id: str | None = None
+        cursor_after: int | None = None
         page = 0
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             while True:
                 page += 1
                 page_params = dict(params)
-                if last_id and last_updated_at_ms is not None:
-                    # GHL requires BOTH params together for cursor pagination to advance.
-                    # Passing only startAfterId is silently ignored by the API.
-                    page_params["startAfterId"] = last_id
-                    page_params["startAfter"] = last_updated_at_ms
+                if cursor_id and cursor_after is not None:
+                    page_params["startAfterId"] = cursor_id
+                    page_params["startAfter"] = cursor_after
 
                 try:
                     data = await self._get(client, "/opportunities/search", page_params)
@@ -141,19 +142,15 @@ class GHLClient:
                 for opp in opportunities:
                     yield opp
 
-                last_opp = opportunities[-1]
-                last_id = last_opp.get("id")
-                raw_updated_at = last_opp.get("updatedAt") or last_opp.get("dateUpdated")
-                if raw_updated_at:
-                    last_updated_at_ms = int(
-                        datetime.fromisoformat(raw_updated_at.replace("Z", "+00:00")).timestamp() * 1000
-                    )
-                total = data.get("meta", {}).get("total", 0)
+                meta = data.get("meta", {})
+                total = meta.get("total", 0)
                 fetched_so_far = (page - 1) * settings.ghl_page_size + len(opportunities)
                 logger.info("GHL sync: fetched %d / %d opportunities", fetched_so_far, total)
 
-                if len(opportunities) < settings.ghl_page_size or fetched_so_far >= total:
-                    # Last page
+                cursor_id = meta.get("startAfterId")
+                cursor_after = meta.get("startAfter")
+
+                if not cursor_id or fetched_so_far >= total:
                     break
 
                 # Rate limit protection
@@ -162,10 +159,12 @@ class GHLClient:
 def extract_custom_fields(opportunity: dict) -> dict:
     """Extract our tracked custom fields from a GHL opportunity payload.
 
-    GHL returns custom fields as a list:
-      [{"id": "<field_id>", "value": "<value>", "fieldValue": "<value>"}, ...]
+    GHL returns custom fields as a list of objects. Field value keys vary by type:
+      - String/dropdown fields: {"id": "...", "fieldValueString": "...", "type": "string"}
+      - Date fields:            {"id": "...", "fieldValueDate": <ms_epoch_int>, "type": "date"}
 
-    Returns a flat dict keyed by our internal field names.
+    Returns a flat dict keyed by our internal field names. Date fields are returned
+    as ISO 8601 strings so parse_ghl_datetime() in the normalizer can handle them.
     """
     result: dict = {}
     raw_fields = opportunity.get("customFields") or []
@@ -174,8 +173,15 @@ def extract_custom_fields(opportunity: dict) -> dict:
         field_id = field.get("id", "")
         key = FIELD_ID_TO_KEY.get(field_id)
         if key:
-            # GHL uses both "value" and "fieldValue" depending on field type
-            result[key] = field.get("fieldValue") or field.get("value") or None
+            value = (
+                field.get("fieldValueString")
+                or field.get("fieldValue")
+                or field.get("value")
+                or None
+            )
+            if value is None and field.get("fieldValueDate"):
+                value = datetime.fromtimestamp(field["fieldValueDate"] / 1000, tz=timezone.utc).isoformat()
+            result[key] = value
 
     return result
 
