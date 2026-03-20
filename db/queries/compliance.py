@@ -120,6 +120,7 @@ async def get_compliance_failures(
     result = await session.execute(
         select(
             Opportunity.ghl_opportunity_id,
+            Opportunity.opportunity_name,
             Opportunity.opportunity_owner_name,
             Opportunity.pipeline_stage_name,
             Opportunity.call1_appointment_date,
@@ -146,6 +147,7 @@ async def get_compliance_failures(
 
         rows.append({
             "ghl_opportunity_id": row.ghl_opportunity_id,
+            "opportunity_name": row.opportunity_name or None,
             "rep_name": row.opportunity_owner_name or "Unassigned",
             "stage_name": row.pipeline_stage_name or "Unknown",
             "call1_appointment_date": (

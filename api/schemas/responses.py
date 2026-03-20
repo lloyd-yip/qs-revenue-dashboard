@@ -70,6 +70,11 @@ class ChannelBreakdown(BaseModel):
     projected_contract_value: float
     qual_rate: float | None
     dq_rate: float | None
+    great_count: int
+    ok_count: int
+    barely_passable_count: int
+    bad_count: int
+    missing_data_count: int
 
 
 class LeadSourceResponse(BaseModel):
@@ -150,6 +155,7 @@ class RepsResponse(BaseModel):
 
 class ComplianceFailureRow(BaseModel):
     ghl_opportunity_id: str
+    opportunity_name: str | None
     rep_name: str
     stage_name: str
     call1_appointment_date: str | None

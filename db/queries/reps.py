@@ -17,6 +17,7 @@ async def get_reps(session: AsyncSession) -> list[dict]:
             and_(
                 Opportunity.is_excluded.is_(False),
                 Opportunity.opportunity_owner_id.isnot(None),
+                Opportunity.opportunity_owner_name.isnot(None),
             )
         )
         .distinct()

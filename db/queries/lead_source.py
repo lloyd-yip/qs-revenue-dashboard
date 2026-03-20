@@ -69,6 +69,22 @@ async def get_lead_source_breakdown(
                     1,
                 ))
             ).label("dq_count"),
+            # Lead quality breakdown counts (1st call shows only)
+            func.count(
+                case((and_(is_1st, showed_1st, Opportunity.lead_quality == "Great"), 1))
+            ).label("great_count"),
+            func.count(
+                case((and_(is_1st, showed_1st, Opportunity.lead_quality == "Ok"), 1))
+            ).label("ok_count"),
+            func.count(
+                case((and_(is_1st, showed_1st, Opportunity.lead_quality == "Barely Passable"), 1))
+            ).label("barely_passable_count"),
+            func.count(
+                case((and_(is_1st, showed_1st, Opportunity.lead_quality == "Bad"), 1))
+            ).label("bad_count"),
+            func.count(
+                case((and_(is_1st, showed_1st, Opportunity.lead_quality.is_(None)), 1))
+            ).label("missing_data_count"),
         )
         .where(bf)
         .group_by(Opportunity.canonical_channel)
@@ -87,6 +103,11 @@ async def get_lead_source_breakdown(
             "projected_contract_value": float(row.projected_contract_value),
             "qual_rate": safe_rate(row.qualified_shows, row.shows_1st),
             "dq_rate": safe_rate(row.dq_count, row.shows_1st),
+            "great_count": row.great_count,
+            "ok_count": row.ok_count,
+            "barely_passable_count": row.barely_passable_count,
+            "bad_count": row.bad_count,
+            "missing_data_count": row.missing_data_count,
         }
         for row in result.all()
     ]

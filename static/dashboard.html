@@ -165,6 +165,8 @@
     /* Clickable rows / cards */
     .clickable-row { cursor: pointer; }
     .clickable-row:hover td { background: var(--surface2); }
+    .closes-link { color: var(--accent2); cursor: pointer; font-size: 13px; }
+    .closes-link:hover { text-decoration: underline; }
     .compliance-kpi.clickable { cursor: pointer; transition: border-color 0.15s; }
     .compliance-kpi.clickable:hover { border-color: var(--accent); }
     .compliance-kpi.clickable.active-filter { border-color: var(--accent); background: rgba(99,102,241,0.08); }
@@ -255,7 +257,7 @@
     <div class="section-header" style="padding: 14px 16px 0 16px;">
       <h3>Conversion by Channel</h3>
     </div>
-    <div id="channel-table"></div>
+    <div id="channel-table" style="overflow-x: auto;"></div>
   </div>
 </div>
 
@@ -535,7 +537,7 @@ function renderRepBreakdown(reps) {
       <td class="num ${rateClass(r.show_rate_1st)}">${pct(r.show_rate_1st)}</td>
       <td class="num ${rateClass(r.qualification_rate)}">${pct(r.qualification_rate)}</td>
       <td class="num ${rateClass(r.close_rate)}">${pct(r.close_rate)}</td>
-      <td class="num">${num(r.units_closed)}</td>
+      <td class="num"><span class="closes-link" onclick="showRepClosesModal('${r.rep_id}','${r.rep_name.replace(/'/g,"\\'")}')">↗ ${num(r.units_closed)}</span></td>
       <td class="num ${r.outcome_not_logged_count > 0 ? 'rate-warn' : ''}">${num(r.outcome_not_logged_count)}</td>
     </tr>
   `).join('');
@@ -621,12 +623,20 @@ function renderChannelTable(data) {
         <td class="num">${money(d.projected_contract_value)}</td>
         <td class="num ${rateClass(d.qual_rate)}">${pct(d.qual_rate)}</td>
         <td class="num ${d.dq_rate !== null && d.dq_rate > 0.3 ? 'rate-bad' : ''}">${pct(d.dq_rate)}</td>
+        <td class="num" style="color:var(--green);">${num(d.great_count)}</td>
+        <td class="num" style="color:#84cc16;">${num(d.ok_count)}</td>
+        <td class="num" style="color:var(--yellow);">${num(d.barely_passable_count)}</td>
+        <td class="num" style="color:var(--red);">${num(d.bad_count)}</td>
+        <td class="num ${d.missing_data_count > 0 ? 'rate-warn' : ''}">${num(d.missing_data_count)}</td>
       </tr>
     `;
   }).join('');
   document.getElementById('channel-table').innerHTML = `
-    <table>
-      <thead><tr><th>Channel</th><th class="num">Total Opps</th><th class="num">Shows</th><th class="num">Show Rate</th><th class="num">Units Closed</th><th class="num">Proj. Value</th><th class="num">Qual Rate</th><th class="num">DQ Rate</th></tr></thead>
+    <table style="min-width: 1100px;">
+      <thead><tr>
+        <th>Channel</th><th class="num">Total Opps</th><th class="num">Shows</th><th class="num">Show Rate</th><th class="num">Units Closed</th><th class="num">Proj. Value</th><th class="num">Qual Rate</th><th class="num">DQ Rate</th>
+        <th class="num" style="color:var(--green);">Great</th><th class="num" style="color:#84cc16;">Ok</th><th class="num" style="color:var(--yellow);">Barely Pass.</th><th class="num" style="color:var(--red);">Bad</th><th class="num" style="color:var(--yellow);">Missing Data</th>
+      </tr></thead>
       <tbody>${rows}</tbody>
     </table>
   `;
@@ -668,6 +678,38 @@ async function showClosesModal(channel) {
 
 function closeClosesModal() {
   document.getElementById('closes-modal').style.display = 'none';
+}
+
+async function showRepClosesModal(repId, repName) {
+  const modal = document.getElementById('closes-modal');
+  const body = document.getElementById('closes-modal-body');
+  const title = document.getElementById('closes-modal-title');
+  title.textContent = `Closed Deals — ${repName}`;
+  body.innerHTML = '<div class="loading">Loading...</div>';
+  modal.style.display = 'flex';
+
+  try {
+    const data = await apiFetch(`/api/dashboard/reps/closes?rep_id=${encodeURIComponent(repId)}&${qs()}`);
+    if (!data.data.length) {
+      body.innerHTML = '<div class="empty">No closed deals for this rep in the selected period.</div>';
+      return;
+    }
+    const rows = data.data.map(d => `
+      <tr>
+        <td>${d.name}</td>
+        <td>${d.close_date}</td>
+        <td class="num">${d.value !== null ? money(d.value) : '–'}</td>
+      </tr>
+    `).join('');
+    body.innerHTML = `
+      <table>
+        <thead><tr><th>Opportunity</th><th>Close Date</th><th class="num">Deal Value</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+  } catch (e) {
+    body.innerHTML = `<div class="empty">Failed to load. ${e.message}</div>`;
+  }
 }
 
 // Close modal on backdrop click
@@ -713,14 +755,14 @@ function renderComplianceKPIs(s) {
 
 function filterComplianceTable(filter) {
   const kpiIds = { outcome_unfilled: 'ckpi-outcome', non_compliance: 'ckpi-noncompliance', missing_note: 'ckpi-note', qual_missing: 'ckpi-qual' };
+  // Match the exact strings built in get_compliance_failures()
   const filterKeywords = {
-    outcome_unfilled: 'Call Outcome Not Logged',
-    non_compliance: null,  // show all non-compliant
-    missing_note: 'Missing Post-Call Note',
-    qual_missing: 'Qual Fields Empty',
+    outcome_unfilled: 'Outcome not logged',
+    non_compliance: null,  // show all — table already only contains non-compliant opps
+    missing_note: 'note',   // matches "Note too short" and "No post-call note"
+    qual_missing: 'Qual fields empty',
   };
   if (activeComplianceFilter === filter) {
-    // Toggle off
     activeComplianceFilter = null;
     Object.values(kpiIds).forEach(id => document.getElementById(id)?.classList.remove('active-filter'));
     if (Charts._complianceTabulator) Charts._complianceTabulator.clearFilter();
@@ -737,6 +779,8 @@ function filterComplianceTable(filter) {
   } else {
     Charts._complianceTabulator.clearFilter();
   }
+  // Scroll to table so the filtered results are visible
+  document.getElementById('compliance-table').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function renderComplianceByRepChart(byRep) {
@@ -788,13 +832,17 @@ function renderComplianceTable(failures) {
     columns: [
       {
         title: 'Opportunity',
-        field: 'ghl_opportunity_id',
+        field: 'opportunity_name',
         formatter(cell) {
-          const id = cell.getValue();
+          const name = cell.getValue();
+          const row = cell.getRow().getData();
+          const id = row.ghl_opportunity_id;
           const link = `${GHL_BASE}/${id}?tab=Opportunity+Details`;
-          return `<a class="ghl-link" href="${link}" target="_blank">↗ ${id.slice(0, 8)}…</a>`;
+          const label = name || `${id.slice(0, 8)}…`;
+          return `<a class="ghl-link" href="${link}" target="_blank">↗ ${label}</a>`;
         },
-        width: 140,
+        widthGrow: 2,
+        minWidth: 160,
       },
       { title: 'Rep', field: 'rep_name', widthGrow: 1 },
       { title: 'Stage', field: 'stage_name', widthGrow: 2 },

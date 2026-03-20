@@ -31,7 +31,7 @@ from db.queries.lead_source import (
     get_lead_source_breakdown,
     get_qualification_breakdown,
 )
-from db.queries.metrics_by_rep import get_by_rep
+from db.queries.metrics_by_rep import get_by_rep, get_rep_closes
 from db.queries.metrics_summary import get_summary
 from db.queries.reps import get_reps
 from db.queries.time_series import get_time_series
@@ -147,6 +147,18 @@ async def channel_closes(
     """Closed deals for a specific channel — drill-down popup."""
     start, end, date_by = params
     data = await get_channel_closes(db, channel, start, end, date_by)
+    return ChannelClosesResponse(data=data)
+
+
+@router.get("/reps/closes", response_model=ChannelClosesResponse)
+async def rep_closes(
+    rep_id: str = Query(..., description="GHL opportunity owner ID"),
+    params: tuple = Depends(_date_params),
+    db: AsyncSession = Depends(get_db),
+):
+    """Closed deals for a specific rep — drill-down popup."""
+    start, end, date_by = params
+    data = await get_rep_closes(db, rep_id, start, end, date_by)
     return ChannelClosesResponse(data=data)
 
 
