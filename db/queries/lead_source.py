@@ -90,12 +90,12 @@ async def get_channel_quality_breakdown(
     return [
         {
             "channel": row.channel or "Unknown",
-            "Great": row.great,
-            "Ok": row.ok,
-            "Barely Passable": row.barely_passable,
-            "Bad": row.bad,
-            "DQ": row.dq,
-            "Not Set": row.not_set,
+            "great": row.great,
+            "ok": row.ok,
+            "barely_passable": row.barely_passable,
+            "bad": row.bad,
+            "dq": row.dq,
+            "not_set": row.not_set,
             "total": row.total,
         }
         for row in result.all()
