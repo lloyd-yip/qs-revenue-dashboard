@@ -56,6 +56,7 @@ async def _build_opportunity_row(
     opp: dict,
     normalization_map: dict[str, str],
     ghl_client: GHLClient,
+    user_map: dict[str, str] | None = None,
 ) -> dict:
     """Transform a raw GHL opportunity payload into a dict ready for DB upsert."""
     custom = extract_custom_fields(opp)
@@ -66,10 +67,11 @@ async def _build_opportunity_row(
     stage_id = stage.get("id") or opp.get("pipelineStageId")
     stage_name = stage.get("name") or opp.get("pipelineStage")
 
-    # Rep attribution
-    assigned_to = opp.get("assignedTo") or {}
-    owner_id = assigned_to.get("id") if isinstance(assigned_to, dict) else opp.get("assignedTo")
-    owner_name = assigned_to.get("name") if isinstance(assigned_to, dict) else None
+    # Rep attribution — assignedTo is a plain user ID string in GHL v2
+    assigned_to = opp.get("assignedTo")
+    owner_id = assigned_to if isinstance(assigned_to, str) else None
+    user_map = user_map or {}
+    owner_name = user_map.get(owner_id) if owner_id else None
 
     # Appointment dates from custom fields
     # Use rescheduled date if present, otherwise initial date
@@ -200,11 +202,14 @@ async def run_sync(sync_type: str = "incremental") -> dict:
     error_count: int = 0
     error_details: list = []
 
+    user_map = await ghl_client.get_users()
+    logger.info("Loaded %d users for rep name resolution", len(user_map))
+
     async with AsyncSessionLocal() as session:
         async for raw_opp in ghl_client.stream_opportunities(updated_after=updated_after):
             opp_id = raw_opp.get("id", "unknown")
             try:
-                row = await _build_opportunity_row(raw_opp, normalization_map, ghl_client)
+                row = await _build_opportunity_row(raw_opp, normalization_map, ghl_client, user_map)
 
                 # PostgreSQL upsert — idempotent on ghl_opportunity_id
                 stmt = (

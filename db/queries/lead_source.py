@@ -45,13 +45,13 @@ async def get_lead_source_breakdown(
             ).label("projected_contract_value"),
         )
         .where(bf)
-        .group_by(func.coalesce(Opportunity.canonical_channel, "Unknown"))
+        .group_by(Opportunity.canonical_channel)
         .order_by(func.count(Opportunity.id).desc())
     )
 
     return [
         {
-            "channel": row.channel,
+            "channel": row.channel or "Unknown",
             "total_ops": row.total_ops,
             "shows": row.shows,
             "units_closed": row.units_closed,
@@ -83,13 +83,13 @@ async def get_channel_quality_breakdown(
             func.count(Opportunity.id).label("total"),
         )
         .where(bf)
-        .group_by(func.coalesce(Opportunity.canonical_channel, "Unknown"))
+        .group_by(Opportunity.canonical_channel)
         .order_by(func.count(Opportunity.id).desc())
     )
 
     return [
         {
-            "channel": row.channel,
+            "channel": row.channel or "Unknown",
             "Great": row.great,
             "Ok": row.ok,
             "Barely Passable": row.barely_passable,
@@ -124,10 +124,10 @@ async def get_qualification_breakdown(
                 func.count(Opportunity.id).label("count"),
             )
             .where(showed_1st_filter)
-            .group_by(func.coalesce(field_col, "Not Set"))
+            .group_by(field_col)
             .order_by(func.count(Opportunity.id).desc())
         )
-        return [{"value": r.value, "count": r.count} for r in res.all()]
+        return [{"value": r.value or "Not Set", "count": r.count} for r in res.all()]
 
     return {
         "lead_quality": await field_breakdown(Opportunity.lead_quality),

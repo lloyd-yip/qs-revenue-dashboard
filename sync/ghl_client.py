@@ -85,6 +85,19 @@ class GHLClient:
         self._pipeline_id = settings.ghl_pipeline_id
         self._page_delay_s = settings.ghl_page_delay_ms / 1000.0
 
+    async def get_users(self) -> dict[str, str]:
+        """Fetch all users for this location. Returns {user_id: name} map.
+
+        Called once at sync start to resolve assignedTo IDs to names.
+        """
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                data = await self._get(client, "/users/", {"locationId": self._location_id})
+                return {u["id"]: u.get("name", "") for u in data.get("users", [])}
+            except Exception as exc:
+                logger.warning("Failed to fetch users: %s", exc)
+                return {}
+
     async def get_contact_notes(self, contact_id: str) -> list[dict]:
         """Fetch all notes for a contact. Returns empty list on any failure.
 

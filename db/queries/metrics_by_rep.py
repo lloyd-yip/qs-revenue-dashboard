@@ -107,7 +107,7 @@ async def get_by_rep(
             "calls_booked_2nd": row.calls_booked_2nd,
             "shows_2nd": row.shows_2nd,
             "show_rate_2nd": safe_rate(row.shows_2nd, row.calls_booked_2nd),
-            "qualification_rate": safe_rate(row.qualified_shows, row.shows_with_quality_filled),
+            "qualification_rate": safe_rate(row.qualified_shows, row.shows_1st),
             "dq_rate": safe_rate(row.dq_count, row.shows_1st),
             "close_rate": safe_rate(row.units_closed, row.total_shows),
             "units_closed": row.units_closed,
