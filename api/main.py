@@ -4,13 +4,17 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Security, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, text
 
 from api.routers import metrics, sync as sync_router
+from api.routers import dashboard as dashboard_router
 from api.schemas.responses import HealthResponse
 from config import settings
 from db.models import SyncRun
@@ -88,6 +92,16 @@ app.add_middleware(
 # Protected routers — all /api/metrics/* and /api/sync/* require bearer token
 app.include_router(metrics.router, dependencies=[Depends(verify_token)])
 app.include_router(sync_router.router, dependencies=[Depends(verify_token)])
+
+# Dashboard router — no auth, browser-facing read-only analytics
+app.include_router(dashboard_router.router)
+
+# Serve dashboard.html at root
+_STATIC_DIR = Path(__file__).parent.parent / "static"
+
+@app.get("/", include_in_schema=False)
+async def serve_dashboard():
+    return FileResponse(_STATIC_DIR / "dashboard.html")
 
 
 # Health check is exempt from auth — Railway uses it without credentials

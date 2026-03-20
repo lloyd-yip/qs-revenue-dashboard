@@ -85,6 +85,22 @@ class GHLClient:
         self._pipeline_id = settings.ghl_pipeline_id
         self._page_delay_s = settings.ghl_page_delay_ms / 1000.0
 
+    async def get_contact_notes(self, contact_id: str) -> list[dict]:
+        """Fetch all notes for a contact. Returns empty list on any failure.
+
+        Called during sync for showed opps only — one API call per contact.
+        Includes the same page-delay as opportunity pagination for rate safety.
+        """
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                data = await self._get(client, f"/contacts/{contact_id}/notes", {})
+                await asyncio.sleep(self._page_delay_s)
+                notes: list[dict] = data.get("notes", [])
+            except Exception as exc:
+                logger.warning("Failed to fetch notes for contact %s: %s", contact_id, exc)
+                notes = []
+        return notes
+
     async def _get(self, client: httpx.AsyncClient, path: str, params: dict) -> dict:
         """Single GET request with basic error handling."""
         url = f"{self._base_url}{path}"

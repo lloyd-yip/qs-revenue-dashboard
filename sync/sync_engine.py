@@ -21,8 +21,11 @@ from sync.ghl_client import (
     extract_attributions,
     extract_custom_fields,
 )
+from sync.ghl_client import SHOWED_STAGE_IDS
 from sync.normalizer import (
     compute_compliance_failure,
+    compute_outcome_unfilled,
+    compute_post_call_note_word_count,
     is_excluded_stage,
     parse_ghl_datetime,
     resolve_canonical_channel,
@@ -92,12 +95,34 @@ async def _build_opportunity_row(
     call1_status = custom.get("call1_appointment_status")
     call2_status = custom.get("call2_appointment_status")
 
-    # Compliance flag
+    # Legacy compliance flag (stage-specific — kept for backward compat)
     compliance_failure = compute_compliance_failure(
         pipeline_stage_id=stage_id,
         call1_appointment_date=call1_date,
         call1_appointment_status=call1_status,
     )
+
+    # Outcome unfilled — broader signal (any stage, 12h grace)
+    outcome_unfilled = compute_outcome_unfilled(
+        call1_appointment_date=call1_date,
+        call1_appointment_status=call1_status,
+    )
+
+    # Post-call note word count — only for showed opps with a past appointment
+    showed_1st = (
+        call1_status == "Showed"
+        or (stage_id is not None and stage_id in SHOWED_STAGE_IDS)
+    )
+    post_call_note_word_count: int | None = None
+    if showed_1st and call1_date and opp.get("contactId"):
+        now_utc = datetime.now(timezone.utc)
+        if now_utc > call1_date + timedelta(hours=12):
+            notes = await ghl_client.get_contact_notes(opp["contactId"])
+            post_call_note_word_count = compute_post_call_note_word_count(
+                notes=notes,
+                owner_id=owner_id,
+                call1_appointment_date=call1_date,
+            )
 
     return {
         "ghl_opportunity_id": opp["id"],
@@ -128,6 +153,8 @@ async def _build_opportunity_row(
         "op_book_campaign_name": op_book_name,
         "canonical_channel": canonical_channel,
         "rep_compliance_failure": compliance_failure,
+        "outcome_unfilled": outcome_unfilled,
+        "post_call_note_word_count": post_call_note_word_count,
         "created_at_ghl": parse_ghl_datetime(opp.get("createdAt")),
         "updated_at_ghl": parse_ghl_datetime(opp.get("updatedAt")),
         "synced_at": datetime.now(timezone.utc),

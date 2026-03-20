@@ -38,11 +38,11 @@ async def get_summary(
             func.count(case((is_1st, 1))).label("calls_booked_1st"),
             # Shows (1st call) — showed + had 1st call + no compliance failure
             func.count(
-                case((and_(is_1st, showed_1st, ~Opportunity.rep_compliance_failure), 1))
+                case((and_(is_1st, showed_1st, ~Opportunity.outcome_unfilled), 1))
             ).label("shows_1st"),
             # Bookable 1st calls (show rate denominator — exclude compliance failures)
             func.count(
-                case((and_(is_1st, ~Opportunity.rep_compliance_failure), 1))
+                case((and_(is_1st, ~Opportunity.outcome_unfilled), 1))
             ).label("bookable_1st"),
             # Calls booked (2nd call)
             func.count(case((is_2nd, 1))).label("calls_booked_2nd"),

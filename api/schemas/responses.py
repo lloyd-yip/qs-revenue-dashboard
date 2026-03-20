@@ -118,3 +118,73 @@ class HealthResponse(BaseModel):
     status: str
     db_connected: bool
     last_sync_at: datetime | None
+
+
+# --- Dashboard-specific response models (no auth required) ---
+
+class TimeSeriesPoint(BaseModel):
+    period: str | None
+    calls_booked: int
+    shows: int
+    show_rate: float | None
+
+
+class TimeSeriesResponse(BaseModel):
+    data: list[TimeSeriesPoint]
+    meta: MetaMixin
+
+
+class RepItem(BaseModel):
+    rep_id: str | None
+    rep_name: str
+
+
+class RepsResponse(BaseModel):
+    data: list[RepItem]
+
+
+class ComplianceFailureRow(BaseModel):
+    ghl_opportunity_id: str
+    rep_name: str
+    stage_name: str
+    call1_appointment_date: str | None
+    call1_appointment_status: str
+    violations: str  # comma-separated violation labels
+
+
+class ComplianceByRepRow(BaseModel):
+    rep_name: str
+    outcome_unfilled: int
+    non_compliance: int
+
+
+class ComplianceSummary(BaseModel):
+    outcome_unfilled_count: int
+    outcome_unfilled_rate: float | None
+    non_compliance_count: int
+    non_compliance_rate: float | None
+    note_missing_count: int
+    qual_missing_count: int
+
+
+class ComplianceResponse(BaseModel):
+    summary: ComplianceSummary
+    by_rep: list[ComplianceByRepRow]
+    failures: list[ComplianceFailureRow]
+    meta: MetaMixin
+
+
+class ChannelQualityRow(BaseModel):
+    channel: str
+    great: int
+    ok: int
+    barely_passable: int
+    bad: int
+    dq: int
+    not_set: int
+    total: int
+
+
+class ChannelQualityResponse(BaseModel):
+    data: list[ChannelQualityRow]
+    meta: MetaMixin

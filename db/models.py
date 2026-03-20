@@ -104,6 +104,17 @@ class Opportunity(Base):
     #   AND call1_appointment_status is still Confirmed (or NULL)
     rep_compliance_failure: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
 
+    # Outcome unfilled — broader signal: appointment passed + 12h grace, status never updated.
+    # No stage restriction — catches all opps where rep forgot to log the call outcome.
+    # Used as the show rate denominator exclusion (replaces rep_compliance_failure for that purpose).
+    outcome_unfilled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
+
+    # Post-call note word count — word count of rep's own note within 12h of appointment.
+    # NULL  = notes check not applicable (no-show / cancelled / future appointment)
+    # 0     = showed, no qualifying rep note found within 12h window
+    # N     = word count of the longest qualifying rep note found
+    post_call_note_word_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     # GHL timestamps
     created_at_ghl: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     updated_at_ghl: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

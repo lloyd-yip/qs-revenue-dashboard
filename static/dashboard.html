@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>QS Analytics Dashboard</title>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <!-- Flatpickr -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+  <!-- Tabulator -->
+  <link href="https://unpkg.com/tabulator-tables@6.2.1/dist/css/tabulator_midnight.min.css" rel="stylesheet" />
+  <script type="text/javascript" src="https://unpkg.com/tabulator-tables@6.2.1/dist/js/tabulator.min.js"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #22263a;
+      --border: #2e3347;
+      --accent: #6366f1;
+      --accent2: #818cf8;
+      --text: #e2e8f0;
+      --text2: #94a3b8;
+      --green: #22c55e;
+      --red: #ef4444;
+      --yellow: #f59e0b;
+      --radius: 10px;
+      --font: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+
+    body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; min-height: 100vh; }
+
+    /* Header */
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 16px 24px; border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    header h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.3px; }
+    #last-synced { font-size: 12px; color: var(--text2); }
+
+    /* Filters bar */
+    .filters {
+      display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
+      padding: 14px 24px; background: var(--surface); border-bottom: 1px solid var(--border);
+    }
+    .filters label { font-size: 12px; color: var(--text2); margin-right: 4px; }
+
+    .preset-btns { display: flex; gap: 4px; }
+    .preset-btn {
+      background: var(--surface2); border: 1px solid var(--border); color: var(--text2);
+      padding: 5px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; transition: all 0.15s;
+    }
+    .preset-btn:hover, .preset-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+    #date-range-input {
+      background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+      padding: 6px 10px; border-radius: 6px; font-size: 13px; width: 200px; cursor: pointer;
+    }
+
+    #rep-select {
+      background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+      padding: 6px 10px; border-radius: 6px; font-size: 13px; cursor: pointer;
+    }
+
+    .toggle-group { display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+    .toggle-btn {
+      background: var(--surface2); border: none; color: var(--text2);
+      padding: 5px 12px; cursor: pointer; font-size: 12px; transition: all 0.15s;
+    }
+    .toggle-btn + .toggle-btn { border-left: 1px solid var(--border); }
+    .toggle-btn.active { background: var(--accent); color: #fff; }
+
+    .filter-sep { width: 1px; height: 28px; background: var(--border); margin: 0 4px; }
+
+    /* Tabs */
+    .tabs {
+      display: flex; gap: 0; padding: 0 24px;
+      background: var(--surface); border-bottom: 1px solid var(--border);
+    }
+    .tab-btn {
+      background: none; border: none; color: var(--text2); padding: 12px 18px;
+      cursor: pointer; font-size: 13px; font-weight: 500; border-bottom: 2px solid transparent;
+      transition: all 0.15s;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active { color: var(--accent2); border-bottom-color: var(--accent); }
+
+    /* Content */
+    .tab-content { display: none; padding: 24px; }
+    .tab-content.active { display: block; }
+
+    /* KPI cards */
+    .kpi-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin-bottom: 24px; }
+    .kpi-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 16px; display: flex; flex-direction: column; gap: 4px;
+    }
+    .kpi-card .kpi-label { font-size: 11px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; }
+    .kpi-card .kpi-value { font-size: 26px; font-weight: 700; letter-spacing: -0.5px; }
+    .kpi-card .kpi-sub { font-size: 11px; color: var(--text2); }
+    .kpi-card.highlight { border-color: var(--accent); }
+
+    /* Charts row */
+    .charts-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+    .chart-box {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 20px;
+    }
+    .chart-box h3 { font-size: 13px; font-weight: 600; color: var(--text2); margin-bottom: 16px; text-transform: uppercase; letter-spacing: 0.4px; }
+    .chart-box canvas { max-height: 260px; }
+
+    /* Section header with toggle */
+    .section-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .section-header h3 { font-size: 13px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: 0.4px; }
+
+    /* Tables */
+    .data-table-wrap {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      overflow: hidden; margin-bottom: 24px;
+    }
+    table { width: 100%; border-collapse: collapse; }
+    th { background: var(--surface2); color: var(--text2); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; padding: 10px 14px; text-align: left; }
+    td { padding: 10px 14px; border-top: 1px solid var(--border); font-size: 13px; }
+    tr:hover td { background: var(--surface2); }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .rate-good { color: var(--green); font-weight: 600; }
+    .rate-warn { color: var(--yellow); font-weight: 600; }
+    .rate-bad  { color: var(--red); font-weight: 600; }
+
+    /* Compliance summary row */
+    .compliance-summary { display: flex; gap: 16px; margin-bottom: 24px; }
+    .compliance-kpi {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 20px 28px; min-width: 180px;
+    }
+    .compliance-kpi .kpi-label { font-size: 11px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+    .compliance-kpi .kpi-value { font-size: 32px; font-weight: 700; }
+    .compliance-kpi .kpi-value.warn { color: var(--red); }
+
+    /* Tabulator overrides */
+    .tabulator { border: none; background: var(--surface); border-radius: var(--radius); overflow: hidden; }
+    .tabulator .tabulator-header { background: var(--surface2); border-bottom: 1px solid var(--border); }
+    .tabulator .tabulator-col-title { color: var(--text2); font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; font-weight: 600; }
+    .tabulator-row { background: var(--surface); border-bottom: 1px solid var(--border) !important; }
+    .tabulator-row:hover { background: var(--surface2) !important; }
+    .tabulator-cell { color: var(--text); font-size: 13px; }
+
+    /* Loading / empty states */
+    .loading { text-align: center; color: var(--text2); padding: 48px; font-size: 13px; }
+    .empty { text-align: center; color: var(--text2); padding: 48px; font-size: 13px; }
+
+    /* GHL link */
+    .ghl-link { color: var(--accent2); text-decoration: none; font-family: monospace; font-size: 12px; }
+    .ghl-link:hover { text-decoration: underline; }
+
+    @media (max-width: 768px) {
+      .charts-row { grid-template-columns: 1fr; }
+      .kpi-row { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>QS Analytics Dashboard</h1>
+  <span id="last-synced">Loading...</span>
+</header>
+
+<div class="filters">
+  <div class="preset-btns">
+    <button class="preset-btn" onclick="applyPreset(7)">Last 7d</button>
+    <button class="preset-btn active" onclick="applyPreset(30)">Last 30d</button>
+    <button class="preset-btn" onclick="applyPreset(90)">Last 90d</button>
+    <button class="preset-btn" onclick="applyPresetThisMonth()">This month</button>
+  </div>
+  <input id="date-range-input" placeholder="Custom range..." readonly />
+  <div class="filter-sep"></div>
+  <select id="rep-select" onchange="onRepChange(this.value)">
+    <option value="">All Team</option>
+  </select>
+  <div class="filter-sep"></div>
+  <label>Granularity</label>
+  <div class="toggle-group" id="granularity-toggle">
+    <button class="toggle-btn" data-val="day" onclick="setGranularity('day')">Day</button>
+    <button class="toggle-btn active" data-val="week" onclick="setGranularity('week')">Week</button>
+    <button class="toggle-btn" data-val="month" onclick="setGranularity('month')">Month</button>
+  </div>
+</div>
+
+<nav class="tabs">
+  <button class="tab-btn active" onclick="setTab('sales')">Sales Performance</button>
+  <button class="tab-btn" onclick="setTab('channels')">Lead Quality by Channel</button>
+  <button class="tab-btn" onclick="setTab('compliance')">Compliance</button>
+</nav>
+
+<!-- TAB: Sales Performance -->
+<div id="tab-sales" class="tab-content active">
+  <div class="kpi-row" id="kpi-cards"><div class="loading">Loading...</div></div>
+
+  <div class="charts-row">
+    <div class="chart-box">
+      <h3>Show Rate Over Time</h3>
+      <canvas id="chart-show-rate"></canvas>
+    </div>
+    <div class="chart-box">
+      <h3>Stage Funnel</h3>
+      <canvas id="chart-funnel"></canvas>
+    </div>
+  </div>
+
+  <div class="data-table-wrap">
+    <div class="section-header" style="padding: 14px 16px 0;">
+      <h3>Rep Breakdown</h3>
+      <div class="toggle-group">
+        <button class="toggle-btn active" id="btn-rep-table" onclick="setRepView('table')">Table</button>
+        <button class="toggle-btn" id="btn-rep-chart" onclick="setRepView('chart')">Chart</button>
+      </div>
+    </div>
+    <div id="rep-table-view"></div>
+    <div id="rep-chart-view" style="display:none; padding: 16px;">
+      <canvas id="chart-rep" style="max-height:300px;"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- TAB: Lead Quality by Channel -->
+<div id="tab-channels" class="tab-content">
+  <div class="charts-row">
+    <div class="chart-box">
+      <h3>Channel Distribution</h3>
+      <canvas id="chart-channel-dist"></canvas>
+    </div>
+    <div class="chart-box">
+      <h3>Lead Quality by Channel</h3>
+      <canvas id="chart-channel-quality"></canvas>
+    </div>
+  </div>
+
+  <div class="data-table-wrap">
+    <div class="section-header" style="padding: 14px 16px 0 16px;">
+      <h3>Conversion by Channel</h3>
+    </div>
+    <div id="channel-table"></div>
+  </div>
+</div>
+
+<!-- TAB: Compliance -->
+<div id="tab-compliance" class="tab-content">
+  <div class="kpi-row" id="compliance-kpis" style="margin-bottom:20px;"></div>
+  <div class="charts-row" style="margin-bottom:20px;">
+    <div class="chart-box" style="flex:1;">
+      <h3>Non-Compliance by Rep</h3>
+      <canvas id="chart-compliance-rep" style="max-height:200px;"></canvas>
+    </div>
+  </div>
+  <div id="compliance-table"></div>
+</div>
+
+<script>
+// ─── App State ────────────────────────────────────────────────────────────────
+const AppState = {
+  dateStart: '',
+  dateEnd: '',
+  dateBy: 'appointment',
+  granularity: 'week',
+  repId: '',
+  activeTab: 'sales',
+  repView: 'table',
+};
+
+// Chart instances — held so we can destroy/recreate on re-render
+const Charts = {};
+
+// GHL base URL for compliance links
+const GHL_BASE = 'https://app.gohighlevel.com/v2/location/G7ZOWCq78JrzUjlLMCxt/opportunities/list';
+
+// ─── Date helpers ─────────────────────────────────────────────────────────────
+function toISO(d) {
+  return d.toISOString().split('T')[0];
+}
+
+function applyPreset(days) {
+  const end = new Date();
+  const start = new Date();
+  start.setDate(end.getDate() - days + 1);
+  setDateRange(toISO(start), toISO(end));
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+}
+
+function applyPresetThisMonth() {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  setDateRange(toISO(start), toISO(now));
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+}
+
+function setDateRange(start, end) {
+  AppState.dateStart = start;
+  AppState.dateEnd = end;
+  fp.setDate([start, end]);
+  renderAll();
+}
+
+// ─── Flatpickr init ───────────────────────────────────────────────────────────
+const fp = flatpickr('#date-range-input', {
+  mode: 'range',
+  dateFormat: 'Y-m-d',
+  onChange(selectedDates) {
+    if (selectedDates.length === 2) {
+      AppState.dateStart = toISO(selectedDates[0]);
+      AppState.dateEnd   = toISO(selectedDates[1]);
+      document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+      renderAll();
+    }
+  },
+});
+
+// Default: last 30 days
+(function initDates() {
+  const end = new Date();
+  const start = new Date();
+  start.setDate(end.getDate() - 29);
+  AppState.dateStart = toISO(start);
+  AppState.dateEnd   = toISO(end);
+  fp.setDate([AppState.dateStart, AppState.dateEnd]);
+})();
+
+// ─── Filter controls ──────────────────────────────────────────────────────────
+function onRepChange(val) {
+  AppState.repId = val;
+  renderAll();
+}
+
+function setGranularity(val) {
+  AppState.granularity = val;
+  document.querySelectorAll('#granularity-toggle .toggle-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.val === val);
+  });
+  renderAll();
+}
+
+function setTab(tab) {
+  AppState.activeTab = tab;
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.add('active');
+  event.target.classList.add('active');
+  renderTab(tab);
+}
+
+function setRepView(mode) {
+  AppState.repView = mode;
+  document.getElementById('btn-rep-table').classList.toggle('active', mode === 'table');
+  document.getElementById('btn-rep-chart').classList.toggle('active', mode === 'chart');
+  document.getElementById('rep-table-view').style.display = mode === 'table' ? '' : 'none';
+  document.getElementById('rep-chart-view').style.display = mode === 'chart' ? '' : 'none';
+}
+
+// ─── API helpers ──────────────────────────────────────────────────────────────
+function qs() {
+  return `start=${AppState.dateStart}&end=${AppState.dateEnd}&date_by=${AppState.dateBy}`;
+}
+
+async function apiFetch(path) {
+  const res = await fetch(path);
+  if (!res.ok) throw new Error(`API error ${res.status}: ${path}`);
+  return res.json();
+}
+
+function pct(v) {
+  if (v === null || v === undefined) return '–';
+  return (v * 100).toFixed(1) + '%';
+}
+
+function num(v) {
+  if (v === null || v === undefined) return '–';
+  return v.toLocaleString();
+}
+
+function money(v) {
+  if (!v) return '–';
+  return '$' + Math.round(v).toLocaleString();
+}
+
+function rateClass(v) {
+  if (v === null) return '';
+  if (v >= 0.6) return 'rate-good';
+  if (v >= 0.4) return 'rate-warn';
+  return 'rate-bad';
+}
+
+function destroyChart(key) {
+  if (Charts[key]) { Charts[key].destroy(); delete Charts[key]; }
+}
+
+// ─── Render all ───────────────────────────────────────────────────────────────
+async function renderAll() {
+  renderTab(AppState.activeTab);
+}
+
+async function renderTab(tab) {
+  if (tab === 'sales') await renderSales();
+  else if (tab === 'channels') await renderChannels();
+  else if (tab === 'compliance') await renderCompliance();
+}
+
+// ─── Tab 1: Sales Performance ─────────────────────────────────────────────────
+async function renderSales() {
+  const repParam = AppState.repId ? `&rep_id=${AppState.repId}` : '';
+  try {
+    const [summary, ts, byRep] = await Promise.all([
+      apiFetch(`/api/dashboard/summary?${qs()}${repParam}`),
+      apiFetch(`/api/dashboard/time-series?${qs()}&granularity=${AppState.granularity}${repParam}`),
+      apiFetch(`/api/dashboard/by-rep?${qs()}`),
+    ]);
+    renderKPICards(summary.data);
+    renderShowRateChart(ts.data);
+    renderFunnelChart(summary.data);
+    renderRepBreakdown(byRep.data);
+  } catch (e) {
+    document.getElementById('kpi-cards').innerHTML = `<div class="empty">Failed to load data. ${e.message}</div>`;
+  }
+}
+
+function renderKPICards(d) {
+  document.getElementById('kpi-cards').innerHTML = `
+    <div class="kpi-card"><div class="kpi-label">1st Calls Booked</div><div class="kpi-value">${num(d.calls_booked_1st)}</div></div>
+    <div class="kpi-card"><div class="kpi-label">1st Call Shows</div><div class="kpi-value">${num(d.shows_1st)}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Show Rate</div><div class="kpi-value ${rateClass(d.show_rate_1st)}">${pct(d.show_rate_1st)}</div><div class="kpi-sub">No-show: ${pct(d.no_show_rate_1st)}</div></div>
+    <div class="kpi-card"><div class="kpi-label">2nd Calls Booked</div><div class="kpi-value">${num(d.calls_booked_2nd)}</div><div class="kpi-sub">Shows: ${num(d.shows_2nd)} (${pct(d.show_rate_2nd)})</div></div>
+    <div class="kpi-card"><div class="kpi-label">Qual Rate</div><div class="kpi-value ${rateClass(d.qualification_rate)}">${pct(d.qualification_rate)}</div><div class="kpi-sub">DQ rate: ${pct(d.dq_rate)}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Close Rate</div><div class="kpi-value ${rateClass(d.close_rate)}">${pct(d.close_rate)}</div></div>
+    <div class="kpi-card highlight"><div class="kpi-label">Units Closed</div><div class="kpi-value">${num(d.units_closed)}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Proj. Contract Value</div><div class="kpi-value" style="font-size:20px;">${money(d.projected_contract_value)}</div><div class="kpi-sub">Rep-estimated</div></div>
+  `;
+}
+
+function renderShowRateChart(data) {
+  destroyChart('showRate');
+  const ctx = document.getElementById('chart-show-rate').getContext('2d');
+  Charts.showRate = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: data.map(d => d.period ? d.period.split('T')[0] : ''),
+      datasets: [{
+        label: 'Show Rate',
+        data: data.map(d => d.show_rate !== null ? +(d.show_rate * 100).toFixed(1) : null),
+        borderColor: '#6366f1',
+        backgroundColor: 'rgba(99,102,241,0.1)',
+        fill: true,
+        tension: 0.3,
+        spanGaps: true,
+        pointRadius: 4,
+        pointHoverRadius: 6,
+      }],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ctx.parsed.y + '%' } } },
+      scales: {
+        x: { ticks: { color: '#94a3b8', maxRotation: 30 }, grid: { color: '#2e3347' } },
+        y: { ticks: { color: '#94a3b8', callback: v => v + '%' }, grid: { color: '#2e3347' }, min: 0, max: 100 },
+      },
+    },
+  });
+}
+
+function renderFunnelChart(d) {
+  destroyChart('funnel');
+  const ctx = document.getElementById('chart-funnel').getContext('2d');
+  const labels = ['1st Booked', 'Showed', 'Qualified', 'Closed'];
+  const values = [
+    d.calls_booked_1st,
+    d.shows_1st,
+    d.qualification_rate && d.shows_1st ? Math.round(d.shows_1st * d.qualification_rate) : 0,
+    d.units_closed,
+  ];
+  Charts.funnel = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{ data: values, backgroundColor: ['#6366f1','#818cf8','#a5b4fc','#22c55e'], borderRadius: 4 }],
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#94a3b8' }, grid: { color: '#2e3347' } },
+        y: { ticks: { color: '#94a3b8' }, grid: { display: false } },
+      },
+    },
+  });
+}
+
+function renderRepBreakdown(reps) {
+  // Table view
+  if (!reps.length) {
+    document.getElementById('rep-table-view').innerHTML = '<div class="empty">No rep data for this period.</div>';
+    return;
+  }
+  const rows = reps.map(r => `
+    <tr>
+      <td>${r.rep_name}</td>
+      <td class="num">${num(r.calls_booked_1st)}</td>
+      <td class="num">${num(r.shows_1st)}</td>
+      <td class="num ${rateClass(r.show_rate_1st)}">${pct(r.show_rate_1st)}</td>
+      <td class="num ${rateClass(r.qualification_rate)}">${pct(r.qualification_rate)}</td>
+      <td class="num ${rateClass(r.close_rate)}">${pct(r.close_rate)}</td>
+      <td class="num">${num(r.units_closed)}</td>
+    </tr>
+  `).join('');
+  document.getElementById('rep-table-view').innerHTML = `
+    <table>
+      <thead><tr><th>Rep</th><th class="num">Booked</th><th class="num">Showed</th><th class="num">Show Rate</th><th class="num">Qual Rate</th><th class="num">Close Rate</th><th class="num">Closed</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+
+  // Chart view
+  destroyChart('rep');
+  const ctx = document.getElementById('chart-rep').getContext('2d');
+  Charts.rep = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: reps.map(r => r.rep_name),
+      datasets: [
+        { label: 'Booked', data: reps.map(r => r.calls_booked_1st), backgroundColor: '#6366f1', borderRadius: 3 },
+        { label: 'Showed', data: reps.map(r => r.shows_1st), backgroundColor: '#22c55e', borderRadius: 3 },
+        { label: 'Closed', data: reps.map(r => r.units_closed), backgroundColor: '#f59e0b', borderRadius: 3 },
+      ],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { labels: { color: '#94a3b8' } } },
+      scales: {
+        x: { ticks: { color: '#94a3b8' }, grid: { display: false } },
+        y: { ticks: { color: '#94a3b8' }, grid: { color: '#2e3347' } },
+      },
+    },
+  });
+}
+
+// ─── Tab 2: Lead Quality by Channel ──────────────────────────────────────────
+async function renderChannels() {
+  const repParam = AppState.repId ? `&rep_id=${AppState.repId}` : '';
+  try {
+    const [channels, quality] = await Promise.all([
+      apiFetch(`/api/dashboard/channels?${qs()}${repParam}`),
+      apiFetch(`/api/dashboard/channel-quality?${qs()}${repParam}`),
+    ]);
+    renderChannelDistChart(channels.data);
+    renderChannelQualityChart(quality.data);
+    renderChannelTable(channels.data);
+  } catch (e) {
+    document.getElementById('channel-table').innerHTML = `<div class="empty">Failed to load. ${e.message}</div>`;
+  }
+}
+
+function renderChannelDistChart(data) {
+  destroyChart('channelDist');
+  const ctx = document.getElementById('chart-channel-dist').getContext('2d');
+  const palette = ['#6366f1','#818cf8','#a5b4fc','#22c55e','#f59e0b','#ef4444','#06b6d4','#ec4899'];
+  Charts.channelDist = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: data.map(d => d.channel),
+      datasets: [{ data: data.map(d => d.total_ops), backgroundColor: palette, borderRadius: 4 }],
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#94a3b8' }, grid: { color: '#2e3347' } },
+        y: { ticks: { color: '#94a3b8' }, grid: { display: false } },
+      },
+    },
+  });
+}
+
+function renderChannelQualityChart(data) {
+  destroyChart('channelQuality');
+  const ctx = document.getElementById('chart-channel-quality').getContext('2d');
+  Charts.channelQuality = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: data.map(d => d.channel),
+      datasets: [
+        { label: 'Great',          data: data.map(d => d.Great),           backgroundColor: '#22c55e', borderRadius: 2 },
+        { label: 'Ok',             data: data.map(d => d.Ok),              backgroundColor: '#84cc16', borderRadius: 2 },
+        { label: 'Barely Passable',data: data.map(d => d['Barely Passable']), backgroundColor: '#f59e0b', borderRadius: 2 },
+        { label: 'Bad',            data: data.map(d => d.Bad),             backgroundColor: '#f97316', borderRadius: 2 },
+        { label: 'DQ',             data: data.map(d => d.DQ),              backgroundColor: '#ef4444', borderRadius: 2 },
+        { label: 'Not Set',        data: data.map(d => d['Not Set']),      backgroundColor: '#475569', borderRadius: 2 },
+      ],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { labels: { color: '#94a3b8', boxWidth: 12 } } },
+      scales: {
+        x: { stacked: true, ticks: { color: '#94a3b8' }, grid: { display: false } },
+        y: { stacked: true, ticks: { color: '#94a3b8' }, grid: { color: '#2e3347' } },
+      },
+    },
+  });
+}
+
+function renderChannelTable(data) {
+  if (!data.length) {
+    document.getElementById('channel-table').innerHTML = '<div class="empty">No channel data for this period.</div>';
+    return;
+  }
+  const rows = data.map(d => {
+    const showRate = d.total_ops > 0 ? d.shows / d.total_ops : null;
+    return `
+      <tr>
+        <td>${d.channel}</td>
+        <td class="num">${num(d.total_ops)}</td>
+        <td class="num">${num(d.shows)}</td>
+        <td class="num ${rateClass(showRate)}">${pct(showRate)}</td>
+        <td class="num">${num(d.units_closed)}</td>
+        <td class="num">${money(d.projected_contract_value)}</td>
+      </tr>
+    `;
+  }).join('');
+  document.getElementById('channel-table').innerHTML = `
+    <table>
+      <thead><tr><th>Channel</th><th class="num">Total Opps</th><th class="num">Shows</th><th class="num">Show Rate</th><th class="num">Units Closed</th><th class="num">Proj. Value</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+// ─── Tab 3: Compliance ────────────────────────────────────────────────────────
+async function renderCompliance() {
+  const repParam = AppState.repId ? `&rep_id=${AppState.repId}` : '';
+  try {
+    const data = await apiFetch(`/api/dashboard/compliance?${qs()}${repParam}`);
+    renderComplianceKPIs(data.summary);
+    renderComplianceByRepChart(data.by_rep);
+    renderComplianceTable(data.failures);
+  } catch (e) {
+    document.getElementById('compliance-kpis').innerHTML = `<div class="empty">Failed to load. ${e.message}</div>`;
+  }
+}
+
+function renderComplianceKPIs(s) {
+  document.getElementById('compliance-kpis').innerHTML = `
+    <div class="kpi-card"><div class="kpi-label">Outcome Unfilled</div>
+      <div class="kpi-value ${s.outcome_unfilled_count > 0 ? 'rate-bad' : 'rate-good'}">${num(s.outcome_unfilled_count)}</div>
+      <div class="kpi-sub">${pct(s.outcome_unfilled_rate)} of booked</div></div>
+    <div class="kpi-card"><div class="kpi-label">Non-Compliant Opps</div>
+      <div class="kpi-value ${s.non_compliance_count > 0 ? 'rate-bad' : 'rate-good'}">${num(s.non_compliance_count)}</div>
+      <div class="kpi-sub">${pct(s.non_compliance_rate)} of all opps</div></div>
+    <div class="kpi-card"><div class="kpi-label">Missing Post-Call Note</div>
+      <div class="kpi-value ${s.note_missing_count > 0 ? 'rate-warn' : 'rate-good'}">${num(s.note_missing_count)}</div>
+      <div class="kpi-sub">Showed opps only</div></div>
+    <div class="kpi-card"><div class="kpi-label">Qual Fields Empty</div>
+      <div class="kpi-value ${s.qual_missing_count > 0 ? 'rate-warn' : 'rate-good'}">${num(s.qual_missing_count)}</div>
+      <div class="kpi-sub">Showed opps only</div></div>
+  `;
+}
+
+function renderComplianceByRepChart(byRep) {
+  destroyChart('complianceRep');
+  const ctx = document.getElementById('chart-compliance-rep').getContext('2d');
+  Charts.complianceRep = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: byRep.map(r => r.rep_name),
+      datasets: [
+        { label: 'Non-Compliance', data: byRep.map(r => r.non_compliance), backgroundColor: '#ef4444', borderRadius: 3 },
+        { label: 'Outcome Unfilled', data: byRep.map(r => r.outcome_unfilled), backgroundColor: '#f97316', borderRadius: 3 },
+      ],
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      plugins: { legend: { labels: { color: '#94a3b8', boxWidth: 12 } } },
+      scales: {
+        x: { ticks: { color: '#94a3b8', stepSize: 1 }, grid: { color: '#2e3347' } },
+        y: { ticks: { color: '#94a3b8' }, grid: { display: false } },
+      },
+    },
+  });
+}
+
+function renderComplianceTable(failures) {
+  if (!failures.length) {
+    document.getElementById('compliance-table').innerHTML = '<div class="empty" style="padding:40px;">No compliance failures for this period.</div>';
+    return;
+  }
+
+  if (Charts._complianceTabulator) {
+    Charts._complianceTabulator.replaceData(failures.map(f => ({
+      ...f,
+      ghl_link: `${GHL_BASE}/${f.ghl_opportunity_id}?tab=Opportunity+Details`,
+    })));
+    return;
+  }
+
+  Charts._complianceTabulator = new Tabulator('#compliance-table', {
+    data: failures.map(f => ({
+      ...f,
+      ghl_link: `${GHL_BASE}/${f.ghl_opportunity_id}?tab=Opportunity+Details`,
+    })),
+    layout: 'fitColumns',
+    pagination: 'local',
+    paginationSize: 25,
+    columns: [
+      {
+        title: 'Opportunity',
+        field: 'ghl_opportunity_id',
+        formatter(cell) {
+          const id = cell.getValue();
+          const link = `${GHL_BASE}/${id}?tab=Opportunity+Details`;
+          return `<a class="ghl-link" href="${link}" target="_blank">↗ ${id.slice(0, 8)}…</a>`;
+        },
+        width: 140,
+      },
+      { title: 'Rep', field: 'rep_name', widthGrow: 1 },
+      { title: 'Stage', field: 'stage_name', widthGrow: 2 },
+      {
+        title: 'Appt Date',
+        field: 'call1_appointment_date',
+        formatter(cell) {
+          const v = cell.getValue();
+          if (!v) return '–';
+          return new Date(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        },
+        width: 140,
+      },
+      { title: 'Status', field: 'call1_appointment_status', width: 110 },
+      { title: 'Violations', field: 'violations', widthGrow: 2 },
+    ],
+  });
+}
+
+// ─── Bootstrap ────────────────────────────────────────────────────────────────
+async function init() {
+  // Load last synced timestamp
+  try {
+    const health = await apiFetch('/api/health');
+    if (health.last_sync_at) {
+      const d = new Date(health.last_sync_at);
+      document.getElementById('last-synced').textContent =
+        'Data as of ' + d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) +
+        ' at ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    } else {
+      document.getElementById('last-synced').textContent = 'No sync completed yet';
+    }
+  } catch { document.getElementById('last-synced').textContent = ''; }
+
+  // Load rep dropdown
+  try {
+    const { data } = await apiFetch('/api/dashboard/reps');
+    const sel = document.getElementById('rep-select');
+    data.forEach(r => {
+      const opt = document.createElement('option');
+      opt.value = r.rep_id || '';
+      opt.textContent = r.rep_name;
+      sel.appendChild(opt);
+    });
+  } catch { /* rep dropdown stays at "All Team" only */ }
+
+  // Initial render
+  await renderAll();
+}
+
+init();
+</script>
+</body>
+</html>

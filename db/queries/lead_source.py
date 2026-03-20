@@ -61,6 +61,47 @@ async def get_lead_source_breakdown(
     ]
 
 
+async def get_channel_quality_breakdown(
+    session: AsyncSession,
+    start: date,
+    end: date,
+    date_by: str,
+    rep_id: str | None = None,
+) -> list[dict]:
+    """Lead quality distribution per canonical channel — for the grouped bar chart."""
+    bf = base_filter(start, end, date_by, rep_id)
+
+    result = await session.execute(
+        select(
+            func.coalesce(Opportunity.canonical_channel, "Unknown").label("channel"),
+            func.count(case((Opportunity.lead_quality == "Great", 1))).label("great"),
+            func.count(case((Opportunity.lead_quality == "Ok", 1))).label("ok"),
+            func.count(case((Opportunity.lead_quality == "Barely Passable", 1))).label("barely_passable"),
+            func.count(case((Opportunity.lead_quality == "Bad", 1))).label("bad"),
+            func.count(case((Opportunity.lead_quality == "DQ", 1))).label("dq"),
+            func.count(case((Opportunity.lead_quality.is_(None), 1))).label("not_set"),
+            func.count(Opportunity.id).label("total"),
+        )
+        .where(bf)
+        .group_by(func.coalesce(Opportunity.canonical_channel, "Unknown"))
+        .order_by(func.count(Opportunity.id).desc())
+    )
+
+    return [
+        {
+            "channel": row.channel,
+            "Great": row.great,
+            "Ok": row.ok,
+            "Barely Passable": row.barely_passable,
+            "Bad": row.bad,
+            "DQ": row.dq,
+            "Not Set": row.not_set,
+            "total": row.total,
+        }
+        for row in result.all()
+    ]
+
+
 async def get_qualification_breakdown(
     session: AsyncSession,
     start: date,

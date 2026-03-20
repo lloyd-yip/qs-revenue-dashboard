@@ -5,7 +5,7 @@ table, and computes the rep_compliance_failure flag.
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sync.ghl_client import (
     EXCLUDED_STAGE_IDS,
@@ -96,6 +96,72 @@ def compute_compliance_failure(
     # Both signals must still be stale (Confirmed or unset)
     stale_statuses = {None, "Confirmed", "confirmed"}
     return call1_appointment_status in stale_statuses
+
+
+def compute_outcome_unfilled(
+    call1_appointment_date: datetime | None,
+    call1_appointment_status: str | None,
+) -> bool:
+    """Flag outcome_unfilled: appointment passed + 12h grace, status never updated.
+
+    Broader than rep_compliance_failure — no stage restriction.
+    Catches any opp where the rep failed to log Showed / No Show / Cancelled
+    regardless of which pipeline stage the opp is currently in.
+
+    12-hour grace period: reps are expected to update by 2 AM the following day.
+    """
+    if call1_appointment_date is None:
+        return False
+
+    now_utc = datetime.now(timezone.utc)
+    grace_deadline = call1_appointment_date + timedelta(hours=12)
+    if now_utc <= grace_deadline:
+        return False  # Still within grace period
+
+    stale_statuses = {None, "Confirmed", "confirmed"}
+    return call1_appointment_status in stale_statuses
+
+
+def compute_post_call_note_word_count(
+    notes: list[dict],
+    owner_id: str | None,
+    call1_appointment_date: datetime | None,
+) -> int | None:
+    """Compute word count of rep's best qualifying post-call note.
+
+    Returns:
+        None  — notes check not applicable (no appointment date, or future appt)
+        0     — showed, no qualifying rep note found within 12h window
+        N     — word count of the longest qualifying rep note
+
+    A qualifying note must:
+    - Be created by the rep (userId == owner_id)
+    - Have a dateAdded between call1_appointment_date and call1_appointment_date + 12h
+    """
+    if call1_appointment_date is None or owner_id is None:
+        return None
+
+    assert call1_appointment_date is not None  # narrowed above
+    appt_date: datetime = call1_appointment_date
+    grace_deadline: datetime = appt_date + timedelta(hours=12)
+
+    qualifying: list[int] = []
+    for note in notes:
+        user_id = note.get("userId", "")
+        if user_id != owner_id:
+            continue  # Exclude automation / setter notes
+        date_added_raw = note.get("dateAdded")
+        if not date_added_raw:
+            continue
+        try:
+            date_added: datetime = datetime.fromisoformat(date_added_raw.replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            continue
+        if appt_date <= date_added <= grace_deadline:
+            body_text = note.get("bodyText") or ""
+            qualifying.append(len(body_text.split()))
+
+    return max(qualifying) if qualifying else 0
 
 
 def parse_ghl_datetime(value: str | None) -> datetime | None:

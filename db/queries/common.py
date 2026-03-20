@@ -47,6 +47,30 @@ def base_filter(start: date, end: date, date_by: str, rep_id: str | None = None)
     return and_(*filters)
 
 
+# Minimum word count for a post-call note to be considered compliant
+NOTE_MIN_WORDS = 50
+
+
+def rep_non_compliance_expr():
+    """SQLAlchemy boolean expression: opp has at least one compliance violation.
+
+    TRUE if any of:
+    1. outcome_unfilled — appointment passed 12h, status never updated
+    2. Showed + lead_quality not filled
+    3. Showed + post_call_note_word_count below threshold (or 0 = no note found)
+    """
+    showed = showed_1st_call_expr()
+    return or_(
+        Opportunity.outcome_unfilled.is_(True),
+        and_(showed, Opportunity.lead_quality.is_(None)),
+        and_(
+            showed,
+            Opportunity.post_call_note_word_count.isnot(None),  # notes were checked
+            Opportunity.post_call_note_word_count < NOTE_MIN_WORDS,
+        ),
+    )
+
+
 def has_1st_call(start: date, end: date, date_by: str):
     """Opportunity had a 1st call within the relevant scope.
 

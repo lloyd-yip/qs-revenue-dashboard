@@ -37,10 +37,10 @@ async def get_by_rep(
             Opportunity.opportunity_owner_name.label("rep_name"),
             func.count(case((is_1st, 1))).label("calls_booked_1st"),
             func.count(
-                case((and_(is_1st, showed_1st, ~Opportunity.rep_compliance_failure), 1))
+                case((and_(is_1st, showed_1st, ~Opportunity.outcome_unfilled), 1))
             ).label("shows_1st"),
             func.count(
-                case((and_(is_1st, ~Opportunity.rep_compliance_failure), 1))
+                case((and_(is_1st, ~Opportunity.outcome_unfilled), 1))
             ).label("bookable_1st"),
             func.count(case((is_2nd, 1))).label("calls_booked_2nd"),
             func.count(case((and_(is_2nd, showed_2nd), 1))).label("shows_2nd"),
