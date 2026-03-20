@@ -142,7 +142,7 @@ class GHLClient:
                 fetched_so_far = (page - 1) * settings.ghl_page_size + len(opportunities)
                 logger.info("GHL sync: fetched %d / %d opportunities", fetched_so_far, total)
 
-                if len(opportunities) < settings.ghl_page_size:
+                if len(opportunities) < settings.ghl_page_size or fetched_so_far >= total:
                     # Last page
                     break
 
