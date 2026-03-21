@@ -23,7 +23,7 @@ class SummaryData(BaseModel):
     show_rate_2nd: float | None
     qualification_rate: float | None
     dq_rate: float | None
-    dq_after_call1_rate: float | None
+    dq_after_call2_rate: float | None
     close_rate: float | None
     units_closed: int
     projected_contract_value: float
@@ -48,7 +48,7 @@ class RepMetrics(BaseModel):
     show_rate_2nd: float | None
     qualification_rate: float | None
     dq_rate: float | None
-    dq_after_call1_rate: float | None
+    dq_after_call2_rate: float | None
     close_rate: float | None
     units_closed: int
     projected_contract_value: float

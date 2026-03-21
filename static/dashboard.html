@@ -458,7 +458,7 @@ function renderKPICards(d) {
     <div class="kpi-card"><div class="kpi-label">1st Call Shows</div><div class="kpi-value">${num(d.shows_1st)}</div></div>
     <div class="kpi-card"><div class="kpi-label">Show Rate</div><div class="kpi-value ${rateClass(d.show_rate_1st)}">${pct(d.show_rate_1st)}</div><div class="kpi-sub">No-show: ${pct(d.no_show_rate_1st)}</div></div>
     <div class="kpi-card"><div class="kpi-label">2nd Calls Booked</div><div class="kpi-value">${num(d.calls_booked_2nd)}</div><div class="kpi-sub">Shows: ${num(d.shows_2nd)} (${pct(d.show_rate_2nd)})</div></div>
-    <div class="kpi-card"><div class="kpi-label">Qual Rate</div><div class="kpi-value ${rateClass(d.qualification_rate)}">${pct(d.qualification_rate)}</div><div class="kpi-sub-stack"><span>DQ after call 1: ${pct(d.dq_after_call1_rate)}</span><span>Overall DQ: ${pct(d.dq_rate)}</span></div></div>
+    <div class="kpi-card"><div class="kpi-label">Qual Rate</div><div class="kpi-value ${rateClass(d.qualification_rate)}">${pct(d.qualification_rate)}</div><div class="kpi-sub-stack"><span>DQ after call 2: ${pct(d.dq_after_call2_rate)}</span><span>Overall DQ: ${pct(d.dq_rate)}</span></div></div>
     <div class="kpi-card"><div class="kpi-label">Close Rate</div><div class="kpi-value ${rateClass(d.close_rate)}">${pct(d.close_rate)}</div></div>
     <div class="kpi-card highlight clickable" onclick="showAllClosesModal()"><div class="kpi-label">Units Closed</div><div class="kpi-value">${num(d.units_closed)}</div><div class="kpi-sub">↗ See deals</div></div>
     <div class="kpi-card"><div class="kpi-label">Proj. Contract Value</div><div class="kpi-value" style="font-size:20px;">${money(d.projected_contract_value)}</div><div class="kpi-sub">Rep-estimated</div></div>
