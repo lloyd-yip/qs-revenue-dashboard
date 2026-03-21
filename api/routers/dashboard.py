@@ -150,13 +150,13 @@ async def channel_closes(
     return ChannelClosesResponse(data=data)
 
 
-@router.get("/reps/closes", response_model=ChannelClosesResponse)
-async def rep_closes(
-    rep_id: str = Query(..., description="GHL opportunity owner ID"),
+@router.get("/closes", response_model=ChannelClosesResponse)
+async def closes(
+    rep_id: str | None = Query(None, description="GHL opportunity owner ID — omit for all reps"),
     params: tuple = Depends(_date_params),
     db: AsyncSession = Depends(get_db),
 ):
-    """Closed deals for a specific rep — drill-down popup."""
+    """Closed deals — all reps or a specific rep. Drill-down popup."""
     start, end, date_by = params
     data = await get_rep_closes(db, rep_id, start, end, date_by)
     return ChannelClosesResponse(data=data)

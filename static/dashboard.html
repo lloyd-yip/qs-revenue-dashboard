@@ -460,7 +460,7 @@ function renderKPICards(d) {
     <div class="kpi-card"><div class="kpi-label">2nd Calls Booked</div><div class="kpi-value">${num(d.calls_booked_2nd)}</div><div class="kpi-sub">Shows: ${num(d.shows_2nd)} (${pct(d.show_rate_2nd)})</div></div>
     <div class="kpi-card"><div class="kpi-label">Qual Rate</div><div class="kpi-value ${rateClass(d.qualification_rate)}">${pct(d.qualification_rate)}</div><div class="kpi-sub-stack"><span>DQ after call 1: ${pct(d.dq_after_call1_rate)}</span><span>Overall DQ: ${pct(d.dq_rate)}</span></div></div>
     <div class="kpi-card"><div class="kpi-label">Close Rate</div><div class="kpi-value ${rateClass(d.close_rate)}">${pct(d.close_rate)}</div></div>
-    <div class="kpi-card highlight"><div class="kpi-label">Units Closed</div><div class="kpi-value">${num(d.units_closed)}</div></div>
+    <div class="kpi-card highlight clickable" onclick="showAllClosesModal()"><div class="kpi-label">Units Closed</div><div class="kpi-value">${num(d.units_closed)}</div><div class="kpi-sub">↗ See deals</div></div>
     <div class="kpi-card"><div class="kpi-label">Proj. Contract Value</div><div class="kpi-value" style="font-size:20px;">${money(d.projected_contract_value)}</div><div class="kpi-sub">Rep-estimated</div></div>
   `;
 }
@@ -537,7 +537,7 @@ function renderRepBreakdown(reps) {
       <td class="num ${rateClass(r.show_rate_1st)}">${pct(r.show_rate_1st)}</td>
       <td class="num ${rateClass(r.qualification_rate)}">${pct(r.qualification_rate)}</td>
       <td class="num ${rateClass(r.close_rate)}">${pct(r.close_rate)}</td>
-      <td class="num"><span class="closes-link" onclick="showRepClosesModal('${r.rep_id}','${r.rep_name.replace(/'/g,"\\'")}')">↗ ${num(r.units_closed)}</span></td>
+      <td class="num">${r.rep_id ? `<span class="closes-link" onclick="showRepClosesModal('${r.rep_id}','${r.rep_name.replace(/'/g,"\\'")}')">↗ ${num(r.units_closed)}</span>` : num(r.units_closed)}</td>
       <td class="num ${r.outcome_not_logged_count > 0 ? 'rate-warn' : ''}">${num(r.outcome_not_logged_count)}</td>
     </tr>
   `).join('');
@@ -689,7 +689,7 @@ async function showRepClosesModal(repId, repName) {
   modal.style.display = 'flex';
 
   try {
-    const data = await apiFetch(`/api/dashboard/reps/closes?rep_id=${encodeURIComponent(repId)}&${qs()}`);
+    const data = await apiFetch(`/api/dashboard/closes?rep_id=${encodeURIComponent(repId)}&${qs()}`);
     if (!data.data.length) {
       body.innerHTML = '<div class="empty">No closed deals for this rep in the selected period.</div>';
       return;
@@ -717,11 +717,49 @@ document.getElementById('closes-modal').addEventListener('click', function(e) {
   if (e.target === this) closeClosesModal();
 });
 
+async function showAllClosesModal() {
+  const repLabel = AppState.repId
+    ? (document.querySelector(`#rep-select option[value="${AppState.repId}"]`)?.textContent || 'Rep')
+    : 'All Team';
+  const modal = document.getElementById('closes-modal');
+  const body = document.getElementById('closes-modal-body');
+  document.getElementById('closes-modal-title').textContent = `Closed Deals — ${repLabel}`;
+  body.innerHTML = '<div class="loading">Loading...</div>';
+  modal.style.display = 'flex';
+  try {
+    const repParam = AppState.repId ? `&rep_id=${encodeURIComponent(AppState.repId)}` : '';
+    const data = await apiFetch(`/api/dashboard/closes?${qs()}${repParam}`);
+    if (!data.data.length) {
+      body.innerHTML = '<div class="empty">No closed deals for this period.</div>';
+      return;
+    }
+    const rows = data.data.map(d => `
+      <tr>
+        <td>${d.name}</td>
+        <td>${d.rep}</td>
+        <td>${d.close_date}</td>
+        <td class="num">${d.value !== null ? money(d.value) : '–'}</td>
+      </tr>
+    `).join('');
+    body.innerHTML = `
+      <table>
+        <thead><tr><th>Opportunity</th><th>Closer</th><th>Close Date</th><th class="num">Deal Value</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+  } catch (e) {
+    body.innerHTML = `<div class="empty">Failed to load. ${e.message}</div>`;
+  }
+}
+
 // ─── Tab 3: Compliance ────────────────────────────────────────────────────────
+let _complianceFailures = [];
+
 async function renderCompliance() {
   const repParam = AppState.repId ? `&rep_id=${AppState.repId}` : '';
   try {
     const data = await apiFetch(`/api/dashboard/compliance?${qs()}${repParam}`);
+    _complianceFailures = data.failures;
     renderComplianceKPIs(data.summary);
     renderComplianceByRepChart(data.by_rep);
     renderComplianceTable(data.failures);
@@ -730,57 +768,63 @@ async function renderCompliance() {
   }
 }
 
-let activeComplianceFilter = null;
-
 function renderComplianceKPIs(s) {
   document.getElementById('compliance-kpis').innerHTML = `
-    <div class="kpi-card clickable" id="ckpi-outcome" onclick="filterComplianceTable('outcome_unfilled')">
+    <div class="kpi-card clickable" onclick="showComplianceModal('outcome_unfilled','Call Outcome Not Logged')">
       <div class="kpi-label">Call Outcome Not Logged</div>
       <div class="kpi-value ${s.outcome_unfilled_count > 0 ? 'rate-bad' : 'rate-good'}">${num(s.outcome_unfilled_count)}</div>
       <div class="kpi-sub">${pct(s.outcome_unfilled_rate)} of booked</div></div>
-    <div class="kpi-card clickable" id="ckpi-noncompliance" onclick="filterComplianceTable('non_compliance')">
+    <div class="kpi-card clickable" onclick="showComplianceModal('non_compliance','All Non-Compliant Opps')">
       <div class="kpi-label">Non-Compliant Opps</div>
       <div class="kpi-value ${s.non_compliance_count > 0 ? 'rate-bad' : 'rate-good'}">${num(s.non_compliance_count)}</div>
       <div class="kpi-sub">${pct(s.non_compliance_rate)} of all opps</div></div>
-    <div class="kpi-card clickable" id="ckpi-note" onclick="filterComplianceTable('missing_note')">
+    <div class="kpi-card clickable" onclick="showComplianceModal('missing_note','Missing Post-Call Note')">
       <div class="kpi-label">Missing Post-Call Note</div>
       <div class="kpi-value ${s.note_missing_count > 0 ? 'rate-warn' : 'rate-good'}">${num(s.note_missing_count)}</div>
       <div class="kpi-sub">Showed opps only</div></div>
-    <div class="kpi-card clickable" id="ckpi-qual" onclick="filterComplianceTable('qual_missing')">
+    <div class="kpi-card clickable" onclick="showComplianceModal('qual_missing','Qual Fields Empty')">
       <div class="kpi-label">Qual Fields Empty</div>
       <div class="kpi-value ${s.qual_missing_count > 0 ? 'rate-warn' : 'rate-good'}">${num(s.qual_missing_count)}</div>
       <div class="kpi-sub">Showed opps only</div></div>
   `;
 }
 
-function filterComplianceTable(filter) {
-  const kpiIds = { outcome_unfilled: 'ckpi-outcome', non_compliance: 'ckpi-noncompliance', missing_note: 'ckpi-note', qual_missing: 'ckpi-qual' };
-  // Match the exact strings built in get_compliance_failures()
-  const filterKeywords = {
-    outcome_unfilled: 'Outcome not logged',
-    non_compliance: null,  // show all — table already only contains non-compliant opps
-    missing_note: 'note',   // matches "Note too short" and "No post-call note"
-    qual_missing: 'Qual fields empty',
+function showComplianceModal(filter, title) {
+  const predicates = {
+    outcome_unfilled: f => f.violations.toLowerCase().includes('outcome not logged'),
+    non_compliance: () => true,
+    missing_note: f => f.violations.toLowerCase().includes('note'),
+    qual_missing: f => f.violations.toLowerCase().includes('qual fields empty'),
   };
-  if (activeComplianceFilter === filter) {
-    activeComplianceFilter = null;
-    Object.values(kpiIds).forEach(id => document.getElementById(id)?.classList.remove('active-filter'));
-    if (Charts._complianceTabulator) Charts._complianceTabulator.clearFilter();
+  const filtered = _complianceFailures.filter(predicates[filter] || (() => true));
+
+  const modal = document.getElementById('closes-modal');
+  const body = document.getElementById('closes-modal-body');
+  document.getElementById('closes-modal-title').textContent = title;
+  modal.style.display = 'flex';
+
+  if (!filtered.length) {
+    body.innerHTML = '<div class="empty">No violations in this category for the selected period.</div>';
     return;
   }
-  activeComplianceFilter = filter;
-  Object.entries(kpiIds).forEach(([k, id]) => {
-    document.getElementById(id)?.classList.toggle('active-filter', k === filter);
-  });
-  if (!Charts._complianceTabulator) return;
-  const keyword = filterKeywords[filter];
-  if (keyword) {
-    Charts._complianceTabulator.setFilter('violations', 'like', keyword);
-  } else {
-    Charts._complianceTabulator.clearFilter();
-  }
-  // Scroll to table so the filtered results are visible
-  document.getElementById('compliance-table').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const rows = filtered.map(f => {
+    const id = f.ghl_opportunity_id;
+    const link = `${GHL_BASE}/${id}?tab=Opportunity+Details`;
+    const label = f.opportunity_name || `${id.slice(0, 8)}…`;
+    return `
+      <tr>
+        <td><a class="ghl-link" href="${link}" target="_blank">↗ ${label}</a></td>
+        <td>${f.rep_name}</td>
+        <td>${f.violations}</td>
+      </tr>
+    `;
+  }).join('');
+  body.innerHTML = `
+    <table>
+      <thead><tr><th>Opportunity</th><th>Rep</th><th>Violations</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
 }
 
 function renderComplianceByRepChart(byRep) {

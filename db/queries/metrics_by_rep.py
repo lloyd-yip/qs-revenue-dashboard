@@ -19,17 +19,20 @@ from sync.ghl_client import DEAL_WON_STAGE_ID, DISQUALIFIED_STAGE_ID
 
 async def get_rep_closes(
     session: AsyncSession,
-    rep_id: str,
+    rep_id: str | None,
     start: date,
     end: date,
     date_by: str,
 ) -> list[dict]:
-    """Closed deals for a specific rep — for the drill-down popup.
+    """Closed deals for a specific rep (or all reps when rep_id is None).
 
-    Returns opportunity name, close date (updated_at_ghl), and deal value.
+    Returns opportunity name, closer, close date (updated_at_ghl), and deal value.
     Ordered by close date descending.
     """
     bf = base_filter(start, end, date_by)
+    conditions = [bf, Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID]
+    if rep_id is not None:
+        conditions.append(Opportunity.opportunity_owner_id == rep_id)
 
     result = await session.execute(
         select(
@@ -38,13 +41,7 @@ async def get_rep_closes(
             Opportunity.updated_at_ghl,
             Opportunity.monetary_value,
         )
-        .where(
-            and_(
-                bf,
-                Opportunity.opportunity_owner_id == rep_id,
-                Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID,
-            )
-        )
+        .where(and_(*conditions))
         .order_by(Opportunity.updated_at_ghl.desc())
     )
 
