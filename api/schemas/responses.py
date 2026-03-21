@@ -174,7 +174,8 @@ class ComplianceSummary(BaseModel):
     outcome_unfilled_rate: float | None
     non_compliance_count: int
     non_compliance_rate: float | None
-    note_missing_count: int
+    no_note_count: int
+    low_fidelity_note_count: int
     qual_missing_count: int
 
 

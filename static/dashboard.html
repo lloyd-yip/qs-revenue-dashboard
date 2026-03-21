@@ -778,10 +778,14 @@ function renderComplianceKPIs(s) {
       <div class="kpi-label">Non-Compliant Opps</div>
       <div class="kpi-value ${s.non_compliance_count > 0 ? 'rate-bad' : 'rate-good'}">${num(s.non_compliance_count)}</div>
       <div class="kpi-sub">${pct(s.non_compliance_rate)} of all opps</div></div>
-    <div class="kpi-card clickable" onclick="showComplianceModal('missing_note','Missing Post-Call Note')">
-      <div class="kpi-label">Missing Post-Call Note</div>
-      <div class="kpi-value ${s.note_missing_count > 0 ? 'rate-warn' : 'rate-good'}">${num(s.note_missing_count)}</div>
-      <div class="kpi-sub">Showed opps only</div></div>
+    <div class="kpi-card clickable" onclick="showComplianceModal('no_note','No Post-Call Note')">
+      <div class="kpi-label">No Post-Call Note</div>
+      <div class="kpi-value ${s.no_note_count > 0 ? 'rate-bad' : 'rate-good'}">${num(s.no_note_count)}</div>
+      <div class="kpi-sub">No note within 12h window</div></div>
+    <div class="kpi-card clickable" onclick="showComplianceModal('low_fidelity_note','Note Lacks Fidelity')">
+      <div class="kpi-label">Note Lacks Fidelity</div>
+      <div class="kpi-value ${s.low_fidelity_note_count > 0 ? 'rate-warn' : 'rate-good'}">${num(s.low_fidelity_note_count)}</div>
+      <div class="kpi-sub">Under 50 words</div></div>
     <div class="kpi-card clickable" onclick="showComplianceModal('qual_missing','Qual Fields Empty')">
       <div class="kpi-label">Qual Fields Empty</div>
       <div class="kpi-value ${s.qual_missing_count > 0 ? 'rate-warn' : 'rate-good'}">${num(s.qual_missing_count)}</div>
@@ -793,7 +797,8 @@ function showComplianceModal(filter, title) {
   const predicates = {
     outcome_unfilled: f => f.violations.toLowerCase().includes('outcome not logged'),
     non_compliance: () => true,
-    missing_note: f => f.violations.toLowerCase().includes('note'),
+    no_note: f => f.violations.toLowerCase().includes('no qualifying note'),
+    low_fidelity_note: f => f.violations.toLowerCase().includes('note lacks fidelity'),
     qual_missing: f => f.violations.toLowerCase().includes('qual fields empty'),
   };
   const filtered = _complianceFailures.filter(predicates[filter] || (() => true));

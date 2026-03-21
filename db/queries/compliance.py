@@ -43,11 +43,22 @@ async def get_compliance_summary(
                     and_(
                         showed,
                         Opportunity.post_call_note_word_count.isnot(None),
+                        Opportunity.post_call_note_word_count == 0,
+                    ),
+                    1,
+                ))
+            ).label("no_note_count"),
+            func.count(
+                case((
+                    and_(
+                        showed,
+                        Opportunity.post_call_note_word_count.isnot(None),
+                        Opportunity.post_call_note_word_count > 0,
                         Opportunity.post_call_note_word_count < NOTE_MIN_WORDS,
                     ),
                     1,
                 ))
-            ).label("note_missing_count"),
+            ).label("low_fidelity_note_count"),
             func.count(
                 case((and_(showed, Opportunity.lead_quality.is_(None)), 1))
             ).label("qual_missing_count"),
@@ -63,7 +74,8 @@ async def get_compliance_summary(
         "outcome_unfilled_rate": safe_rate(row.outcome_unfilled_count, row.total_booked),
         "non_compliance_count": row.non_compliance_count,
         "non_compliance_rate": safe_rate(row.non_compliance_count, row.total_opps),
-        "note_missing_count": row.note_missing_count,
+        "no_note_count": row.no_note_count,
+        "low_fidelity_note_count": row.low_fidelity_note_count,
         "qual_missing_count": row.qual_missing_count,
     }
 
