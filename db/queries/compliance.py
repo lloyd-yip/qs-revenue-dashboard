@@ -143,7 +143,7 @@ async def get_compliance_failures(
             violations.append("Qual fields empty")
         if row.post_call_note_word_count is not None and row.post_call_note_word_count < NOTE_MIN_WORDS:
             wc = row.post_call_note_word_count
-            violations.append(f"Note too short ({wc} words)" if wc > 0 else "No post-call note")
+            violations.append(f"Note lacks fidelity ({wc} words)" if wc > 0 else "No post-call note")
 
         rows.append({
             "ghl_opportunity_id": row.ghl_opportunity_id,

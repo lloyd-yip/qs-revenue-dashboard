@@ -101,7 +101,10 @@ _STATIC_DIR = Path(__file__).parent.parent / "static"
 
 @app.get("/", include_in_schema=False)
 async def serve_dashboard():
-    return FileResponse(_STATIC_DIR / "dashboard.html")
+    return FileResponse(
+        _STATIC_DIR / "dashboard.html",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+    )
 
 
 # Health check is exempt from auth — Railway uses it without credentials
