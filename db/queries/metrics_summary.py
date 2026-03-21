@@ -59,16 +59,13 @@ async def get_summary(
             func.count(
                 case((and_(is_1st, showed_1st, Opportunity.lead_quality.isnot(None)), 1))
             ).label("shows_with_quality_filled"),
-            # DQ'd (1st call shows only)
+            # DQ'd (1st call shows only — explicit rep signal only, not pipeline stage)
             func.count(
                 case((
                     and_(
                         is_1st,
                         showed_1st,
-                        or_(
-                            Opportunity.lead_quality == "DQ",
-                            Opportunity.pipeline_stage_id == DISQUALIFIED_STAGE_ID,
-                        ),
+                        Opportunity.lead_quality == "DQ",
                     ),
                     1,
                 ))

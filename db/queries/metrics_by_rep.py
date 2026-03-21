@@ -97,10 +97,7 @@ async def get_by_rep(
                     and_(
                         is_1st,
                         showed_1st,
-                        or_(
-                            Opportunity.lead_quality == "DQ",
-                            Opportunity.pipeline_stage_id == DISQUALIFIED_STAGE_ID,
-                        ),
+                        Opportunity.lead_quality == "DQ",
                     ),
                     1,
                 ))
@@ -132,10 +129,7 @@ async def get_by_rep(
                     and_(
                         is_1st,
                         showed_1st,
-                        or_(
-                            Opportunity.lead_quality == "DQ",
-                            Opportunity.pipeline_stage_id == DISQUALIFIED_STAGE_ID,
-                        ),
+                        Opportunity.lead_quality == "DQ",
                         Opportunity.call2_appointment_date.isnot(None),
                     ),
                     1,
