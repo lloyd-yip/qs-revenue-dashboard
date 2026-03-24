@@ -211,3 +211,16 @@ class ClosedDealRow(BaseModel):
 
 class ChannelClosesResponse(BaseModel):
     data: list[ClosedDealRow]
+
+
+class RepOppRow(BaseModel):
+    name: str
+    ghl_opportunity_id: str
+    appt_date: str
+    stage: str
+    rep: str
+    status: str
+
+
+class RepOppsResponse(BaseModel):
+    data: list[RepOppRow]

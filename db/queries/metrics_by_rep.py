@@ -56,6 +56,54 @@ async def get_rep_closes(
     ]
 
 
+async def get_rep_opps(
+    session: AsyncSession,
+    rep_id: str | None,
+    opp_type: str,  # "booked" | "showed"
+    start: date,
+    end: date,
+    date_by: str,
+) -> list[dict]:
+    """Booked or showed 1st-call opps for a rep (drill-down modal).
+
+    opp_type='booked' → all opps with a 1st call in range
+    opp_type='showed' → subset that actually showed
+    """
+    bf = base_filter(start, end, date_by, rep_id)
+    is_1st = has_1st_call(start, end, date_by)
+
+    if opp_type == "showed":
+        showed_1st = showed_1st_call_expr()
+        row_filter = and_(bf, is_1st, showed_1st)
+    else:
+        row_filter = and_(bf, is_1st)
+
+    result = await session.execute(
+        select(
+            Opportunity.opportunity_name,
+            Opportunity.ghl_opportunity_id,
+            Opportunity.call1_appointment_date,
+            Opportunity.pipeline_stage_name,
+            Opportunity.opportunity_owner_name,
+            Opportunity.call1_appointment_status,
+        )
+        .where(row_filter)
+        .order_by(Opportunity.call1_appointment_date.desc())
+    )
+
+    return [
+        {
+            "name": row.opportunity_name or "—",
+            "ghl_opportunity_id": row.ghl_opportunity_id,
+            "appt_date": row.call1_appointment_date.strftime("%b %d, %Y") if row.call1_appointment_date else "—",
+            "stage": row.pipeline_stage_name or "—",
+            "rep": row.opportunity_owner_name or "Unassigned",
+            "status": row.call1_appointment_status or "—",
+        }
+        for row in result.all()
+    ]
+
+
 async def get_by_rep(
     session: AsyncSession,
     start: date,

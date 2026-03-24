@@ -529,18 +529,30 @@ function renderRepBreakdown(reps) {
     document.getElementById('rep-table-view').innerHTML = '<div class="empty">No rep data for this period.</div>';
     return;
   }
-  const rows = reps.map(r => `
+  const rows = reps.map(r => {
+    const n = r.rep_name.replace(/'/g, "\\'");
+    const rid = r.rep_id;
+    const bookedCell = rid
+      ? `<span class="closes-link" onclick="showRepOppsModal('${rid}','${n}','booked')">↗ ${num(r.calls_booked_1st)}</span>`
+      : num(r.calls_booked_1st);
+    const showedCell = rid
+      ? `<span class="closes-link" onclick="showRepOppsModal('${rid}','${n}','showed')">↗ ${num(r.shows_1st)}</span>`
+      : num(r.shows_1st);
+    const closedCell = rid
+      ? `<span class="closes-link" onclick="showRepClosesModal('${rid}','${n}')">↗ ${num(r.units_closed)}</span>`
+      : num(r.units_closed);
+    return `
     <tr>
       <td>${r.rep_name}</td>
-      <td class="num">${num(r.calls_booked_1st)}</td>
-      <td class="num">${num(r.shows_1st)}</td>
+      <td class="num">${bookedCell}</td>
+      <td class="num">${showedCell}</td>
       <td class="num ${rateClass(r.show_rate_1st)}">${pct(r.show_rate_1st)}</td>
       <td class="num ${rateClass(r.qualification_rate)}">${pct(r.qualification_rate)}</td>
       <td class="num ${rateClass(r.close_rate)}">${pct(r.close_rate)}</td>
-      <td class="num">${r.rep_id ? `<span class="closes-link" onclick="showRepClosesModal('${r.rep_id}','${r.rep_name.replace(/'/g,"\\'")}')">↗ ${num(r.units_closed)}</span>` : num(r.units_closed)}</td>
+      <td class="num">${closedCell}</td>
       <td class="num ${r.outcome_not_logged_count > 0 ? 'rate-warn' : ''}">${num(r.outcome_not_logged_count)}</td>
-    </tr>
-  `).join('');
+    </tr>`;
+  }).join('');
   document.getElementById('rep-table-view').innerHTML = `
     <table>
       <thead><tr><th>Rep</th><th class="num">Booked</th><th class="num">Showed</th><th class="num">Show Rate</th><th class="num">Qual Rate</th><th class="num">Close Rate</th><th class="num">Closed</th><th class="num">Not Logged</th></tr></thead>
@@ -707,6 +719,39 @@ async function showRepClosesModal(repId, repName) {
         <tbody>${rows}</tbody>
       </table>
     `;
+  } catch (e) {
+    body.innerHTML = `<div class="empty">Failed to load. ${e.message}</div>`;
+  }
+}
+
+async function showRepOppsModal(repId, repName, oppType) {
+  const modal = document.getElementById('closes-modal');
+  const body = document.getElementById('closes-modal-body');
+  const title = document.getElementById('closes-modal-title');
+  const typeLabel = oppType === 'showed' ? 'Shows' : 'Bookings';
+  title.textContent = `${typeLabel} — ${repName}`;
+  body.innerHTML = '<div class="loading">Loading...</div>';
+  modal.style.display = 'flex';
+  try {
+    const data = await apiFetch(`/api/dashboard/rep/opps?opp_type=${oppType}&rep_id=${encodeURIComponent(repId)}&${qs()}`);
+    if (!data.data.length) {
+      body.innerHTML = `<div class="empty">No ${typeLabel.toLowerCase()} for this rep in the selected period.</div>`;
+      return;
+    }
+    const isShowed = oppType === 'showed';
+    const rows = data.data.map(d => `
+      <tr>
+        <td><a class="ghl-link" href="${GHL_BASE}/${d.ghl_opportunity_id}?tab=Opportunity+Details" target="_blank">↗ ${d.name}</a></td>
+        <td>${d.appt_date}</td>
+        ${isShowed ? `<td>${d.status}</td>` : ''}
+        <td>${d.stage}</td>
+      </tr>`).join('');
+    const extraHeader = isShowed ? '<th>Status</th>' : '';
+    body.innerHTML = `
+      <table>
+        <thead><tr><th>Opportunity</th><th>Appt Date</th>${extraHeader}<th>Stage</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
   } catch (e) {
     body.innerHTML = `<div class="empty">Failed to load. ${e.message}</div>`;
   }
