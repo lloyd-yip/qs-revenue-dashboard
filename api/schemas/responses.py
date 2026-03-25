@@ -250,3 +250,16 @@ class RepOppRow(BaseModel):
 
 class RepOppsResponse(BaseModel):
     data: list[RepOppRow]
+
+
+class DailyActivityRow(BaseModel):
+    day: str              # ISO date string YYYY-MM-DD
+    booked: int
+    showed: int
+    show_rate: float | None
+    qual: int
+    qual_rate: float | None
+
+
+class DailyActivityResponse(BaseModel):
+    data: list[DailyActivityRow]

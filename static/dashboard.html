@@ -242,6 +242,13 @@
       <canvas id="chart-rep" style="max-height:300px;"></canvas>
     </div>
   </div>
+
+  <div class="data-table-wrap" style="margin-top:16px;">
+    <div class="section-header" style="padding: 14px 16px 0;">
+      <h3>7-Day Activity <span style="font-size:11px; font-weight:400; color:var(--text2);">(rolling last 7 days · uses rep filter)</span></h3>
+    </div>
+    <div id="daily-activity-view"><div class="loading">Loading...</div></div>
+  </div>
 </div>
 
 <!-- TAB: Lead Quality by Channel -->
@@ -454,6 +461,45 @@ async function renderSales() {
   } catch (e) {
     document.getElementById('kpi-cards').innerHTML = `<div class="empty">Failed to load data. ${e.message}</div>`;
   }
+  renderDailyActivity();
+}
+
+async function renderDailyActivity() {
+  const el = document.getElementById('daily-activity-view');
+  el.innerHTML = '<div class="loading">Loading...</div>';
+  const repParam = AppState.repId ? `?rep_id=${encodeURIComponent(AppState.repId)}` : '';
+  try {
+    const data = await apiFetch(`/api/dashboard/daily-activity${repParam}`);
+    if (!data.data.length) {
+      el.innerHTML = '<div class="empty">No appointments in the last 7 days.</div>';
+      return;
+    }
+    const rows = data.data.map(d => {
+      const dayLabel = new Date(d.day + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+      return `<tr>
+        <td>${dayLabel}</td>
+        <td class="num">${num(d.booked)}</td>
+        <td class="num">${num(d.showed)}</td>
+        <td class="num ${rateClass(d.show_rate)}">${pct(d.show_rate)}</td>
+        <td class="num">${num(d.qual)}</td>
+        <td class="num ${rateClass(d.qual_rate)}">${pct(d.qual_rate)}</td>
+      </tr>`;
+    }).join('');
+    el.innerHTML = `
+      <table>
+        <thead><tr>
+          <th>Date</th>
+          <th class="num">Booked</th>
+          <th class="num">Showed</th>
+          <th class="num">Show Rate</th>
+          <th class="num">Qual Calls</th>
+          <th class="num">Qual Rate</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  } catch (e) {
+    el.innerHTML = `<div class="empty">Failed to load. ${e.message}</div>`;
+  }
 }
 
 function renderKPICards(d) {
@@ -554,7 +600,11 @@ function renderRepBreakdown(reps) {
       <td class="num ${rateClass(r.qualification_rate)}">${pct(r.qualification_rate)}</td>
       <td class="num ${rateClass(r.close_rate)}">${pct(r.close_rate)}</td>
       <td class="num">${closedCell}</td>
-      <td class="num ${r.outcome_not_logged_count > 0 ? 'rate-warn' : ''}">${num(r.outcome_not_logged_count)}</td>
+      <td class="num ${r.outcome_not_logged_count > 0 ? 'rate-warn' : ''}">
+        ${rid && r.outcome_not_logged_count > 0
+          ? `<span class="closes-link" onclick="showRepOppsModal('${rid}','${n}','not_logged')">↗ ${num(r.outcome_not_logged_count)}</span>`
+          : num(r.outcome_not_logged_count)}
+      </td>
     </tr>`;
   }).join('');
   document.getElementById('rep-table-view').innerHTML = `
@@ -732,7 +782,7 @@ async function showRepOppsModal(repId, repName, oppType) {
   const modal = document.getElementById('closes-modal');
   const body = document.getElementById('closes-modal-body');
   const title = document.getElementById('closes-modal-title');
-  const typeLabel = oppType === 'showed' ? 'Shows' : 'Bookings';
+  const typeLabel = oppType === 'showed' ? 'Shows' : oppType === 'not_logged' ? 'Outcome Not Logged' : 'Bookings';
   title.textContent = `${typeLabel} — ${repName}`;
   body.innerHTML = '<div class="loading">Loading...</div>';
   modal.style.display = 'flex';

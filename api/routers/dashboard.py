@@ -17,6 +17,7 @@ from api.schemas.responses import (
     ChannelClosesResponse,
     ChannelQualityResponse,
     ComplianceResponse,
+    DailyActivityResponse,
     LateViolationResponse,
     LeadSourceResponse,
     MetaMixin,
@@ -40,7 +41,7 @@ from db.queries.lead_source import (
     get_lead_source_breakdown,
     get_qualification_breakdown,
 )
-from db.queries.metrics_by_rep import get_by_rep, get_rep_closes, get_rep_opps
+from db.queries.metrics_by_rep import get_by_rep, get_daily_activity, get_rep_closes, get_rep_opps
 from db.queries.metrics_summary import get_summary
 from db.queries.reps import get_reps
 from db.queries.time_series import get_time_series
@@ -220,3 +221,13 @@ async def compliance_late_violations(
     """Individual opp rows for the late-violation drill-down modal."""
     data = await get_rep_late_violations(db, rep_name)
     return LateViolationResponse(data=data)
+
+
+@router.get("/daily-activity", response_model=DailyActivityResponse)
+async def daily_activity(
+    rep_id: str | None = Query(None, description="GHL opportunity owner ID — omit for team total"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Day-by-day booked / showed / qual for the last 7 calendar days."""
+    data = await get_daily_activity(db, rep_id)
+    return DailyActivityResponse(data=data)

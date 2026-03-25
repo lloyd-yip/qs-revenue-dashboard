@@ -1,6 +1,6 @@
 """Per-rep metric queries — returns all reps in a single query."""
 
-from datetime import date
+from datetime import date, timedelta
 
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -59,15 +59,16 @@ async def get_rep_closes(
 async def get_rep_opps(
     session: AsyncSession,
     rep_id: str | None,
-    opp_type: str,  # "booked" | "showed"
+    opp_type: str,  # "booked" | "showed" | "not_logged"
     start: date,
     end: date,
     date_by: str,
 ) -> list[dict]:
-    """Booked or showed 1st-call opps for a rep (drill-down modal).
+    """Booked, showed, or outcome-unfilled 1st-call opps for a rep (drill-down modal).
 
-    opp_type='booked' → all opps with a 1st call in range
-    opp_type='showed' → subset that actually showed
+    opp_type='booked'     → all opps with a 1st call in range
+    opp_type='showed'     → subset that actually showed
+    opp_type='not_logged' → opps where rep never logged the call outcome
     """
     bf = base_filter(start, end, date_by, rep_id)
     is_1st = has_1st_call(start, end, date_by)
@@ -75,6 +76,8 @@ async def get_rep_opps(
     if opp_type == "showed":
         showed_1st = showed_1st_call_expr()
         row_filter = and_(bf, is_1st, showed_1st)
+    elif opp_type == "not_logged":
+        row_filter = and_(bf, is_1st, Opportunity.outcome_unfilled.is_(True))
     else:
         row_filter = and_(bf, is_1st)
 
@@ -194,7 +197,7 @@ async def get_by_rep(
     )
 
     def safe_rate(num: int, den: int) -> float | None:
-        return round(num / den, 4) if den else None
+        return round(num / den, 4) if den else None  # type: ignore[call-overload]
 
     return [
         {
@@ -216,6 +219,65 @@ async def get_by_rep(
             "total_shows": row.total_shows,
             "compliance_failures": row.compliance_failures,
             "outcome_not_logged_count": row.outcome_not_logged_count,
+        }
+        for row in result.all()
+    ]
+
+
+async def get_daily_activity(
+    session: AsyncSession,
+    rep_id: str | None = None,
+) -> list[dict]:
+    """Day-by-day booked / showed / qual counts for the last 7 calendar days.
+
+    Always returns the rolling 7 days regardless of the main date-range filter.
+    Accepts an optional rep_id to scope to a single rep.
+    """
+    today = date.today()
+    seven_days_ago = today - timedelta(days=6)  # 7 days inclusive
+
+    showed_1st = showed_1st_call_expr()
+
+    conditions = [
+        Opportunity.is_excluded.is_(False),
+        Opportunity.call1_appointment_date.isnot(None),
+        func.date(Opportunity.call1_appointment_date) >= seven_days_ago,
+        func.date(Opportunity.call1_appointment_date) <= today,
+    ]
+    if rep_id:
+        conditions.append(Opportunity.opportunity_owner_id == rep_id)
+
+    result = await session.execute(
+        select(
+            func.date(Opportunity.call1_appointment_date).label("day"),
+            func.count(Opportunity.id).label("booked"),
+            func.count(case((showed_1st, 1))).label("showed"),
+            func.count(
+                case((
+                    and_(
+                        showed_1st,
+                        Opportunity.lead_quality.in_(QUALIFIED_LEAD_QUALITY),
+                    ),
+                    1,
+                ))
+            ).label("qual"),
+        )
+        .where(and_(*conditions))
+        .group_by(func.date(Opportunity.call1_appointment_date))
+        .order_by(func.date(Opportunity.call1_appointment_date))
+    )
+
+    def safe_rate(num: int, den: int) -> float | None:
+        return round(float(num) / den, 4) if den else None  # type: ignore[call-overload]
+
+    return [
+        {
+            "day": row.day.isoformat() if hasattr(row.day, "isoformat") else str(row.day),
+            "booked": row.booked,
+            "showed": row.showed,
+            "show_rate": safe_rate(row.showed, row.booked),
+            "qual": row.qual,
+            "qual_rate": safe_rate(row.qual, row.showed),
         }
         for row in result.all()
     ]
