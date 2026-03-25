@@ -229,6 +229,13 @@
     </div>
   </div>
 
+  <div class="data-table-wrap" style="margin-bottom:16px;">
+    <div class="section-header" style="padding: 14px 16px 0;">
+      <h3>7-Day Activity <span style="font-size:11px; font-weight:400; color:var(--text2);">(rolling last 7 days · uses rep filter)</span></h3>
+    </div>
+    <div id="daily-activity-view"><div class="loading">Loading...</div></div>
+  </div>
+
   <div class="data-table-wrap">
     <div class="section-header" style="padding: 14px 16px 0;">
       <h3>Rep Breakdown</h3>
@@ -241,13 +248,6 @@
     <div id="rep-chart-view" style="display:none; padding: 16px;">
       <canvas id="chart-rep" style="max-height:300px;"></canvas>
     </div>
-  </div>
-
-  <div class="data-table-wrap" style="margin-top:16px;">
-    <div class="section-header" style="padding: 14px 16px 0;">
-      <h3>7-Day Activity <span style="font-size:11px; font-weight:400; color:var(--text2);">(rolling last 7 days · uses rep filter)</span></h3>
-    </div>
-    <div id="daily-activity-view"><div class="loading">Loading...</div></div>
   </div>
 </div>
 
@@ -591,7 +591,7 @@ function renderRepBreakdown(reps) {
     const closedCell = rid
       ? `<span class="closes-link" onclick="showRepClosesModal('${rid}','${n}')">↗ ${num(r.units_closed)}</span>`
       : num(r.units_closed);
-    const notLoggedCell = (rid && r.outcome_not_logged_count > 0)
+    const notLoggedCell = rid
       ? `<span class="closes-link" onclick="showRepOppsModal('${rid}','${n}','not_logged')">↗ ${num(r.outcome_not_logged_count)}</span>`
       : num(r.outcome_not_logged_count);
     return `
