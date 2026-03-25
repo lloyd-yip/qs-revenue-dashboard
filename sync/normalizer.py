@@ -136,14 +136,18 @@ def compute_post_call_note_word_count(
 
     A qualifying note must:
     - Be created by the rep (userId == owner_id)
-    - Have a dateAdded between call1_appointment_date and call1_appointment_date + 12h
+    - Have a dateAdded between call1_appointment_date and call1_appointment_date + 72h
+
+    72h window (not 12h) because appointment dates are stored as date-only (midnight UTC),
+    meaning the window would effectively end at noon UTC the same day — far too narrow.
+    72h gives reps up to ~3 days and still clearly associates the note with the appointment.
     """
     if call1_appointment_date is None or owner_id is None:
         return None
 
     assert call1_appointment_date is not None  # narrowed above
     appt_date: datetime = call1_appointment_date
-    grace_deadline: datetime = appt_date + timedelta(hours=12)
+    grace_deadline: datetime = appt_date + timedelta(hours=72)
 
     qualifying: list[int] = []
     for note in notes:
