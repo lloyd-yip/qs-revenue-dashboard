@@ -1,12 +1,14 @@
 """Compliance failure detail queries."""
 
-from datetime import date
+from datetime import date, timedelta
 
-from sqlalchemy import and_, case, func, select
+from sqlalchemy import and_, case, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Opportunity
 from db.queries.common import NOTE_MIN_WORDS, rep_non_compliance_expr, showed_1st_call_expr
+
+GRACE_HOURS = 12  # hours after appointment before outcome_unfilled is flagged
 
 
 async def get_compliance_summary(
@@ -151,9 +153,12 @@ async def get_compliance_failures(
         violations = []
         if row.outcome_unfilled:
             violations.append("Outcome not logged")
-        if row.lead_quality is None:
+        # Qual and note violations only apply to opps that actually showed —
+        # no-shows don't need qual fields filled or a post-call note
+        actually_showed = row.call1_appointment_status == "Showed"
+        if actually_showed and row.lead_quality is None:
             violations.append("Qual fields empty")
-        if row.post_call_note_word_count is not None and row.post_call_note_word_count < NOTE_MIN_WORDS:
+        if actually_showed and row.post_call_note_word_count is not None and row.post_call_note_word_count < NOTE_MIN_WORDS:
             wc = row.post_call_note_word_count
             violations.append(f"Note lacks fidelity ({wc} words)" if wc > 0 else "No qualifying note found")
 
@@ -169,4 +174,111 @@ async def get_compliance_failures(
             "violations": ", ".join(violations),
         })
 
+    return rows
+
+
+async def get_rep_late_rates(
+    session: AsyncSession,
+) -> list[dict]:
+    """Per-rep late-logging rate — how often reps take >12h to log call outcomes.
+
+    Uses outcome_unfilled_first_flagged_at (ever flagged) and
+    outcome_unfilled_resolved_at (when resolved) to compute:
+      - total_flagged: opps that were ever flagged
+      - resolved_late: opps resolved more than GRACE_HOURS after appointment
+      - late_rate: resolved_late / total_flagged
+      - avg_hours_late: average delay beyond the grace deadline
+    """
+    result = await session.execute(
+        select(
+            Opportunity.opportunity_owner_name.label("rep_name"),
+            func.count(
+                case((Opportunity.outcome_unfilled_first_flagged_at.isnot(None), 1))
+            ).label("total_flagged"),
+            func.count(
+                case((
+                    and_(
+                        Opportunity.outcome_unfilled_resolved_at.isnot(None),
+                        Opportunity.call1_appointment_date.isnot(None),
+                        # resolved more than GRACE_HOURS after appointment (using epoch seconds)
+                        func.extract(
+                            "epoch",
+                            Opportunity.outcome_unfilled_resolved_at - Opportunity.call1_appointment_date,
+                        ) > GRACE_HOURS * 3600,
+                    ),
+                    1,
+                ))
+            ).label("resolved_late"),
+            func.avg(
+                case((
+                    and_(
+                        Opportunity.outcome_unfilled_resolved_at.isnot(None),
+                        Opportunity.call1_appointment_date.isnot(None),
+                    ),
+                    func.extract(
+                        "epoch",
+                        Opportunity.outcome_unfilled_resolved_at
+                        - Opportunity.call1_appointment_date
+                    ) / 3600.0 - GRACE_HOURS,
+                ))
+            ).label("avg_hours_late"),
+        )
+        .where(Opportunity.outcome_unfilled_first_flagged_at.isnot(None))
+        .group_by(Opportunity.opportunity_owner_name)
+        .order_by(func.count(
+            case((Opportunity.outcome_unfilled_first_flagged_at.isnot(None), 1))
+        ).desc())
+    )
+
+    rows = []
+    for row in result.all():
+        total = row.total_flagged or 0
+        late = row.resolved_late or 0
+        rows.append({
+            "rep_name": row.rep_name or "Unassigned",
+            "total_flagged": total,
+            "resolved_late": late,
+            "late_rate": round(late / total, 4) if total else None,
+            "avg_hours_late": round(float(row.avg_hours_late), 1) if row.avg_hours_late else None,
+        })
+    return rows
+
+
+async def get_rep_late_violations(
+    session: AsyncSession,
+    rep_name: str | None = None,
+) -> list[dict]:
+    """Individual opp rows for the late-violation drill-down modal."""
+    conditions = [Opportunity.outcome_unfilled_first_flagged_at.isnot(None)]
+    if rep_name:
+        conditions.append(Opportunity.opportunity_owner_name == rep_name)
+
+    result = await session.execute(
+        select(
+            Opportunity.opportunity_name,
+            Opportunity.ghl_opportunity_id,
+            Opportunity.opportunity_owner_name,
+            Opportunity.call1_appointment_date,
+            Opportunity.outcome_unfilled_first_flagged_at,
+            Opportunity.outcome_unfilled_resolved_at,
+        )
+        .where(and_(*conditions))
+        .order_by(Opportunity.outcome_unfilled_first_flagged_at.desc())
+    )
+
+    rows = []
+    for row in result.all():
+        hours_late = None
+        if row.outcome_unfilled_resolved_at and row.call1_appointment_date:
+            delta = (row.outcome_unfilled_resolved_at - row.call1_appointment_date).total_seconds() / 3600
+            hours_late = round(max(0.0, delta - GRACE_HOURS), 1)
+        rows.append({
+            "opportunity_name": row.opportunity_name,
+            "ghl_opportunity_id": row.ghl_opportunity_id,
+            "rep_name": row.opportunity_owner_name or "Unassigned",
+            "appt_date": row.call1_appointment_date.strftime("%b %d, %Y") if row.call1_appointment_date else "—",
+            "first_flagged_at": row.outcome_unfilled_first_flagged_at.strftime("%b %d %H:%M UTC") if row.outcome_unfilled_first_flagged_at else "—",
+            "resolved_at": row.outcome_unfilled_resolved_at.strftime("%b %d %H:%M UTC") if row.outcome_unfilled_resolved_at else "Still unresolved",
+            "hours_late": hours_late,
+        })
     return rows

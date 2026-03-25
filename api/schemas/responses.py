@@ -186,6 +186,32 @@ class ComplianceResponse(BaseModel):
     meta: MetaMixin
 
 
+class RepLateRow(BaseModel):
+    rep_name: str
+    total_flagged: int        # opps ever flagged as outcome_unfilled
+    resolved_late: int        # flagged opps that were resolved after the 12h grace
+    late_rate: float | None   # resolved_late / total_flagged
+    avg_hours_late: float | None  # average hours between appt + 12h grace and resolution
+
+
+class RepLateResponse(BaseModel):
+    data: list[RepLateRow]
+
+
+class LateViolationRow(BaseModel):
+    opportunity_name: str | None
+    ghl_opportunity_id: str
+    rep_name: str
+    appt_date: str
+    first_flagged_at: str
+    resolved_at: str | None
+    hours_late: float | None
+
+
+class LateViolationResponse(BaseModel):
+    data: list[LateViolationRow]
+
+
 class ChannelQualityRow(BaseModel):
     channel: str
     great: int

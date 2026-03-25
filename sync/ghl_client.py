@@ -24,11 +24,11 @@ TEMP_RYAN_STAGE_PREFIX = "Temp Ryan"
 SHOWED_STAGE_IDS = {
     "45a0608f-7648-4509-8f3a-d93b21cc9d41",  # 1st Call Done
     "10e6b1ef-0685-4f73-b3c7-b5006b7bc311",  # 2nd Call Done (In Prog)
-    # Warm List, Hot List — IDs to be confirmed; match by name as fallback
     "544b178f-d1f2-4186-a8c2-00c3b0eeefe8",  # Deal Won
-    "62448525-88ab-4e82-b414-b6880e69e2de",  # Disqualified
     "80cba97d-2f60-4485-8953-4b9569b1ddc1",  # Deal Lost
     "38aac258-cb3d-447a-828c-03b623ee5d05",  # FU Call Ghost
+    # Disqualified intentionally excluded — DQ can happen after a no-show,
+    # so stage alone is not a reliable "showed" signal. Use call1_appointment_status.
 }
 
 # Upcoming 1st Call Booked stage ID — used for compliance flag detection

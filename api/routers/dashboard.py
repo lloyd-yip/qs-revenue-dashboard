@@ -17,15 +17,23 @@ from api.schemas.responses import (
     ChannelClosesResponse,
     ChannelQualityResponse,
     ComplianceResponse,
+    LateViolationResponse,
     LeadSourceResponse,
     MetaMixin,
     QualificationResponse,
+    RepLateResponse,
     RepOppsResponse,
     RepsResponse,
     SummaryResponse,
     TimeSeriesResponse,
 )
-from db.queries.compliance import get_compliance_by_rep, get_compliance_failures, get_compliance_summary
+from db.queries.compliance import (
+    get_compliance_by_rep,
+    get_compliance_failures,
+    get_compliance_summary,
+    get_rep_late_rates,
+    get_rep_late_violations,
+)
 from db.queries.lead_source import (
     get_channel_closes,
     get_channel_quality_breakdown,
@@ -193,3 +201,22 @@ async def compliance(
         failures=failures,
         meta=_meta(start, end, date_by),
     )
+
+
+@router.get("/compliance/late-rates", response_model=RepLateResponse)
+async def compliance_late_rates(
+    db: AsyncSession = Depends(get_db),
+):
+    """Per-rep late-logging rates — how often reps take >12h to log call outcomes."""
+    data = await get_rep_late_rates(db)
+    return RepLateResponse(data=data)
+
+
+@router.get("/compliance/late-violations", response_model=LateViolationResponse)
+async def compliance_late_violations(
+    rep_name: str | None = Query(None, description="Filter to a specific rep by name"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Individual opp rows for the late-violation drill-down modal."""
+    data = await get_rep_late_violations(db, rep_name)
+    return LateViolationResponse(data=data)

@@ -116,6 +116,12 @@ class Opportunity(Base):
     # N     = word count of the longest qualifying rep note found
     post_call_note_word_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    # Compliance history timestamps
+    # Set when outcome_unfilled first becomes True — never cleared
+    outcome_unfilled_first_flagged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Set when outcome_unfilled transitions True → False (rep fixed it)
+    outcome_unfilled_resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     # GHL timestamps
     created_at_ghl: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     updated_at_ghl: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

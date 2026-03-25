@@ -215,16 +215,44 @@ async def run_sync(sync_type: str = "incremental") -> dict:
             try:
                 row = await _build_opportunity_row(raw_opp, normalization_map, ghl_client, user_map)
 
-                # PostgreSQL upsert — idempotent on ghl_opportunity_id
+                # PostgreSQL upsert — idempotent on ghl_opportunity_id.
+                # Exclude compliance history columns — they are managed by the
+                # conditional UPDATE below, not overwritten on every sync.
+                history_cols = {"outcome_unfilled_first_flagged_at", "outcome_unfilled_resolved_at"}
                 stmt = (
                     pg_insert(Opportunity)
                     .values(**row)
                     .on_conflict_do_update(
                         index_elements=["ghl_opportunity_id"],
-                        set_={k: v for k, v in row.items() if k != "ghl_opportunity_id"},
+                        set_={k: v for k, v in row.items() if k not in {"ghl_opportunity_id"} | history_cols},
                     )
                 )
                 await session.execute(stmt)
+
+                # Compliance history: track when outcome_unfilled was first set and when resolved.
+                # - first_flagged_at: set once when outcome_unfilled first becomes TRUE
+                # - resolved_at: set once when outcome_unfilled transitions TRUE → FALSE
+                # Both use CASE logic so they are never overwritten after being set.
+                await session.execute(
+                    text("""
+                        UPDATE opportunities SET
+                            outcome_unfilled_first_flagged_at = CASE
+                                WHEN outcome_unfilled = TRUE AND outcome_unfilled_first_flagged_at IS NULL
+                                THEN :now
+                                ELSE outcome_unfilled_first_flagged_at
+                            END,
+                            outcome_unfilled_resolved_at = CASE
+                                WHEN outcome_unfilled = FALSE
+                                     AND outcome_unfilled_resolved_at IS NULL
+                                     AND outcome_unfilled_first_flagged_at IS NOT NULL
+                                THEN :now
+                                ELSE outcome_unfilled_resolved_at
+                            END
+                        WHERE ghl_opportunity_id = :ghl_id
+                    """),
+                    {"now": started_at, "ghl_id": row["ghl_opportunity_id"]},
+                )
+
                 synced_count += 1
 
                 # Commit in batches of 50 to balance memory and safety

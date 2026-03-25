@@ -1,9 +1,10 @@
-"""APScheduler job definitions — daily incremental + weekly full sync."""
+"""APScheduler job definitions — 15-min compliance sync + daily/weekly full sync."""
 
 import logging
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
 from config import settings
 from sync.sync_engine import run_sync
@@ -14,20 +15,19 @@ logger = logging.getLogger(__name__)
 def create_scheduler() -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler(timezone="UTC")
 
-    # Daily incremental sync at configured hour (default 2 AM UTC)
+    # 15-minute compliance sync — keeps compliance board fresh for reps.
+    # Only re-fetches GHL opps modified in the last ~16 minutes, so it's fast and cheap.
     scheduler.add_job(
         _run_incremental,
-        trigger=CronTrigger(
-            hour=settings.daily_sync_hour,
-            minute=settings.daily_sync_minute,
-        ),
-        id="daily_incremental_sync",
-        name="Daily incremental GHL sync",
+        trigger=IntervalTrigger(minutes=15),
+        id="compliance_sync_15min",
+        name="15-min incremental GHL sync (compliance freshness)",
         replace_existing=True,
-        misfire_grace_time=300,  # 5-minute grace if server was down
+        misfire_grace_time=60,
+        max_instances=1,  # Never overlap — if one is still running, skip the next fire
     )
 
-    # Weekly full sync on Sundays at same hour
+    # Weekly full sync on Sundays at configured hour — catches any data GHL didn't surface incrementally
     scheduler.add_job(
         _run_full,
         trigger=CronTrigger(
@@ -39,6 +39,7 @@ def create_scheduler() -> AsyncIOScheduler:
         name="Weekly full GHL sync",
         replace_existing=True,
         misfire_grace_time=300,
+        max_instances=1,
     )
 
     return scheduler

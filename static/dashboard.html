@@ -282,6 +282,10 @@
     </div>
   </div>
   <div id="compliance-table"></div>
+  <div id="compliance-late-section" style="margin-top:28px;">
+    <h3 style="margin-bottom:12px; font-size:13px; text-transform:uppercase; letter-spacing:0.5px; color:var(--text2);">Outcome Logging — Historical Late Rate by Rep</h3>
+    <div id="compliance-late-table"></div>
+  </div>
 </div>
 
 <script>
@@ -803,13 +807,70 @@ let _complianceFailures = [];
 async function renderCompliance() {
   const repParam = AppState.repId ? `&rep_id=${AppState.repId}` : '';
   try {
-    const data = await apiFetch(`/api/dashboard/compliance?${qs()}${repParam}`);
+    const [data, lateData] = await Promise.all([
+      apiFetch(`/api/dashboard/compliance?${qs()}${repParam}`),
+      apiFetch(`/api/dashboard/compliance/late-rates`),
+    ]);
     _complianceFailures = data.failures;
     renderComplianceKPIs(data.summary);
     renderComplianceByRepChart(data.by_rep);
     renderComplianceTable(data.failures);
+    renderLateRates(lateData.data);
   } catch (e) {
     document.getElementById('compliance-kpis').innerHTML = `<div class="empty">Failed to load. ${e.message}</div>`;
+  }
+}
+
+function renderLateRates(rows) {
+  const el = document.getElementById('compliance-late-table');
+  if (!rows.length) {
+    el.innerHTML = '<div class="empty" style="font-size:13px;">No late-logging history yet. Data builds as reps fix flagged opps.</div>';
+    return;
+  }
+  const tableRows = rows.map(r => {
+    const lateClass = r.late_rate > 0.5 ? 'rate-bad' : r.late_rate > 0.2 ? 'rate-warn' : 'rate-good';
+    return `<tr class="clickable-row" onclick="showLateViolationsModal('${r.rep_name.replace(/'/g,"\\'")}')">
+      <td>${r.rep_name}</td>
+      <td class="num">${r.total_flagged}</td>
+      <td class="num">${r.resolved_late}</td>
+      <td class="num ${lateClass}">${r.late_rate !== null ? pct(r.late_rate) : '–'}</td>
+      <td class="num">${r.avg_hours_late !== null ? r.avg_hours_late + 'h' : '–'}</td>
+    </tr>`;
+  }).join('');
+  el.innerHTML = `
+    <table>
+      <thead><tr><th>Rep</th><th class="num">Times Flagged</th><th class="num">Resolved Late</th><th class="num">Late Rate</th><th class="num">Avg Hours Late</th></tr></thead>
+      <tbody>${tableRows}</tbody>
+    </table>`;
+}
+
+async function showLateViolationsModal(repName) {
+  const modal = document.getElementById('closes-modal');
+  const body = document.getElementById('closes-modal-body');
+  document.getElementById('closes-modal-title').textContent = `Late Logging History — ${repName}`;
+  body.innerHTML = '<div class="loading">Loading...</div>';
+  modal.style.display = 'flex';
+  try {
+    const data = await apiFetch(`/api/dashboard/compliance/late-violations?rep_name=${encodeURIComponent(repName)}`);
+    if (!data.data.length) {
+      body.innerHTML = '<div class="empty">No late-logging history for this rep.</div>';
+      return;
+    }
+    const rows = data.data.map(d => `
+      <tr>
+        <td><a class="ghl-link" href="${GHL_BASE}/${d.ghl_opportunity_id}?tab=Opportunity+Details" target="_blank">↗ ${d.opportunity_name || d.ghl_opportunity_id.slice(0,8) + '…'}</a></td>
+        <td>${d.appt_date}</td>
+        <td>${d.first_flagged_at}</td>
+        <td>${d.resolved_at}</td>
+        <td class="num ${d.hours_late > 0 ? 'rate-warn' : ''}">${d.hours_late !== null ? d.hours_late + 'h late' : '–'}</td>
+      </tr>`).join('');
+    body.innerHTML = `
+      <table>
+        <thead><tr><th>Opportunity</th><th>Appt Date</th><th>First Flagged</th><th>Resolved</th><th class="num">How Late</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  } catch (e) {
+    body.innerHTML = `<div class="empty">Failed to load. ${e.message}</div>`;
   }
 }
 
