@@ -591,6 +591,9 @@ function renderRepBreakdown(reps) {
     const closedCell = rid
       ? `<span class="closes-link" onclick="showRepClosesModal('${rid}','${n}')">↗ ${num(r.units_closed)}</span>`
       : num(r.units_closed);
+    const notLoggedCell = (rid && r.outcome_not_logged_count > 0)
+      ? `<span class="closes-link" onclick="showRepOppsModal('${rid}','${n}','not_logged')">↗ ${num(r.outcome_not_logged_count)}</span>`
+      : num(r.outcome_not_logged_count);
     return `
     <tr>
       <td>${r.rep_name}</td>
@@ -600,11 +603,7 @@ function renderRepBreakdown(reps) {
       <td class="num ${rateClass(r.qualification_rate)}">${pct(r.qualification_rate)}</td>
       <td class="num ${rateClass(r.close_rate)}">${pct(r.close_rate)}</td>
       <td class="num">${closedCell}</td>
-      <td class="num ${r.outcome_not_logged_count > 0 ? 'rate-warn' : ''}">
-        ${rid && r.outcome_not_logged_count > 0
-          ? `<span class="closes-link" onclick="showRepOppsModal('${rid}','${n}','not_logged')">↗ ${num(r.outcome_not_logged_count)}</span>`
-          : num(r.outcome_not_logged_count)}
-      </td>
+      <td class="num ${r.outcome_not_logged_count > 0 ? 'rate-warn' : ''}">${notLoggedCell}</td>
     </tr>`;
   }).join('');
   document.getElementById('rep-table-view').innerHTML = `
