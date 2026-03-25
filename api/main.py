@@ -1,4 +1,5 @@
 """FastAPI application entry point."""
+# noqa: force-redeploy
 
 import asyncio
 import logging
