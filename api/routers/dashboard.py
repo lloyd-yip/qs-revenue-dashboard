@@ -18,6 +18,7 @@ from api.schemas.responses import (
     ChannelQualityResponse,
     ComplianceResponse,
     DailyActivityResponse,
+    InsightsResponse,
     LateViolationResponse,
     LeadSourceResponse,
     MetaMixin,
@@ -231,3 +232,69 @@ async def daily_activity(
     """Day-by-day booked / showed / qual for the last 7 calendar days."""
     data = await get_daily_activity(db, rep_id)
     return DailyActivityResponse(data=data)
+
+
+# ── Tier 2: Insight Endpoints ────────────────────────────────────────────────
+
+from db.queries.insights import (
+    get_rep_trend_insights,
+    get_anomaly_insights,
+    get_team_summary_insights,
+    get_channel_insights,
+    get_rep_ranking_insights,
+)
+
+
+@router.get("/insights/rep-trends", response_model=InsightsResponse)
+async def rep_trends(
+    params: tuple = Depends(_date_params),
+    db: AsyncSession = Depends(get_db),
+):
+    """Rep performance trends — which reps improved or declined vs. prior period."""
+    start, end, date_by = params
+    data = await get_rep_trend_insights(db, start, end, date_by)
+    return InsightsResponse(data=data, meta=_meta(start, end, date_by))
+
+
+@router.get("/insights/anomalies", response_model=InsightsResponse)
+async def anomalies(
+    params: tuple = Depends(_date_params),
+    db: AsyncSession = Depends(get_db),
+):
+    """Anomaly detection — reps performing significantly below team average."""
+    start, end, date_by = params
+    data = await get_anomaly_insights(db, start, end, date_by)
+    return InsightsResponse(data=data, meta=_meta(start, end, date_by))
+
+
+@router.get("/insights/team-summary", response_model=InsightsResponse)
+async def team_summary_insights(
+    params: tuple = Depends(_date_params),
+    db: AsyncSession = Depends(get_db),
+):
+    """Team week-to-date summary — how is the team pacing vs. prior period."""
+    start, end, date_by = params
+    data = await get_team_summary_insights(db, start, end, date_by)
+    return InsightsResponse(data=data, meta=_meta(start, end, date_by))
+
+
+@router.get("/insights/channels", response_model=InsightsResponse)
+async def channel_insights(
+    params: tuple = Depends(_date_params),
+    db: AsyncSession = Depends(get_db),
+):
+    """Channel performance shifts — which channels improved or declined."""
+    start, end, date_by = params
+    data = await get_channel_insights(db, start, end, date_by)
+    return InsightsResponse(data=data, meta=_meta(start, end, date_by))
+
+
+@router.get("/insights/rankings", response_model=InsightsResponse)
+async def rep_rankings(
+    params: tuple = Depends(_date_params),
+    db: AsyncSession = Depends(get_db),
+):
+    """Rep rankings — top performer, bottom performer, biggest improver."""
+    start, end, date_by = params
+    data = await get_rep_ranking_insights(db, start, end, date_by)
+    return InsightsResponse(data=data, meta=_meta(start, end, date_by))

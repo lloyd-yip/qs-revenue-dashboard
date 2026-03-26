@@ -4,11 +4,10 @@ import asyncio
 import logging
 
 from fastapi import APIRouter, BackgroundTasks, Depends
-from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.schemas.responses import SyncStatusResponse, SyncTriggerResponse
-from db.models import SyncRun
+from db.queries.sync_status import get_latest_sync_run
 from db.session import get_db
 from sync.sync_engine import run_sync
 
@@ -20,10 +19,7 @@ router = APIRouter(prefix="/api/sync", tags=["sync"])
 @router.get("/status", response_model=SyncStatusResponse)
 async def sync_status(db: AsyncSession = Depends(get_db)):
     """Return the most recent sync run's status and stats."""
-    result = await db.execute(
-        select(SyncRun).order_by(desc(SyncRun.started_at)).limit(1)
-    )
-    run = result.scalar_one_or_none()
+    run = await get_latest_sync_run(db)
 
     if not run:
         return SyncStatusResponse(data=None, message="No sync runs found.")

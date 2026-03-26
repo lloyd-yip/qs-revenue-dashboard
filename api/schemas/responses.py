@@ -263,3 +263,29 @@ class DailyActivityRow(BaseModel):
 
 class DailyActivityResponse(BaseModel):
     data: list[DailyActivityRow]
+
+
+# --- Tier 2: Insight response models ---
+
+class InsightObject(BaseModel):
+    """Generic structured insight — any consumer can format this."""
+    type: str                           # rep_trend, anomaly, team_summary, channel_shift, ranking
+    metric: str                         # machine key: show_rate_1st, close_rate, etc.
+    metric_label: str                   # human label: "1st Call Show Rate"
+    entity: str                         # rep name, channel name, or "team"
+    entity_id: str | None = None
+    current_value: float | int | None = None
+    comparison_value: float | int | None = None
+    comparison_period: str | None = None
+    change_pct: float | None = None
+    benchmark: float | None = None
+    benchmark_label: str | None = None
+    flag: str | None = None             # machine-readable: "below_average_and_declining"
+
+    class Config:
+        extra = "allow"                 # allow type-specific extra fields
+
+
+class InsightsResponse(BaseModel):
+    data: list[InsightObject]
+    meta: MetaMixin

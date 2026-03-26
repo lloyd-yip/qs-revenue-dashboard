@@ -12,13 +12,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import select, text
+from sqlalchemy import select
 
 from api.routers import metrics, sync as sync_router
 from api.routers import dashboard as dashboard_router
 from api.schemas.responses import HealthResponse
 from config import settings
 from db.models import SyncRun
+from db.queries.sync_status import check_db_health
 from db.session import AsyncSessionLocal, engine
 from sync.scheduler import create_scheduler
 from sync.sync_engine import run_sync
@@ -112,22 +113,8 @@ async def serve_dashboard():
 @app.get("/api/health", response_model=HealthResponse, tags=["health"])
 async def health():
     """Health check — confirms DB connection and returns last sync timestamp."""
-    db_ok = False
-    last_sync_at = None
-
     async with AsyncSessionLocal() as session:
-        try:
-            await session.execute(text("SELECT 1"))
-            db_ok = True
-            result = await session.execute(
-                select(SyncRun.completed_at)
-                .where(SyncRun.status == "completed")
-                .order_by(SyncRun.completed_at.desc())
-                .limit(1)
-            )
-            last_sync_at = result.scalar_one_or_none()
-        except Exception as exc:
-            logger.error("Health check DB error: %s", exc)
+        db_ok, last_sync_at = await check_db_health(session)
 
     return HealthResponse(
         status="ok" if db_ok else "degraded",
