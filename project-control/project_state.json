@@ -1,0 +1,152 @@
+{
+  "project_name": "QS Revenue Dashboard",
+  "description": "Internal sales performance dashboard — call volume, show rates, qualification, lead source attribution, compliance tracking",
+  "business_entity": "quantum_scaling",
+  "last_updated": "2026-03-26T18:30:00Z",
+  "current_state": {
+    "phase_name": "Phase 1 - Live & Iterating",
+    "status": "live"
+  },
+  "project_overview": {
+    "what": "The QS Revenue Dashboard pulls sales data from GoHighLevel (CRM) and turns it into a real-time performance dashboard. It tracks call volume, show rates, close rates, lead source attribution, rep-level performance, and compliance for Quantum Scaling's sales team.",
+    "why": "Lloyd needs to see exactly how each sales rep is performing, which lead sources are producing revenue, and where the pipeline is leaking — without manually pulling GHL reports. This is the operational nervous system for the sales org.",
+    "end_state": "A comprehensive revenue intelligence platform with real-time KPIs, financial integration (Xero for actual revenue vs pipeline), automated anomaly detection, and API endpoints that feed the OpenClaw agent layer for cross-app synthesis.",
+    "current_summary": "Dashboard is fully live on Railway. Frontend has KPI cards, show rate chart, funnel chart, rep breakdown table (with clickable drill-down modals for bookings/shows/closed deals/outcome-not-logged), compliance tab, and 7-Day Activity table with week navigation. GHL syncs automatically every 15 minutes. Service layer is clean and API-ready for future orchestration agent layer."
+  },
+  "resume_here": "Dashboard is live and usable. Phase 1 feature work is largely complete. Next priority is Phase 2 (Xero/WAP financial integration) or additional Phase 1 polish items (WoW deltas on 7-day table, export features). Railway deploy workflow: push to `railway` remote via `git push railway $(git subtree split --prefix=qs-dashboard HEAD):main --force` — do NOT rely on `origin` push for qs-dashboard deploys.",
+  "current_phase": {
+    "name": "Phase 1 - Live & Iterating",
+    "goal": "Full internal dashboard for Lloyd to monitor sales team performance: call volume per rep, show rates, qualification breakdowns, lead source attribution, compliance tracking",
+    "current_focus": [
+      "Phase 1 feature complete — dashboard live and in daily use",
+      "Minor UX additions as needed (week navigation on 7-day table just shipped)"
+    ],
+    "immediate_next_steps": [
+      "Confirm week navigation working correctly after latest deploy",
+      "Remove diagnostic v3 marker from dashboard header (cosmetic cleanup)",
+      "Evaluate readiness for Phase 2 (Xero financial integration)"
+    ],
+    "known_issues": [
+      {
+        "title": "Railway deploy requires manual subtree push — origin push does NOT redeploy qs-dashboard",
+        "severity": "low",
+        "status": "understood",
+        "resolution": "qs-dashboard service watches `qs-revenue-dashboard` repo (separate from monorepo). Deploy cmd: git push railway $(git subtree split --prefix=qs-dashboard HEAD):main --force"
+      },
+      {
+        "title": "Diagnostic v3 marker visible in dashboard header",
+        "severity": "low",
+        "status": "open",
+        "resolution": "Remove `<span style='...'>v3</span>` from header in dashboard.html and redeploy"
+      }
+    ]
+  },
+  "next_phase": {
+    "name": "Phase 2 - Financial Integration",
+    "goal": "Connect Xero and WAP for payment processing and cash collection visibility alongside sales performance",
+    "key_features": [
+      "Xero API integration for revenue/payment data",
+      "WAP integration for cash collection tracking",
+      "Combined view: sales pipeline → payment → cash collected"
+    ],
+    "tools_and_apis": [
+      "Xero API",
+      "WAP API"
+    ],
+    "prerequisites": "Phase 1 confirmed stable in daily use. KPI definitions validated by Lloyd against real team data.",
+    "deferred_items": []
+  },
+  "future_phases": [
+    {
+      "name": "Phase 3 - Advanced Analytics",
+      "goal": "Deeper metric slicing, predictive insights, stronger management views, trend analysis",
+      "tools_and_apis": ["Claude API (insight generation)", "Existing Tier 2 insight endpoints"],
+      "prerequisites": "Enough historical data for trends to be meaningful (4-6 weeks of synced data minimum)."
+    }
+  ],
+  "recent_milestones": [
+    {
+      "description": "7-Day Activity table: added week navigation (prev/next arrows, This Week / Last Week / Week of X labels)",
+      "date": "2026-03-26"
+    },
+    {
+      "description": "Railway deploy workflow diagnosed and fixed — qs-dashboard deploys from qs-revenue-dashboard repo via railway remote subtree push",
+      "date": "2026-03-26"
+    },
+    {
+      "description": "Not Logged column made clickable (drill-down modal showing outcome-unfilled opps per rep)",
+      "date": "2026-03-25"
+    },
+    {
+      "description": "7-Day Activity table added to Sales tab (day-by-day booked/showed/qual for rolling window)",
+      "date": "2026-03-25"
+    },
+    {
+      "description": "Rep breakdown drill-down modals: Booked, Showed, Closed all clickable with GHL deep links",
+      "date": "2026-03-25"
+    },
+    {
+      "description": "Compliance tab live: per-rep compliance failure tracking, no-note vs note-lacks-fidelity split, DQ rate",
+      "date": "2026-03-24"
+    },
+    {
+      "description": "API readiness retrofit — service layer extracted, Tier 2 insight endpoints scaffolded",
+      "date": "2026-03-25"
+    },
+    {
+      "description": "Frontend dashboard fully live: KPI cards, show rate chart, funnel chart, rep breakdown table",
+      "date": "2026-03-24"
+    },
+    {
+      "description": "First successful full sync — 3,243 opportunities, 0 errors, 2m 14s",
+      "date": "2026-03-22"
+    },
+    {
+      "description": "Backend deployed on Railway with automatic GHL sync every 15 minutes",
+      "date": "2026-03-19"
+    }
+  ],
+  "decision_log": [
+    {
+      "decision": "qs-dashboard lives in monorepo (compete-iq) locally but deploys from standalone qs-revenue-dashboard GitHub repo",
+      "reasoning": "Railway service was originally created from the standalone repo. Easiest to maintain this — use git subtree push to keep qs-revenue-dashboard in sync with monorepo changes.",
+      "phase": "Phase 1"
+    },
+    {
+      "decision": "Compliance sync runs every 15 minutes via APScheduler",
+      "reasoning": "Lloyd wanted near-real-time visibility into outcome-not-logged violations so reps can be corrected same-day. 15 min cadence is fast enough without hammering GHL API.",
+      "phase": "Phase 1"
+    },
+    {
+      "decision": "Split compliance into outcome_unfilled (no show/no-show logged) vs note compliance (note missing or low word count)",
+      "reasoning": "These are different failure modes requiring different coaching responses. Outcome unfilled = rep forgot to log. Note noncompliant = rep logged but didn't document.",
+      "phase": "Phase 1"
+    },
+    {
+      "decision": "Opportunity Owner = rep attribution",
+      "reasoning": "GHL assigns opportunity owner to the rep who created/owns the deal. This is the most reliable attribution signal.",
+      "phase": "Phase 1"
+    },
+    {
+      "decision": "Show/no-show detection via union of appointment status + pipeline stage signals",
+      "reasoning": "No single GHL field reliably indicates show/no-show. Union of signals catches more cases than either alone.",
+      "phase": "Phase 1"
+    },
+    {
+      "decision": "call1_appointment_date / call2_appointment_date on Opportunity (not Contact)",
+      "reasoning": "Avoids N+1 fetch to get appointment dates. Custom fields on Opportunity allow single-query access.",
+      "phase": "Phase 1"
+    },
+    {
+      "decision": "Bearer token auth on all API endpoints",
+      "reasoning": "Simple, sufficient for internal tool. Upgrade to JWT/API key scoping when cross-app orchestration needs differentiated access.",
+      "phase": "Phase 1"
+    }
+  ],
+  "completed_phases": [],
+  "links": {
+    "repo": "https://github.com/lloyd-yip/qs-revenue-dashboard",
+    "app_url": "https://qs-revenue-dashboard-production.up.railway.app",
+    "docs": ""
+  }
+}
