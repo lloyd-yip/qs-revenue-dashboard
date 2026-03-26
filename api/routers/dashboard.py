@@ -227,10 +227,12 @@ async def compliance_late_violations(
 @router.get("/daily-activity", response_model=DailyActivityResponse)
 async def daily_activity(
     rep_id: str | None = Query(None, description="GHL opportunity owner ID — omit for team total"),
+    start_date: date | None = Query(None, description="ISO date — start of 7-day window (defaults to 6 days ago)"),
+    end_date: date | None = Query(None, description="ISO date — end of 7-day window (defaults to today)"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Day-by-day booked / showed / qual for the last 7 calendar days."""
-    data = await get_daily_activity(db, rep_id)
+    """Day-by-day booked / showed / qual for a 7-day window."""
+    data = await get_daily_activity(db, rep_id, start_date, end_date)
     return DailyActivityResponse(data=data)
 
 

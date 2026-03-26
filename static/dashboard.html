@@ -167,6 +167,13 @@
     .clickable-row:hover td { background: var(--surface2); }
     .closes-link { color: var(--accent2); cursor: pointer; font-size: 13px; }
     .closes-link:hover { text-decoration: underline; }
+    .btn-week-nav {
+      background: var(--surface2); border: 1px solid var(--border); color: var(--text2);
+      width: 26px; height: 26px; border-radius: 5px; cursor: pointer; font-size: 13px;
+      display: flex; align-items: center; justify-content: center; transition: all 0.15s;
+    }
+    .btn-week-nav:hover:not(:disabled) { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .btn-week-nav:disabled { opacity: 0.3; cursor: default; }
     .compliance-kpi.clickable { cursor: pointer; transition: border-color 0.15s; }
     .compliance-kpi.clickable:hover { border-color: var(--accent); }
     .compliance-kpi.clickable.active-filter { border-color: var(--accent); background: rgba(99,102,241,0.08); }
@@ -232,7 +239,12 @@
 
   <div class="data-table-wrap" style="margin-bottom:16px;">
     <div class="section-header" style="padding: 14px 16px 0;">
-      <h3>7-Day Activity <span style="font-size:11px; font-weight:400; color:var(--text2);">(rolling last 7 days · uses rep filter)</span></h3>
+      <h3>7-Day Activity <span style="font-size:11px; font-weight:400; color:var(--text2);">(uses rep filter)</span></h3>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <button class="btn-week-nav" onclick="shiftWeek(-1)">&#8592;</button>
+        <span id="week-label" style="font-size:12px; color:var(--text2); min-width:100px; text-align:center;"></span>
+        <button class="btn-week-nav" id="week-next-btn" onclick="shiftWeek(1)" disabled>&#8594;</button>
+      </div>
     </div>
     <div id="daily-activity-view"><div class="loading">Loading...</div></div>
   </div>
@@ -306,6 +318,7 @@ const AppState = {
   repId: '',
   activeTab: 'sales',
   repView: 'table',
+  weekOffset: 0,  // 0 = this week, -1 = last week, etc.
 };
 
 // Chart instances — held so we can destroy/recreate on re-render
@@ -465,14 +478,47 @@ async function renderSales() {
   renderDailyActivity();
 }
 
+function weekDates(offset) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const endDate = new Date(today);
+  endDate.setDate(today.getDate() + offset * 7);
+  const startDate = new Date(endDate);
+  startDate.setDate(endDate.getDate() - 6);
+  const toISO = d => d.toISOString().split('T')[0];
+  return { start: toISO(startDate), end: toISO(endDate) };
+}
+
+function weekLabel(offset) {
+  if (offset === 0) return 'This Week';
+  if (offset === -1) return 'Last Week';
+  const { start } = weekDates(offset);
+  const d = new Date(start + 'T12:00:00');
+  return 'Week of ' + d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function shiftWeek(delta) {
+  const next = AppState.weekOffset + delta;
+  if (next > 0) return;
+  AppState.weekOffset = next;
+  renderDailyActivity();
+}
+
 async function renderDailyActivity() {
   const el = document.getElementById('daily-activity-view');
   el.innerHTML = '<div class="loading">Loading...</div>';
-  const repParam = AppState.repId ? `?rep_id=${encodeURIComponent(AppState.repId)}` : '';
+
+  // Update week label and next-button state
+  document.getElementById('week-label').textContent = weekLabel(AppState.weekOffset);
+  document.getElementById('week-next-btn').disabled = AppState.weekOffset === 0;
+
+  const { start, end } = weekDates(AppState.weekOffset);
+  const params = new URLSearchParams({ start_date: start, end_date: end });
+  if (AppState.repId) params.set('rep_id', AppState.repId);
   try {
-    const data = await apiFetch(`/api/dashboard/daily-activity${repParam}`);
+    const data = await apiFetch(`/api/dashboard/daily-activity?${params}`);
     if (!data.data.length) {
-      el.innerHTML = '<div class="empty">No appointments in the last 7 days.</div>';
+      el.innerHTML = '<div class="empty">No appointments this week.</div>';
       return;
     }
     const rows = data.data.map(d => {

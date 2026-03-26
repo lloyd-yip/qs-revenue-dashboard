@@ -227,22 +227,26 @@ async def get_by_rep(
 async def get_daily_activity(
     session: AsyncSession,
     rep_id: str | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
 ) -> list[dict]:
-    """Day-by-day booked / showed / qual counts for the last 7 calendar days.
+    """Day-by-day booked / showed / qual counts for a 7-day window.
 
-    Always returns the rolling 7 days regardless of the main date-range filter.
+    Defaults to the rolling last 7 days when start_date/end_date are omitted.
     Accepts an optional rep_id to scope to a single rep.
     """
-    today = date.today()
-    seven_days_ago = today - timedelta(days=6)  # 7 days inclusive
+    if end_date is None:
+        end_date = date.today()
+    if start_date is None:
+        start_date = end_date - timedelta(days=6)  # 7 days inclusive
 
     showed_1st = showed_1st_call_expr()
 
     conditions = [
         Opportunity.is_excluded.is_(False),
         Opportunity.call1_appointment_date.isnot(None),
-        func.date(Opportunity.call1_appointment_date) >= seven_days_ago,
-        func.date(Opportunity.call1_appointment_date) <= today,
+        func.date(Opportunity.call1_appointment_date) >= start_date,
+        func.date(Opportunity.call1_appointment_date) <= end_date,
     ]
     if rep_id:
         conditions.append(Opportunity.opportunity_owner_id == rep_id)
