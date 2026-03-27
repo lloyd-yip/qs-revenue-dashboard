@@ -33,7 +33,7 @@ async def get_lead_source_breakdown(
         select(
             func.coalesce(Opportunity.canonical_channel, "Unknown").label("channel"),
             func.count(Opportunity.id).label("total_ops"),
-            func.count(case((showed_1st, 1))).label("shows"),
+            func.count(case((and_(is_1st, showed_1st), 1))).label("shows"),
             func.count(
                 case((Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID, 1))
             ).label("units_closed"),
