@@ -7,6 +7,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from config import settings
+from sync.appointment_resolver import resolve_appointments
 from sync.sync_engine import run_sync
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,18 @@ def create_scheduler() -> AsyncIOScheduler:
         max_instances=1,  # Never overlap — if one is still running, skip the next fire
     )
 
+    # Daily appointment resolver — 7pm EST (midnight UTC) — auto-flips call1_appointment_status
+    # via Fireflies transcript matching. Runs after business hours so all transcripts are ready.
+    scheduler.add_job(
+        _run_appointment_resolver,
+        trigger=CronTrigger(hour=23, minute=0, timezone="UTC"),  # 7pm EST / 8pm EDT
+        id="daily_appointment_resolver",
+        name="Daily Fireflies appointment resolver",
+        replace_existing=True,
+        misfire_grace_time=300,
+        max_instances=1,
+    )
+
     # Weekly full sync on Sundays at configured hour — catches any data GHL didn't surface incrementally
     scheduler.add_job(
         _run_full,
@@ -43,6 +56,15 @@ def create_scheduler() -> AsyncIOScheduler:
     )
 
     return scheduler
+
+
+async def _run_appointment_resolver() -> None:
+    logger.info("Scheduler: starting daily appointment resolver")
+    try:
+        summary = await resolve_appointments(lookback_days=3)
+        logger.info("Scheduler: appointment resolver complete — %s", summary)
+    except Exception as exc:
+        logger.error("Scheduler: appointment resolver failed — %s", exc)
 
 
 async def _run_incremental() -> None:

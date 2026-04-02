@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.schemas.responses import SyncStatusResponse, SyncTriggerResponse
 from db.queries.sync_status import get_latest_sync_run
 from db.session import get_db
+from sync.appointment_resolver import resolve_appointments
 from sync.sync_engine import run_sync
 
 logger = logging.getLogger(__name__)
@@ -53,8 +54,35 @@ async def trigger_sync(
     )
 
 
+@router.post("/resolve-appointments")
+async def trigger_resolver(
+    background_tasks: BackgroundTasks,
+    lookback_days: int = 3,
+):
+    """Manually trigger the Fireflies appointment resolver.
+
+    Use lookback_days=30 for the initial retroactive sweep.
+    Returns immediately — resolver runs in the background.
+    """
+    if lookback_days < 1 or lookback_days > 90:
+        lookback_days = 3
+    background_tasks.add_task(_run_resolver_background, lookback_days)
+    return {
+        "message": f"Appointment resolver triggered for {lookback_days}-day lookback. Check Railway logs for results.",
+        "lookback_days": lookback_days,
+    }
+
+
 async def _run_sync_background(sync_type: str) -> None:
     try:
         await run_sync(sync_type)
     except Exception as exc:
         logger.error("Background sync failed: %s", exc)
+
+
+async def _run_resolver_background(lookback_days: int) -> None:
+    try:
+        summary = await resolve_appointments(lookback_days=lookback_days)
+        logger.info("Manual resolver complete: %s", summary)
+    except Exception as exc:
+        logger.error("Manual resolver failed: %s", exc)

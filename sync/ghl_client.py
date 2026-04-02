@@ -185,6 +185,26 @@ class GHLClient:
                 # Rate limit protection
                 await asyncio.sleep(self._page_delay_s)
 
+    async def update_opportunity_custom_fields(
+        self,
+        opportunity_id: str,
+        fields: list[dict],
+    ) -> None:
+        """Update custom fields on a GHL opportunity.
+
+        fields: list of {"id": field_id, "field_value": value}
+        GHL endpoint: PUT /opportunities/{id}
+        """
+        url = f"{self._base_url}/opportunities/{opportunity_id}"
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.put(
+                url,
+                headers=self._headers,
+                json={"customFields": fields},
+            )
+            response.raise_for_status()
+
+
 def extract_custom_fields(opportunity: dict) -> dict:
     """Extract our tracked custom fields from a GHL opportunity payload.
 
