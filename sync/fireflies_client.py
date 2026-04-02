@@ -1,7 +1,7 @@
 """Fireflies GraphQL API client — transcript fetching for appointment resolution."""
 
 import logging
-from datetime import date
+from datetime import date, datetime, timezone
 
 import httpx
 
@@ -31,9 +31,11 @@ class FirefliesClient:
 
         Fireflies fromDate/toDate are inclusive ISO date strings.
         """
-        date_str = target_date.isoformat()
+        # Fireflies expects DateTime (ISO 8601 with time) not bare date strings
+        from_dt = datetime(target_date.year, target_date.month, target_date.day, 0, 0, 0, tzinfo=timezone.utc).isoformat()
+        to_dt = datetime(target_date.year, target_date.month, target_date.day, 23, 59, 59, tzinfo=timezone.utc).isoformat()
         query = """
-        query GetTranscripts($fromDate: String, $toDate: String) {
+        query GetTranscripts($fromDate: DateTime, $toDate: DateTime) {
             transcripts(fromDate: $fromDate, toDate: $toDate) {
                 id
                 title
@@ -42,7 +44,7 @@ class FirefliesClient:
             }
         }
         """
-        result = await self._query(query, {"fromDate": date_str, "toDate": date_str})
+        result = await self._query(query, {"fromDate": from_dt, "toDate": to_dt})
         transcripts = (result.get("data") or {}).get("transcripts") or []
         return [
             t for t in transcripts
