@@ -24,14 +24,6 @@ class Settings(BaseSettings):
     # Fireflies
     fireflies_api_key: str
 
-    # Rep email map — opportunity_owner_name (as stored in DB) → Fireflies organizer email.
-    # Used by appointment_resolver to match Fireflies transcripts to GHL opportunities.
-    # Not driven by env vars — update here when reps change.
-    rep_email_map: dict[str, str] = {
-        "Ryan Matsumori": "ryan@quantum-scaling.com",
-        "Melissa  Fredericks": "melissa@quantum-scaling.com",  # double space matches DB value
-    }
-
     # Scheduler
     daily_sync_hour: int = 2    # 2 AM UTC
     daily_sync_minute: int = 0

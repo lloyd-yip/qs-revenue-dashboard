@@ -98,6 +98,54 @@ class GHLClient:
                 logger.warning("Failed to fetch users: %s", exc)
                 return {}
 
+    async def get_user_email_map(self) -> dict[str, str]:
+        """Fetch all users for this location. Returns {user_id: email} map.
+
+        Used by appointment_resolver to match opportunity owner IDs to Fireflies
+        organizer emails — covers any rep automatically without manual config.
+        """
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                data = await self._get(client, "/users/", {"locationId": self._location_id})
+                return {u["id"]: u.get("email", "") for u in data.get("users", []) if u.get("email")}
+            except Exception as exc:
+                logger.warning("Failed to fetch user email map: %s", exc)
+                return {}
+
+    async def get_contact_appointments(self, contact_id: str) -> list[dict]:
+        """Fetch all appointments for a contact. Returns empty list on any failure.
+
+        Called during sync to read calendar appointment status (the field reps
+        actually use) rather than the opportunity custom field.
+        """
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                data = await self._get(
+                    client,
+                    f"/contacts/{contact_id}/appointments",
+                    {"locationId": self._location_id},
+                )
+                await asyncio.sleep(self._page_delay_s)
+                # GHL returns appointments under "appointments" or "events"
+                return data.get("appointments") or data.get("events") or []
+            except Exception as exc:
+                logger.warning("Failed to fetch appointments for contact %s: %s", contact_id, exc)
+                return []
+
+    async def update_appointment_status(self, appointment_id: str, status: str) -> None:
+        """Update a calendar appointment status.
+
+        status must be one of: 'showed' | 'noshow' | 'confirmed' | 'cancelled'
+        """
+        url = f"{self._base_url}/calendars/events/appointments/{appointment_id}"
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.put(
+                url,
+                headers=self._headers,
+                json={"appointmentStatus": status},
+            )
+            response.raise_for_status()
+
     async def get_contact_notes(self, contact_id: str) -> list[dict]:
         """Fetch all notes for a contact. Returns empty list on any failure.
 
