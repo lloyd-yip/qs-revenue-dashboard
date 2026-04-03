@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Debug Drill-Down — QS Analytics</title>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #22263a;
+      --border: #2e3347;
+      --accent: #6366f1;
+      --accent2: #818cf8;
+      --text: #e2e8f0;
+      --text2: #94a3b8;
+      --green: #22c55e;
+      --red: #ef4444;
+      --yellow: #f59e0b;
+      --orange: #f97316;
+      --radius: 10px;
+      --font: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+
+    body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; min-height: 100vh; }
+
+    /* Header */
+    .debug-header {
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 20px 28px; display: flex; align-items: center; justify-content: space-between;
+    }
+    .debug-header-left { display: flex; flex-direction: column; gap: 6px; }
+    .debug-header h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.3px; }
+    .debug-header .subtitle { font-size: 13px; color: var(--text2); display: flex; gap: 16px; flex-wrap: wrap; }
+    .debug-header .subtitle span { display: inline-flex; align-items: center; gap: 4px; }
+    .debug-header .badge {
+      background: var(--accent); color: #fff; font-size: 13px; font-weight: 600;
+      padding: 6px 16px; border-radius: 20px; letter-spacing: -0.2px;
+    }
+    .debug-header .badge.badge-warn { background: var(--orange); }
+    .debug-header .badge.badge-bad { background: var(--red); }
+    .back-link {
+      color: var(--accent2); text-decoration: none; font-size: 13px;
+      display: inline-flex; align-items: center; gap: 4px; margin-bottom: 4px;
+    }
+    .back-link:hover { text-decoration: underline; }
+
+    /* Anomaly summary bar */
+    .anomaly-summary {
+      padding: 12px 28px; background: var(--surface); border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    }
+    .anomaly-summary-label { font-size: 12px; color: var(--text2); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-right: 4px; }
+    .anomaly-chip {
+      display: inline-flex; align-items: center; gap: 5px; padding: 4px 12px;
+      border-radius: 16px; font-size: 12px; font-weight: 500; cursor: pointer;
+      border: 1px solid var(--border); background: var(--surface2); color: var(--text2);
+      transition: all 0.15s;
+    }
+    .anomaly-chip:hover { border-color: var(--accent); color: var(--text); }
+    .anomaly-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .anomaly-chip .chip-count { font-weight: 700; }
+    .anomaly-chip.severity-high .chip-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--red); }
+    .anomaly-chip.severity-medium .chip-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--yellow); }
+
+    /* Search bar */
+    .toolbar {
+      padding: 14px 28px; background: var(--surface); border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 12px;
+    }
+    #search-input {
+      background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+      padding: 8px 14px; border-radius: 8px; font-size: 13px; width: 320px;
+      outline: none; transition: border-color 0.15s;
+    }
+    #search-input:focus { border-color: var(--accent); }
+    #search-input::placeholder { color: var(--text2); }
+    .result-count { font-size: 12px; color: var(--text2); }
+
+    /* Table */
+    .table-wrap { padding: 0 28px 28px; overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; margin-top: 0; }
+    thead { position: sticky; top: 0; z-index: 10; }
+    th {
+      background: var(--surface2); color: var(--text2); font-size: 11px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.5px; padding: 10px 12px; text-align: left;
+      white-space: nowrap; cursor: pointer; user-select: none;
+      border-bottom: 2px solid var(--border);
+    }
+    th:hover { color: var(--text); }
+    th .sort-arrow { margin-left: 4px; font-size: 10px; opacity: 0.4; }
+    th.sorted .sort-arrow { opacity: 1; color: var(--accent2); }
+    td {
+      padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 13px;
+      white-space: nowrap; max-width: 240px; overflow: hidden; text-overflow: ellipsis;
+    }
+    tr:hover td { background: var(--surface2); }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+    /* Row severity highlights */
+    tr.row-high td { border-left: 0; }
+    tr.row-high { background: rgba(239, 68, 68, 0.04); }
+    tr.row-high td:first-child { border-left: 3px solid var(--red); }
+    tr.row-medium { background: rgba(245, 158, 11, 0.03); }
+    tr.row-medium td:first-child { border-left: 3px solid var(--yellow); }
+
+    /* Links */
+    .ghl-link { color: var(--accent2); text-decoration: none; font-weight: 500; }
+    .ghl-link:hover { text-decoration: underline; }
+    .contact-link { color: var(--text2); text-decoration: none; font-size: 11px; font-family: monospace; }
+    .contact-link:hover { color: var(--accent2); text-decoration: underline; }
+
+    /* Status badges */
+    .status-showed { color: var(--green); font-weight: 600; }
+    .status-noshow { color: var(--red); font-weight: 600; }
+    .status-confirmed { color: var(--yellow); font-weight: 500; }
+    .status-cancelled { color: var(--text2); }
+
+    /* Quality badges */
+    .qual-great { color: var(--green); font-weight: 600; }
+    .qual-ok { color: #84cc16; font-weight: 500; }
+    .qual-barely { color: var(--yellow); font-weight: 500; }
+    .qual-bad { color: var(--red); font-weight: 600; }
+    .qual-dq { color: var(--red); font-weight: 700; }
+
+    /* Anomaly badges */
+    .anomaly-badges { display: flex; flex-direction: column; gap: 4px; white-space: normal; max-width: 320px; }
+    .anomaly-badge {
+      display: inline-flex; align-items: flex-start; gap: 5px; padding: 3px 8px;
+      border-radius: 4px; font-size: 11px; line-height: 1.4;
+    }
+    .anomaly-badge.high { background: rgba(239, 68, 68, 0.12); color: #fca5a5; }
+    .anomaly-badge.medium { background: rgba(245, 158, 11, 0.12); color: #fcd34d; }
+    .anomaly-badge .anomaly-icon { flex-shrink: 0; }
+    .anomaly-badge .anomaly-action { color: var(--text2); font-size: 10px; display: block; margin-top: 1px; }
+
+    /* Loading / empty states */
+    .loading { text-align: center; color: var(--text2); padding: 80px; font-size: 14px; }
+    .empty { text-align: center; color: var(--text2); padding: 80px; font-size: 14px; }
+    .error { text-align: center; color: var(--red); padding: 80px; font-size: 14px; }
+
+    @media (max-width: 768px) {
+      .debug-header { flex-direction: column; align-items: flex-start; gap: 12px; }
+      #search-input { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="debug-header">
+  <div class="debug-header-left">
+    <a class="back-link" href="/" id="back-link">← Back to Dashboard</a>
+    <h1 id="page-title">Loading…</h1>
+    <div class="subtitle" id="page-subtitle"></div>
+  </div>
+  <div class="badge" id="total-count">–</div>
+</div>
+
+<div class="anomaly-summary" id="anomaly-summary" style="display:none;">
+  <span class="anomaly-summary-label">Filter by issue:</span>
+  <div id="anomaly-chips"></div>
+</div>
+
+<div class="toolbar">
+  <input type="text" id="search-input" placeholder="Search by name, rep, stage, channel…" oninput="filterTable()" />
+  <span class="result-count" id="result-count"></span>
+</div>
+
+<div class="table-wrap">
+  <div id="table-container"><div class="loading">Loading drill-down data…</div></div>
+</div>
+
+<script>
+// ─── Config ──────────────────────────────────────────────────────────────────
+const GHL_OPP_BASE = 'https://app.gohighlevel.com/v2/location/G7ZOWCq78JrzUjlLMCxt/opportunities/list';
+const GHL_CONTACT_BASE = 'https://app.gohighlevel.com/v2/location/G7ZOWCq78JrzUjlLMCxt/contacts/detail';
+
+const METRIC_LABELS = {
+  calls_booked_1st: '1st Calls Booked',
+  shows_1st: '1st Call Shows',
+  show_rate_1st: '1st Call Shows (Show Rate)',
+  no_show_1st: '1st Call No-Shows',
+  no_show_rate_1st: '1st Call No-Shows',
+  bookable_1st: 'Bookable 1st Calls',
+  calls_booked_2nd: '2nd Calls Booked',
+  shows_2nd: '2nd Call Shows',
+  show_rate_2nd: '2nd Call Shows (Show Rate)',
+  qualified_shows: 'Qualified Shows',
+  qualification_rate: 'Qualified Shows (Qual Rate)',
+  dq_count: 'Disqualified',
+  dq_rate: 'Disqualified (DQ Rate)',
+  dq_after_call2: 'DQ After Call 2',
+  units_closed: 'Units Closed',
+  projected_contract_value: 'Units Closed (Contract Value)',
+  close_rate: 'Units Closed (Close Rate)',
+  compliance_failures: 'Compliance Failures',
+  outcome_unfilled: 'Call Outcome Not Logged',
+  total_shows: 'Total Shows (1st + 2nd)',
+  data_quality: '🔍 Data Quality Audit',
+};
+
+const ANOMALY_LABELS = {
+  stage_showed_status_stale: 'Stage/Status Mismatch (Showed)',
+  stage_noshow_status_showed: 'Stage/Status Conflict (No-Show)',
+  stage_cancelled_status_showed: 'Stage/Status Conflict (Cancelled)',
+  note_exists_status_stale: 'Note Exists, Status Stale',
+  outcome_unfilled: 'Outcome Not Logged',
+  showed_no_lead_quality: 'Missing Lead Quality',
+  showed_no_note: 'Missing Post-Call Note',
+  deal_won_no_value: 'Deal Won, No Value',
+  call2_without_call1_showed: '2nd Call Without 1st Show',
+  stage_noshow_status_stale: 'No-Show Stage, Status Stale',
+};
+
+// ─── State ───────────────────────────────────────────────────────────────────
+let allRows = [];
+let sortCol = null;
+let sortDir = 'asc';
+let activeAnomalyFilter = null;
+let lookupData = { calendars: {}, stages: {} };  // Populated from /api/dashboard/lookups
+
+// ─── Read URL params ─────────────────────────────────────────────────────────
+const params = new URLSearchParams(window.location.search);
+const metric = params.get('metric') || 'calls_booked_1st';
+const start = params.get('start') || '';
+const end = params.get('end') || '';
+const dateBy = params.get('date_by') || 'appointment';
+const repId = params.get('rep_id') || '';
+const isDataQuality = metric === 'data_quality';
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+function formatDate(iso) {
+  if (!iso) return '–';
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function formatDateTime(iso) {
+  if (!iso) return '–';
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' +
+         d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+}
+
+function money(v) {
+  if (v === null || v === undefined) return '–';
+  return '$' + Math.round(v).toLocaleString();
+}
+
+function statusClass(s) {
+  if (!s) return '';
+  const low = s.toLowerCase();
+  if (low === 'showed') return 'status-showed';
+  if (low === 'no show') return 'status-noshow';
+  if (low === 'confirmed') return 'status-confirmed';
+  if (low === 'cancelled') return 'status-cancelled';
+  return '';
+}
+
+function qualClass(q) {
+  if (!q) return '';
+  const low = q.toLowerCase();
+  if (low === 'great') return 'qual-great';
+  if (low === 'ok') return 'qual-ok';
+  if (low === 'barely passable') return 'qual-barely';
+  if (low === 'bad') return 'qual-bad';
+  if (low === 'dq') return 'qual-dq';
+  return '';
+}
+
+function resolveCalendarName(calId) {
+  if (!calId) return '–';
+  return lookupData.calendars[calId] || calId.slice(0, 8) + '…';
+}
+
+function resolveStageName(stageId, dbName) {
+  if (dbName) return dbName;
+  if (!stageId) return '–';
+  return lookupData.stages[stageId] || stageId.slice(0, 8) + '…';
+}
+
+function getRowSeverity(anomalies) {
+  if (!anomalies || !anomalies.length) return '';
+  if (anomalies.some(a => a.severity === 'high')) return 'high';
+  return 'medium';
+}
+
+// ─── Anomaly Summary Chips ───────────────────────────────────────────────────
+function renderAnomalyChips() {
+  if (!isDataQuality) return;
+
+  // Count anomalies by type
+  const counts = {};
+  const severities = {};
+  for (const row of allRows) {
+    for (const a of (row.anomalies || [])) {
+      counts[a.id] = (counts[a.id] || 0) + 1;
+      severities[a.id] = a.severity;
+    }
+  }
+
+  if (Object.keys(counts).length === 0) return;
+
+  const summaryEl = document.getElementById('anomaly-summary');
+  summaryEl.style.display = 'flex';
+
+  // Sort by count desc
+  const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+
+  // "All" chip
+  let html = `<span class="anomaly-chip ${activeAnomalyFilter === null ? 'active' : ''}" onclick="setAnomalyFilter(null)">
+    <span class="chip-count">${allRows.length}</span> All Issues
+  </span>`;
+
+  for (const [id, count] of sorted) {
+    const label = ANOMALY_LABELS[id] || id;
+    const sev = severities[id];
+    const active = activeAnomalyFilter === id ? 'active' : '';
+    html += `<span class="anomaly-chip severity-${sev} ${active}" onclick="setAnomalyFilter('${id}')">
+      <span class="chip-dot"></span>
+      <span class="chip-count">${count}</span> ${label}
+    </span>`;
+  }
+
+  document.getElementById('anomaly-chips').innerHTML = html;
+}
+
+function setAnomalyFilter(id) {
+  activeAnomalyFilter = id;
+  renderAnomalyChips();
+  applyFilterAndSort();
+}
+
+// ─── Render ──────────────────────────────────────────────────────────────────
+function renderHeader() {
+  const title = METRIC_LABELS[metric] || metric;
+  document.getElementById('page-title').textContent = title;
+
+  const parts = [];
+  if (start && end) parts.push(`<span>📅 ${start} → ${end}</span>`);
+  parts.push(`<span>📊 Date by: ${dateBy}</span>`);
+  if (repId) parts.push(`<span>👤 Rep filtered</span>`);
+  document.getElementById('page-subtitle').innerHTML = parts.join('');
+}
+
+function renderTable(rows) {
+  const container = document.getElementById('table-container');
+  if (!rows.length) {
+    container.innerHTML = isDataQuality
+      ? '<div class="empty">✅ No data quality issues found for this period. All records look clean!</div>'
+      : '<div class="empty">No opportunities found for this metric and date range.</div>';
+    document.getElementById('result-count').textContent = '0 results';
+    return;
+  }
+
+  document.getElementById('result-count').textContent = rows.length + ' result' + (rows.length !== 1 ? 's' : '');
+
+  const headerCells = [
+    { key: 'opportunity_name', label: 'Opportunity' },
+    { key: 'rep_name', label: 'Rep' },
+    { key: 'stage_name', label: 'Stage' },
+    { key: 'call1_appointment_date', label: '1st Call Date' },
+    { key: 'call1_appointment_status', label: 'Status' },
+    { key: '_calendar_name', label: 'Calendar' },
+    { key: 'lead_quality', label: 'Lead Quality' },
+    { key: 'canonical_channel', label: 'Channel' },
+    { key: 'monetary_value', label: 'Value' },
+    { key: 'created_at_ghl', label: 'Created' },
+  ];
+
+  // Add anomaly column for data quality mode or when anomalies exist
+  const hasAnomalies = rows.some(r => r.anomalies && r.anomalies.length > 0);
+  if (hasAnomalies) {
+    headerCells.push({ key: '_anomaly_count', label: 'Issues' });
+  }
+
+  const ths = headerCells.map(h => {
+    const isSorted = sortCol === h.key;
+    const arrow = isSorted ? (sortDir === 'asc' ? '▲' : '▼') : '⇅';
+    const cls = isSorted ? 'sorted' : '';
+    return `<th class="${cls}" onclick="sortTable('${h.key}')">${h.label} <span class="sort-arrow">${arrow}</span></th>`;
+  }).join('');
+
+  const trs = rows.map(r => {
+    const oppLink = `${GHL_OPP_BASE}/${r.ghl_opportunity_id}?tab=Opportunity+Details`;
+    const contactLink = r.ghl_contact_id ? `${GHL_CONTACT_BASE}/${r.ghl_contact_id}` : null;
+    const nameCell = `<a class="ghl-link" href="${oppLink}" target="_blank" title="Open in GHL">↗ ${r.opportunity_name || r.ghl_opportunity_id.slice(0, 10) + '…'}</a>`
+      + (contactLink ? `<br><a class="contact-link" href="${contactLink}" target="_blank" title="Open contact in GHL">👤 contact</a>` : '');
+
+    const severity = getRowSeverity(r.anomalies);
+    const rowClass = severity ? `row-${severity}` : '';
+
+    let anomalyCell = '';
+    if (hasAnomalies) {
+      const badges = (r.anomalies || []).map(a => {
+        const icon = a.severity === 'high' ? '🔴' : '🟡';
+        return `<div class="anomaly-badge ${a.severity}">
+          <span class="anomaly-icon">${icon}</span>
+          <span>${a.label}<span class="anomaly-action">→ ${a.action}</span></span>
+        </div>`;
+      }).join('');
+      anomalyCell = `<td><div class="anomaly-badges">${badges || '✅'}</div></td>`;
+    }
+
+    return `<tr class="${rowClass}">
+      <td>${nameCell}</td>
+      <td>${r.rep_name || '–'}</td>
+      <td>${resolveStageName(r.stage_id, r.stage_name)}</td>
+      <td>${formatDateTime(r.call1_appointment_date)}</td>
+      <td class="${statusClass(r.call1_appointment_status)}">${r.call1_appointment_status || '–'}</td>
+      <td>${resolveCalendarName(r.call1_calendar_id)}</td>
+      <td class="${qualClass(r.lead_quality)}">${r.lead_quality || '–'}</td>
+      <td>${r.canonical_channel || '–'}</td>
+      <td class="num">${money(r.monetary_value)}</td>
+      <td>${formatDate(r.created_at_ghl)}</td>
+      ${anomalyCell}
+    </tr>`;
+  }).join('');
+
+  container.innerHTML = `
+    <table>
+      <thead><tr>${ths}</tr></thead>
+      <tbody>${trs}</tbody>
+    </table>
+  `;
+}
+
+// ─── Sort ────────────────────────────────────────────────────────────────────
+function sortTable(col) {
+  if (sortCol === col) {
+    sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    sortCol = col;
+    sortDir = 'asc';
+  }
+  applyFilterAndSort();
+}
+
+function applyFilterAndSort() {
+  let rows = [...allRows];
+
+  // Anomaly type filter
+  if (activeAnomalyFilter) {
+    rows = rows.filter(r =>
+      r.anomalies && r.anomalies.some(a => a.id === activeAnomalyFilter)
+    );
+  }
+
+  // Text search
+  const query = document.getElementById('search-input').value.toLowerCase().trim();
+  if (query) {
+    rows = rows.filter(r =>
+      (r.opportunity_name || '').toLowerCase().includes(query) ||
+      (r.rep_name || '').toLowerCase().includes(query) ||
+      (r.stage_name || '').toLowerCase().includes(query) ||
+      (r.canonical_channel || '').toLowerCase().includes(query) ||
+      (r.call1_appointment_status || '').toLowerCase().includes(query) ||
+      (r.lead_quality || '').toLowerCase().includes(query) ||
+      (r.ghl_opportunity_id || '').toLowerCase().includes(query) ||
+      resolveCalendarName(r.call1_calendar_id).toLowerCase().includes(query) ||
+      (r.anomalies || []).some(a => a.label.toLowerCase().includes(query))
+    );
+  }
+
+  // Sort
+  if (sortCol) {
+    rows.sort((a, b) => {
+      let va, vb;
+      if (sortCol === '_anomaly_count') {
+        va = (a.anomalies || []).length;
+        vb = (b.anomalies || []).length;
+      } else if (sortCol === '_calendar_name') {
+        va = resolveCalendarName(a.call1_calendar_id);
+        vb = resolveCalendarName(b.call1_calendar_id);
+      } else {
+        va = a[sortCol];
+        vb = b[sortCol];
+      }
+      if (va === null || va === undefined) va = '';
+      if (vb === null || vb === undefined) vb = '';
+      if (typeof va === 'number' && typeof vb === 'number') {
+        return sortDir === 'asc' ? va - vb : vb - va;
+      }
+      va = String(va).toLowerCase();
+      vb = String(vb).toLowerCase();
+      if (va < vb) return sortDir === 'asc' ? -1 : 1;
+      if (va > vb) return sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }
+
+  renderTable(rows);
+}
+
+function filterTable() {
+  applyFilterAndSort();
+}
+
+// ─── Init ────────────────────────────────────────────────────────────────────
+async function init() {
+  renderHeader();
+
+  // Fetch lookups (calendar names, stage names) from GHL API
+  try {
+    const lookupRes = await fetch('/api/dashboard/lookups');
+    if (lookupRes.ok) lookupData = await lookupRes.json();
+  } catch (e) {
+    console.warn('Failed to load lookups, using fallback names:', e);
+  }
+
+  const apiParams = new URLSearchParams({ metric, start, end, date_by: dateBy });
+  if (repId) apiParams.set('rep_id', repId);
+
+  try {
+    const res = await fetch(`/api/dashboard/debug?${apiParams}`);
+    if (!res.ok) throw new Error(`API error ${res.status}`);
+    const json = await res.json();
+
+    allRows = json.data;
+
+    // Set badge
+    const badgeEl = document.getElementById('total-count');
+    if (isDataQuality) {
+      const highCount = allRows.filter(r => (r.anomalies || []).some(a => a.severity === 'high')).length;
+      const medCount = allRows.length - highCount;
+      badgeEl.textContent = `${allRows.length} issues`;
+      if (highCount > 0) badgeEl.classList.add('badge-bad');
+      else if (medCount > 0) badgeEl.classList.add('badge-warn');
+    } else {
+      badgeEl.textContent = json.count + ' opps';
+    }
+
+    document.title = `${METRIC_LABELS[metric] || metric} (${json.count}) — Debug`;
+
+    // Sort data quality by severity (high first)
+    if (isDataQuality) {
+      allRows.sort((a, b) => {
+        const sa = getRowSeverity(a.anomalies) === 'high' ? 0 : 1;
+        const sb = getRowSeverity(b.anomalies) === 'high' ? 0 : 1;
+        return sa - sb;
+      });
+    }
+
+    renderAnomalyChips();
+    applyFilterAndSort();
+  } catch (e) {
+    document.getElementById('table-container').innerHTML =
+      `<div class="error">Failed to load data: ${e.message}</div>`;
+  }
+}
+
+init();
+</script>
+</body>
+</html>

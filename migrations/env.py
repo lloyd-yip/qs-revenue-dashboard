@@ -20,7 +20,8 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 # Override sqlalchemy.url from DATABASE_URL env var (Railway injects this)
-database_url = os.environ.get("DATABASE_URL", "")
+from config import settings
+database_url = os.environ.get("DATABASE_URL", settings.database_url)
 # Alembic needs a sync driver; asyncpg URL uses postgresql+psycopg2 for migrations
 if database_url.startswith("postgresql+asyncpg://"):
     database_url = database_url.replace("postgresql+asyncpg://", "postgresql+psycopg2://", 1)

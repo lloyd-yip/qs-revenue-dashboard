@@ -42,7 +42,15 @@
       background: var(--surface);
     }
     header h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.3px; }
+    .header-left { display: flex; align-items: center; gap: 14px; }
     #last-synced { font-size: 12px; color: var(--text2); }
+    .dq-btn {
+      background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.3);
+      color: #fbbf24; padding: 6px 14px; border-radius: 8px; cursor: pointer;
+      font-size: 12px; font-weight: 600; font-family: var(--font); transition: all 0.15s;
+      display: inline-flex; align-items: center; gap: 5px;
+    }
+    .dq-btn:hover { background: rgba(245, 158, 11, 0.22); border-color: #f59e0b; }
 
     /* Filters bar */
     .filters {
@@ -105,6 +113,8 @@
     .kpi-card .kpi-value { font-size: 26px; font-weight: 700; letter-spacing: -0.5px; }
     .kpi-card .kpi-sub { font-size: 11px; color: var(--text2); }
     .kpi-card.highlight { border-color: var(--accent); }
+    .kpi-card.clickable { cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+    .kpi-card.clickable:hover { border-color: var(--accent); background: rgba(99,102,241,0.06); }
 
     /* Charts row */
     .charts-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
@@ -190,7 +200,10 @@
 <body>
 
 <header>
-  <h1>QS Analytics Dashboard</h1>
+  <div class="header-left">
+    <h1>QS Analytics Dashboard</h1>
+    <button class="dq-btn" onclick="window.open('/data-quality','_blank')" title="Open Data Quality Audit">🔍 Data Quality</button>
+  </div>
   <span id="last-synced">Loading...</span>
 </header>
 
@@ -415,6 +428,13 @@ function qs() {
   return `start=${AppState.dateStart}&end=${AppState.dateEnd}&date_by=${AppState.dateBy}`;
 }
 
+function debugUrl(metric, repId) {
+  let url = `/debug?metric=${metric}&start=${AppState.dateStart}&end=${AppState.dateEnd}&date_by=${AppState.dateBy}`;
+  if (repId) url += `&rep_id=${encodeURIComponent(repId)}`;
+  else if (AppState.repId) url += `&rep_id=${encodeURIComponent(AppState.repId)}`;
+  return url;
+}
+
 async function apiFetch(path) {
   const res = await fetch(path);
   if (!res.ok) throw new Error(`API error ${res.status}: ${path}`);
@@ -550,16 +570,16 @@ async function renderDailyActivity() {
 
 function renderKPICards(d) {
   document.getElementById('kpi-cards').innerHTML = `
-    <div class="kpi-card"><div class="kpi-label">1st Calls Booked</div><div class="kpi-value">${num(d.calls_booked_1st)}</div></div>
-    <div class="kpi-card"><div class="kpi-label">1st Call Shows</div><div class="kpi-value">${num(d.shows_1st)}</div></div>
-    <div class="kpi-card"><div class="kpi-label">Show Rate</div><div class="kpi-value ${rateClass(d.show_rate_1st)}">${pct(d.show_rate_1st)}</div><div class="kpi-sub">No-show: ${pct(d.no_show_rate_1st)}</div></div>
-    <div class="kpi-card"><div class="kpi-label">2nd Calls Booked</div><div class="kpi-value">${num(d.calls_booked_2nd)}</div></div>
-    <div class="kpi-card"><div class="kpi-label">2nd Call Shows</div><div class="kpi-value">${num(d.shows_2nd)}</div></div>
-    <div class="kpi-card"><div class="kpi-label">2nd Call Show Rate</div><div class="kpi-value ${rateClass(d.show_rate_2nd)}">${pct(d.show_rate_2nd)}</div></div>
-    <div class="kpi-card"><div class="kpi-label">Qual Rate</div><div class="kpi-value ${rateClass(d.qualification_rate)}">${pct(d.qualification_rate)}</div><div class="kpi-sub-stack"><span>DQ after call 2: ${pct(d.dq_after_call2_rate)}</span><span>Overall DQ: ${pct(d.dq_rate)}</span></div></div>
-    <div class="kpi-card"><div class="kpi-label">Close Rate</div><div class="kpi-value ${rateClass(d.close_rate)}">${pct(d.close_rate)}</div></div>
-    <div class="kpi-card highlight clickable" onclick="showAllClosesModal()"><div class="kpi-label">Units Closed</div><div class="kpi-value">${num(d.units_closed)}</div><div class="kpi-sub">↗ See deals</div></div>
-    <div class="kpi-card"><div class="kpi-label">Proj. Contract Value</div><div class="kpi-value" style="font-size:20px;">${money(d.projected_contract_value)}</div><div class="kpi-sub">Rep-estimated</div></div>
+    <div class="kpi-card clickable" onclick="window.open(debugUrl('calls_booked_1st'),'_blank')"><div class="kpi-label">1st Calls Booked</div><div class="kpi-value">${num(d.calls_booked_1st)}</div><div class="kpi-sub">↗ Debug</div></div>
+    <div class="kpi-card clickable" onclick="window.open(debugUrl('shows_1st'),'_blank')"><div class="kpi-label">1st Call Shows</div><div class="kpi-value">${num(d.shows_1st)}</div><div class="kpi-sub">↗ Debug</div></div>
+    <div class="kpi-card clickable" onclick="window.open(debugUrl('show_rate_1st'),'_blank')"><div class="kpi-label">Show Rate</div><div class="kpi-value ${rateClass(d.show_rate_1st)}">${pct(d.show_rate_1st)}</div><div class="kpi-sub">No-show: ${pct(d.no_show_rate_1st)} · ↗ Debug</div></div>
+    <div class="kpi-card clickable" onclick="window.open(debugUrl('calls_booked_2nd'),'_blank')"><div class="kpi-label">2nd Calls Booked</div><div class="kpi-value">${num(d.calls_booked_2nd)}</div><div class="kpi-sub">↗ Debug</div></div>
+    <div class="kpi-card clickable" onclick="window.open(debugUrl('shows_2nd'),'_blank')"><div class="kpi-label">2nd Call Shows</div><div class="kpi-value">${num(d.shows_2nd)}</div><div class="kpi-sub">↗ Debug</div></div>
+    <div class="kpi-card clickable" onclick="window.open(debugUrl('show_rate_2nd'),'_blank')"><div class="kpi-label">2nd Call Show Rate</div><div class="kpi-value ${rateClass(d.show_rate_2nd)}">${pct(d.show_rate_2nd)}</div><div class="kpi-sub">↗ Debug</div></div>
+    <div class="kpi-card clickable" onclick="window.open(debugUrl('qualification_rate'),'_blank')"><div class="kpi-label">Qual Rate</div><div class="kpi-value ${rateClass(d.qualification_rate)}">${pct(d.qualification_rate)}</div><div class="kpi-sub-stack"><span>DQ after call 2: ${pct(d.dq_after_call2_rate)}</span><span>Overall DQ: ${pct(d.dq_rate)}</span><span>↗ Debug</span></div></div>
+    <div class="kpi-card clickable" onclick="window.open(debugUrl('close_rate'),'_blank')"><div class="kpi-label">Close Rate</div><div class="kpi-value ${rateClass(d.close_rate)}">${pct(d.close_rate)}</div><div class="kpi-sub">↗ Debug</div></div>
+    <div class="kpi-card highlight clickable" onclick="window.open(debugUrl('units_closed'),'_blank')"><div class="kpi-label">Units Closed</div><div class="kpi-value">${num(d.units_closed)}</div><div class="kpi-sub">↗ Debug</div></div>
+    <div class="kpi-card clickable" onclick="window.open(debugUrl('projected_contract_value'),'_blank')"><div class="kpi-label">Proj. Contract Value</div><div class="kpi-value" style="font-size:20px;">${money(d.projected_contract_value)}</div><div class="kpi-sub">Rep-estimated · ↗ Debug</div></div>
   `;
 }
 
@@ -631,25 +651,25 @@ function renderRepBreakdown(reps) {
     const n = r.rep_name.replace(/'/g, "\\'");
     const rid = r.rep_id;
     const bookedCell = rid
-      ? `<span class="closes-link" onclick="showRepOppsModal('${rid}','${n}','booked')">↗ ${num(r.calls_booked_1st)}</span>`
+      ? `<span class="closes-link" onclick="window.open(debugUrl('calls_booked_1st','${rid}'),'_blank')">↗ ${num(r.calls_booked_1st)}</span>`
       : num(r.calls_booked_1st);
     const showedCell = rid
-      ? `<span class="closes-link" onclick="showRepOppsModal('${rid}','${n}','showed')">↗ ${num(r.shows_1st)}</span>`
+      ? `<span class="closes-link" onclick="window.open(debugUrl('shows_1st','${rid}'),'_blank')">↗ ${num(r.shows_1st)}</span>`
       : num(r.shows_1st);
     const closedCell = rid
-      ? `<span class="closes-link" onclick="showRepClosesModal('${rid}','${n}')">↗ ${num(r.units_closed)}</span>`
+      ? `<span class="closes-link" onclick="window.open(debugUrl('units_closed','${rid}'),'_blank')">↗ ${num(r.units_closed)}</span>`
       : num(r.units_closed);
     const notLoggedCell = rid
-      ? `<span class="closes-link" onclick="showRepOppsModal('${rid}','${n}','not_logged')">↗ ${num(r.outcome_not_logged_count)}</span>`
+      ? `<span class="closes-link" onclick="window.open(debugUrl('outcome_unfilled','${rid}'),'_blank')">↗ ${num(r.outcome_not_logged_count)}</span>`
       : num(r.outcome_not_logged_count);
     return `
     <tr>
       <td>${r.rep_name}</td>
       <td class="num">${bookedCell}</td>
       <td class="num">${showedCell}</td>
-      <td class="num ${rateClass(r.show_rate_1st)}">${pct(r.show_rate_1st)}</td>
-      <td class="num ${rateClass(r.qualification_rate)}">${pct(r.qualification_rate)}</td>
-      <td class="num ${rateClass(r.close_rate)}">${pct(r.close_rate)}</td>
+      <td class="num clickable" onclick="window.open(debugUrl('show_rate_1st','${rid}'),'_blank')" style="cursor:pointer;" title="↗ Debug">${pct(r.show_rate_1st)}</td>
+      <td class="num clickable" onclick="window.open(debugUrl('qualification_rate','${rid}'),'_blank')" style="cursor:pointer;" title="↗ Debug">${pct(r.qualification_rate)}</td>
+      <td class="num clickable" onclick="window.open(debugUrl('close_rate','${rid}'),'_blank')" style="cursor:pointer;" title="↗ Debug">${pct(r.close_rate)}</td>
       <td class="num">${closedCell}</td>
       <td class="num ${r.outcome_not_logged_count > 0 ? 'rate-warn' : ''}">${notLoggedCell}</td>
     </tr>`;

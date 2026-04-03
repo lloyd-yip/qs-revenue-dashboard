@@ -108,6 +108,20 @@ async def serve_dashboard():
         headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
     )
 
+@app.get("/debug", include_in_schema=False)
+async def serve_debug():
+    return FileResponse(
+        _STATIC_DIR / "debug.html",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+    )
+
+@app.get("/data-quality", include_in_schema=False)
+async def serve_data_quality():
+    return FileResponse(
+        _STATIC_DIR / "data-quality.html",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+    )
+
 
 # Health check is exempt from auth — Railway uses it without credentials
 @app.get("/api/health", response_model=HealthResponse, tags=["health"])

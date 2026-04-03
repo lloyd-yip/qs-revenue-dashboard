@@ -98,6 +98,41 @@ class GHLClient:
                 logger.warning("Failed to fetch users: %s", exc)
                 return {}
 
+    async def get_calendars(self) -> dict[str, str]:
+        """Fetch all calendars for this location. Returns {calendar_id: name} map.
+
+        Used to resolve calendar IDs from appointment data to human-readable names.
+        Falls back to empty dict if the token lacks calendars scope.
+        """
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                data = await self._get(client, "/calendars/", {"locationId": self._location_id})
+                calendars = data.get("calendars", [])
+                return {c["id"]: c.get("name", "") for c in calendars}
+            except Exception as exc:
+                logger.warning("Failed to fetch calendars: %s — check PIT scopes include 'calendars.readonly'", exc)
+                return {}
+
+    async def get_pipeline_stages(self) -> dict[str, str]:
+        """Fetch all pipeline stages for this location. Returns {stage_id: stage_name} map.
+
+        Used to resolve stage IDs to human-readable names dynamically.
+        Falls back to empty dict if the token lacks opportunities scope.
+        """
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                data = await self._get(
+                    client, "/opportunities/pipelines", {"locationId": self._location_id}
+                )
+                stage_map = {}
+                for pipeline in data.get("pipelines", []):
+                    for stage in pipeline.get("stages", []):
+                        stage_map[stage["id"]] = stage.get("name", "")
+                return stage_map
+            except Exception as exc:
+                logger.warning("Failed to fetch pipeline stages: %s — check PIT scopes include 'opportunities.readonly'", exc)
+                return {}
+
     async def get_user_email_map(self) -> dict[str, str]:
         """Fetch all users for this location. Returns {user_id: email} map.
 

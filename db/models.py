@@ -52,6 +52,10 @@ class Opportunity(Base):
     call1_appointment_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     call2_appointment_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
 
+    # Calendar ID — which GHL calendar the 1st call was booked on
+    # Populated from the contact appointment data during sync
+    call1_calendar_id: Mapped[str | None] = mapped_column(String, nullable=True)
+
 
     # Qualification fields (dropdowns on Opportunity)
     # Lead Quality: M8RuTSXsLhZMvdMWAlLr — Great / Ok / Barely Passable / Bad / DQ

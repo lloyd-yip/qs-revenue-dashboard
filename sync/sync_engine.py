@@ -119,9 +119,24 @@ async def _build_opportunity_row(
         or (stage_id is not None and stage_id in SHOWED_STAGE_IDS)
     )
     post_call_note_word_count: int | None = None
-    if showed_1st and call1_date and opp.get("contactId"):
+    call1_calendar_id: str | None = None
+
+    # Fetch contact appointments to extract calendar ID (and notes for showed opps)
+    if call1_date and opp.get("contactId"):
         now_utc = datetime.now(timezone.utc)
-        if now_utc > call1_date + timedelta(hours=12):
+        appointments = await ghl_client.get_contact_appointments(opp["contactId"])
+
+        # Find the appointment matching call1_date to get the calendarId
+        if appointments:
+            target_date_str = call1_date.date().isoformat()
+            for appt in appointments:
+                start_time = appt.get("startTime", "")
+                if start_time.startswith(target_date_str):
+                    call1_calendar_id = appt.get("calendarId")
+                    break
+
+        # Notes (only for showed opps past the 12h grace period)
+        if showed_1st and now_utc > call1_date + timedelta(hours=12):
             notes = await ghl_client.get_contact_notes(opp["contactId"])
             post_call_note_word_count = compute_post_call_note_word_count(
                 notes=notes,
@@ -143,6 +158,7 @@ async def _build_opportunity_row(
         "call2_appointment_status": call2_status,
         "call1_appointment_date": call1_date,
         "call2_appointment_date": call2_date,
+        "call1_calendar_id": call1_calendar_id,
         "lead_quality": custom.get("lead_quality"),
         "financial_qual": custom.get("financial_qual"),
         "intent_to_transform": custom.get("intent_to_transform"),
