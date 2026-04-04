@@ -92,10 +92,10 @@ async def get_summary(
             func.count(
                 case((Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID, 1))
             ).label("units_closed"),
-            # Projected contract value
+            # Projected contract value (from Projected Deal Size custom field)
             func.coalesce(
                 func.sum(
-                    case((Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID, Opportunity.monetary_value))
+                    case((Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID, Opportunity.projected_deal_size))
                 ),
                 0,
             ).label("projected_contract_value"),

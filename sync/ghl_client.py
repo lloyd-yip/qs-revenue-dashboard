@@ -65,6 +65,7 @@ CUSTOM_FIELD_IDS = {
     "op_book_campaign_source": "siKjWZIScNTHSk38LJqt",
     "op_book_campaign_medium": "itX1JvyAAUtxbHuXtMOB",
     "op_book_campaign_name": "MYzEZQzFw8G42mrTJVKy",
+    "projected_deal_size": "Oo9ktilF7QwTNBzksT3k",
 }
 
 # Reverse lookup: field ID → our internal key name

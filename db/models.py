@@ -40,6 +40,8 @@ class Opportunity(Base):
 
     # Deal value (rep-entered estimate — directional only)
     monetary_value: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    # Projected Deal Size (custom field Oo9ktilF7QwTNBzksT3k — rep-entered, more accurate)
+    projected_deal_size: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
 
     # Per-call status (from Opportunity custom fields — primary show/no-show signal)
     # Field IDs: Call 1 = V82ErbW24izA5aQUzRUv, Call 2 = WMj5zj7G8wBTtp3OqjKp

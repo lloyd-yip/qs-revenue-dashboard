@@ -304,7 +304,26 @@ async def rep_rankings(
     return InsightsResponse(data=data, meta=_meta(start, end, date_by))
 
 
+
+# ── Follow-up call show rate by lead quality ─────────────────────────────────
+
+from db.queries.followup_quality import get_followup_show_rate_by_quality
+
+
+@router.get("/followup-by-quality")
+async def followup_by_quality(
+    rep_id: str | None = Query(None),
+    params: tuple = Depends(_date_params),
+    db: AsyncSession = Depends(get_db),
+):
+    """Follow-up (2nd) call show rate broken down by lead quality."""
+    start, end, date_by = params
+    data = await get_followup_show_rate_by_quality(db, start, end, date_by, rep_id)
+    return {"data": data, "meta": _meta(start, end, date_by).__dict__}
+
+
 # ── Debug drill-down ─────────────────────────────────────────────────────────
+
 
 @router.get("/debug")
 async def debug_drilldown(

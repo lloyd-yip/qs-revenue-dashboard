@@ -41,7 +41,7 @@ async def get_lead_source_breakdown(
                 func.sum(
                     case((
                         Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID,
-                        Opportunity.monetary_value,
+                        Opportunity.projected_deal_size,
                     ))
                 ),
                 0,
@@ -218,7 +218,7 @@ async def get_channel_closes(
             Opportunity.opportunity_name,
             Opportunity.opportunity_owner_name,
             Opportunity.updated_at_ghl,
-            Opportunity.monetary_value,
+            Opportunity.projected_deal_size,
         )
         .where(
             and_(
@@ -235,7 +235,7 @@ async def get_channel_closes(
             "name": row.opportunity_name or "—",
             "rep": row.opportunity_owner_name or "Unassigned",
             "close_date": row.updated_at_ghl.strftime("%b %d, %Y") if row.updated_at_ghl else "—",
-            "value": float(row.monetary_value) if row.monetary_value else None,
+            "value": float(row.projected_deal_size) if row.projected_deal_size else None,
         }
         for row in result.all()
     ]

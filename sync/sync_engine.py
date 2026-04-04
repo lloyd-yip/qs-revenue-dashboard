@@ -34,6 +34,16 @@ from sync.normalizer import (
 logger = logging.getLogger(__name__)
 
 
+def _parse_deal_size(raw: str | None) -> float | None:
+    """Parse a comma-formatted deal size string like '15,000' into a float."""
+    if not raw:
+        return None
+    try:
+        return float(raw.replace(",", "").strip())
+    except (ValueError, TypeError):
+        return None
+
+
 async def _load_normalization_map(session: AsyncSession) -> dict[str, str]:
     """Load the full source_normalization table into memory as a dict."""
     result = await session.execute(select(SourceNormalization.raw_value, SourceNormalization.canonical_channel))
@@ -154,6 +164,7 @@ async def _build_opportunity_row(
         "opportunity_owner_id": owner_id,
         "opportunity_owner_name": owner_name,
         "monetary_value": opp.get("monetaryValue"),
+        "projected_deal_size": _parse_deal_size(custom.get("projected_deal_size")),
         "call1_appointment_status": call1_status,
         "call2_appointment_status": call2_status,
         "call1_appointment_date": call1_date,

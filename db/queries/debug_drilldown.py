@@ -96,6 +96,7 @@ _DRILLDOWN_COLUMNS = [
     Opportunity.call2_appointment_status,
     Opportunity.lead_quality,
     Opportunity.monetary_value,
+    Opportunity.projected_deal_size,
     Opportunity.canonical_channel,
     Opportunity.created_at_ghl,
     Opportunity.outcome_unfilled,
@@ -287,13 +288,13 @@ def _detect_anomalies(row: dict) -> list[dict]:
                 "Add a post-call note describing the conversation",
             )
 
-    # 8. Deal Won but no monetary value
-    if stage_id == DEAL_WON_STAGE_ID and not row.get("monetary_value"):
+    # 8. Deal Won but no projected deal size
+    if stage_id == DEAL_WON_STAGE_ID and not row.get("projected_deal_size"):
         add(
             "deal_won_no_value",
-            "Deal Won but no monetary value set",
+            "Deal Won but no projected deal size set",
             "medium",
-            "Enter the deal value on the opportunity",
+            "Enter the projected deal size on the opportunity",
         )
 
     # 9. Has 2nd call date but 1st call ≠ Showed
@@ -338,6 +339,7 @@ def _row_to_dict(r) -> dict:
         "call2_appointment_status": r.call2_appointment_status,
         "lead_quality": r.lead_quality,
         "monetary_value": float(r.monetary_value) if r.monetary_value else None,
+        "projected_deal_size": float(r.projected_deal_size) if r.projected_deal_size else None,
         "canonical_channel": r.canonical_channel,
         "created_at_ghl": r.created_at_ghl.isoformat() if r.created_at_ghl else None,
         "outcome_unfilled": r.outcome_unfilled,

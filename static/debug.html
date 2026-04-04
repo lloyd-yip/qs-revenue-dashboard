@@ -369,7 +369,7 @@ function renderTable(rows) {
     { key: '_calendar_name', label: 'Calendar' },
     { key: 'lead_quality', label: 'Lead Quality' },
     { key: 'canonical_channel', label: 'Channel' },
-    { key: 'monetary_value', label: 'Value' },
+    { key: 'projected_deal_size', label: 'Value' },
     { key: 'created_at_ghl', label: 'Created' },
   ];
 
@@ -416,7 +416,7 @@ function renderTable(rows) {
       <td>${resolveCalendarName(r.call1_calendar_id)}</td>
       <td class="${qualClass(r.lead_quality)}">${r.lead_quality || '–'}</td>
       <td>${r.canonical_channel || '–'}</td>
-      <td class="num">${money(r.monetary_value)}</td>
+      <td class="num">${money(r.projected_deal_size)}</td>
       <td>${formatDate(r.created_at_ghl)}</td>
       ${anomalyCell}
     </tr>`;
