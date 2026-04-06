@@ -190,22 +190,14 @@ async def get_by_rep(
             func.count(
                 case((and_(is_1st, Opportunity.outcome_unfilled.is_(True)), 1))
             ).label("outcome_not_logged_count"),
-            # Avg deal cycle (days from contact creation to close) — won deals only.
-            # close proxy: close_date → call2_appointment_date → updated_at_ghl
-            # start proxy: contact_created_at → created_at_ghl
+            # Avg deal cycle (days from opp creation to last update) — won deals only.
+            # updated_at_ghl and created_at_ghl are NOT NULL on every row — safe baseline.
             func.avg(
                 case((
                     Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID,
                     func.extract(
                         "epoch",
-                        func.coalesce(
-                            Opportunity.close_date,
-                            Opportunity.call2_appointment_date,
-                            Opportunity.updated_at_ghl,
-                        ) - func.coalesce(
-                            Opportunity.contact_created_at,
-                            Opportunity.created_at_ghl,
-                        ),
+                        Opportunity.updated_at_ghl - Opportunity.created_at_ghl,
                     ) / 86400.0,
                 ))
             ).label("avg_cycle_days"),
