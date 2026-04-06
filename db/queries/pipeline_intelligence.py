@@ -88,17 +88,22 @@ async def get_pipeline_intelligence(
                 ))
             ).label("total_shows"),
             func.count(case((is_won, 1))).label("units_closed"),
-            # Avg deal cycle (days from contact_created_at to close_date) — won opps only
+            # Avg deal cycle (days from contact creation to close) — won opps only.
+            # close proxy: close_date → call2_appointment_date → updated_at_ghl
+            # start proxy: contact_created_at → created_at_ghl
             func.avg(
                 case((
-                    and_(
-                        is_won,
-                        Opportunity.close_date.isnot(None),
-                        Opportunity.contact_created_at.isnot(None),
-                    ),
+                    is_won,
                     func.extract(
                         "epoch",
-                        Opportunity.close_date - Opportunity.contact_created_at,
+                        func.coalesce(
+                            Opportunity.close_date,
+                            Opportunity.call2_appointment_date,
+                            Opportunity.updated_at_ghl,
+                        ) - func.coalesce(
+                            Opportunity.contact_created_at,
+                            Opportunity.created_at_ghl,
+                        ),
                     ) / 86400.0,
                 ))
             ).label("avg_cycle_days"),
