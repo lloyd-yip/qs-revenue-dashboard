@@ -190,6 +190,20 @@ async def get_by_rep(
             func.count(
                 case((and_(is_1st, Opportunity.outcome_unfilled.is_(True)), 1))
             ).label("outcome_not_logged_count"),
+            # Avg deal cycle (days from contact creation to close) — won deals only
+            func.avg(
+                case((
+                    and_(
+                        Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID,
+                        Opportunity.close_date.isnot(None),
+                        Opportunity.contact_created_at.isnot(None),
+                    ),
+                    func.extract(
+                        "epoch",
+                        Opportunity.close_date - Opportunity.contact_created_at,
+                    ) / 86400.0,
+                ))
+            ).label("avg_cycle_days"),
         )
         .where(bf)
         .group_by(Opportunity.opportunity_owner_id, Opportunity.opportunity_owner_name)
@@ -219,6 +233,7 @@ async def get_by_rep(
             "total_shows": row.total_shows,
             "compliance_failures": row.compliance_failures,
             "outcome_not_logged_count": row.outcome_not_logged_count,
+            "avg_cycle_days": round(float(row.avg_cycle_days), 1) if row.avg_cycle_days is not None else None,
         }
         for row in result.all()
     ]

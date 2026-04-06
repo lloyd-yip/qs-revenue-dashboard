@@ -948,7 +948,7 @@ function renderRepBreakdown(reps) {
       <td class="num clickable" onclick="window.open(debugUrl('qualification_rate','${rid}'),'_blank')" style="cursor:pointer;" title="↗ Debug">${pct(r.qualification_rate)}</td>
       <td class="num clickable" onclick="window.open(debugUrl('close_rate','${rid}'),'_blank')" style="cursor:pointer;" title="↗ Debug">${pct(r.close_rate)}</td>
       <td class="num">${closedCell}</td>
-      <td class="num" style="color:var(--text2);">—</td>
+      <td class="num" style="color:var(--text2);">${r.avg_cycle_days !== null && r.avg_cycle_days !== undefined ? r.avg_cycle_days + 'd' : '—'}</td>
       <td class="num" style="color:var(--text2);">—</td>
       <td class="num" style="color:var(--text2);">—</td>
       <td class="num ${r.outcome_not_logged_count > 0 ? 'rate-warn' : ''}">${notLoggedCell}</td>
