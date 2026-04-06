@@ -159,12 +159,10 @@ async def _build_opportunity_row(
         if contact:
             contact_created_at = parse_ghl_datetime(contact.get("dateAdded"))
 
-    # close_date: lastStatusChangeAt on won deals only.
-    # GHL does not have a dedicated wonAt field — lastStatusChangeAt is the closest proxy.
-    is_won = opp.get("status") == "won"
-    close_date: datetime | None = None
-    if is_won:
-        close_date = parse_ghl_datetime(opp.get("lastStatusChangeAt"))
+    # close_date: automation-set custom field wonlostabandoned_date (vzU9IqXPuwAYkKrJ3I3F).
+    # Written by GHL automation when deal status changes to won/lost/abandoned — stable and precise.
+    # Do not substitute lastStatusChangeAt — that field changes on any status update post-win.
+    close_date: datetime | None = parse_ghl_datetime(custom.get("wonlostabandoned_date"))
 
     # Legacy compliance flag (stage-specific — kept for backward compat)
     compliance_failure = compute_compliance_failure(
@@ -205,6 +203,7 @@ async def _build_opportunity_row(
         "opportunity_owner_id": owner_id,
         "opportunity_owner_name": owner_name,
         "monetary_value": opp.get("monetaryValue"),
+        "cash_collected": float(custom["cash_collected"]) if custom.get("cash_collected") else None,
         "call1_appointment_status": call1_status,
         "call2_appointment_status": call2_status,
         "call1_appointment_date": call1_date,

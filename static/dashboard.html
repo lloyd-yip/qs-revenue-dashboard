@@ -949,8 +949,8 @@ function renderRepBreakdown(reps) {
       <td class="num clickable" onclick="window.open(debugUrl('close_rate','${rid}'),'_blank')" style="cursor:pointer;" title="↗ Debug">${pct(r.close_rate)}</td>
       <td class="num">${closedCell}</td>
       <td class="num" style="color:var(--text2);">${r.avg_cycle_days !== null && r.avg_cycle_days !== undefined ? r.avg_cycle_days + 'd' : '—'}</td>
-      <td class="num" style="color:var(--text2);">—</td>
-      <td class="num" style="color:var(--text2);">—</td>
+      <td class="num" style="color:var(--green);">${r.contract_value ? money(r.contract_value) : '—'}</td>
+      <td class="num" style="color:var(--green);">${r.cash_collected ? money(r.cash_collected) : '—'}</td>
       <td class="num ${r.outcome_not_logged_count > 0 ? 'rate-warn' : ''}">${notLoggedCell}</td>
     </tr>`;
   }).join('');
@@ -1045,8 +1045,8 @@ function renderChannelTable(data) {
         <td class="num">${num(d.shows)}</td>
         <td class="num ${rateClass(showRate)}">${pct(showRate)}</td>
         <td class="num">${num(d.units_closed)}</td>
-        <td class="num" style="color:var(--text2);">—</td>
-        <td class="num" style="color:var(--text2);">—</td>
+        <td class="num" style="color:var(--green);">${d.contract_value ? money(d.contract_value) : '—'}</td>
+        <td class="num" style="color:var(--green);">${d.cash_collected ? money(d.cash_collected) : '—'}</td>
         <td class="num ${rateClass(d.qual_rate)}">${pct(d.qual_rate)}</td>
         <td class="num ${d.dq_rate !== null && d.dq_rate > 0.3 ? 'rate-bad' : ''}">${pct(d.dq_rate)}</td>
         <td class="num" style="color:var(--green);">${num(d.great_count)}</td>
@@ -1242,8 +1242,8 @@ async function renderPipelineIntelligence() {
         <td class="num ${rateClass(r.close_rate)}">${pct(r.close_rate)}</td>
         <td class="num">${num(r.units_closed)}</td>
         <td class="num" style="color:var(--text2);">${cycleTxt}</td>
-        <td class="num" style="color:var(--text2);">—</td>
-        <td class="num" style="color:var(--text2);">—</td>
+        <td class="num" style="color:var(--green);">${r.contract_value ? money(r.contract_value) : '—'}</td>
+        <td class="num" style="color:var(--green);">${r.cash_collected ? money(r.cash_collected) : '—'}</td>
       </tr>`;
     }).join('');
 

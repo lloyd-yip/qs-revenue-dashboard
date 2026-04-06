@@ -46,6 +46,24 @@ async def get_lead_source_breakdown(
                 ),
                 0,
             ).label("projected_contract_value"),
+            func.coalesce(
+                func.sum(
+                    case((
+                        Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID,
+                        Opportunity.monetary_value,
+                    ))
+                ),
+                0,
+            ).label("contract_value"),
+            func.coalesce(
+                func.sum(
+                    case((
+                        Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID,
+                        Opportunity.cash_collected,
+                    ))
+                ),
+                0,
+            ).label("cash_collected_sum"),
             # Qual/DQ per channel (1st call shows only)
             func.count(
                 case((and_(is_1st, showed_1st, ~Opportunity.outcome_unfilled), 1))
@@ -98,6 +116,8 @@ async def get_lead_source_breakdown(
             "shows": row.shows,
             "units_closed": row.units_closed,
             "projected_contract_value": float(row.projected_contract_value),
+            "contract_value": float(row.contract_value),
+            "cash_collected": float(row.cash_collected_sum),
             "qual_rate": safe_rate(row.qualified_shows, row.shows_1st),
             "dq_rate": safe_rate(row.dq_count, row.shows_1st),
             "great_count": row.great_count,

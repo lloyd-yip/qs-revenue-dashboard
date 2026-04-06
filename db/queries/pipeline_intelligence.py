@@ -91,22 +91,27 @@ async def get_pipeline_intelligence(
                 ))
             ).label("total_shows"),
             func.count(case((is_won, 1))).label("units_closed"),
-            # Avg deal cycle (days from contact creation to close) — won opps only.
-            # close proxy: close_date → call2_appointment_date → updated_at_ghl
-            # start proxy: contact_created_at → created_at_ghl
+            # Contract value and cash collected — won deals only
+            func.coalesce(
+                func.sum(case((is_won, Opportunity.monetary_value))),
+                0,
+            ).label("contract_value"),
+            func.coalesce(
+                func.sum(case((is_won, Opportunity.cash_collected))),
+                0,
+            ).label("cash_collected_sum"),
+            # Avg deal cycle: first call date → close date, won deals only.
+            # Both dates must be non-null — no proxy substitution.
             func.avg(
                 case((
-                    is_won,
+                    and_(
+                        is_won,
+                        Opportunity.close_date.isnot(None),
+                        Opportunity.call1_appointment_date.isnot(None),
+                    ),
                     func.extract(
                         "epoch",
-                        func.coalesce(
-                            Opportunity.close_date,
-                            Opportunity.call2_appointment_date,
-                            Opportunity.updated_at_ghl,
-                        ) - func.coalesce(
-                            Opportunity.contact_created_at,
-                            Opportunity.created_at_ghl,
-                        ),
+                        Opportunity.close_date - Opportunity.call1_appointment_date,
                     ) / 86400.0,
                 ))
             ).label("avg_cycle_days"),
@@ -134,9 +139,8 @@ async def get_pipeline_intelligence(
             "units_closed": row.units_closed,
             "close_rate": safe_rate(row.units_closed, row.total_shows),
             "avg_cycle_days": round(float(row.avg_cycle_days), 1) if row.avg_cycle_days is not None else None,
-            # Financial — null until CFO provides data
-            "contract_value": None,
-            "cash_collected": None,
+            "contract_value": float(row.contract_value),
+            "cash_collected": float(row.cash_collected_sum),
         })
 
     return {"dimension_label": dimension_label, "rows": rows}

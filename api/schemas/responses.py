@@ -52,6 +52,8 @@ class RepMetrics(BaseModel):
     close_rate: float | None
     units_closed: int
     projected_contract_value: float
+    contract_value: float = 0
+    cash_collected: float = 0
     total_shows: int
     compliance_failures: int
     outcome_not_logged_count: int
@@ -69,6 +71,8 @@ class ChannelBreakdown(BaseModel):
     shows: int
     units_closed: int
     projected_contract_value: float
+    contract_value: float = 0
+    cash_collected: float = 0
     qual_rate: float | None
     dq_rate: float | None
     great_count: int

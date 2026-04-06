@@ -39,10 +39,12 @@ class Opportunity(Base):
     opportunity_owner_name: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # Deal value fields
-    # monetary_value: raw GHL monetaryValue field
+    # monetary_value: raw GHL monetaryValue field — used as contract value
     # projected_deal_size: rep-entered estimate (directional only) — stored separately
+    # cash_collected: rep-entered projected upfront cash collected — directional, not accounting-validated
     monetary_value: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
     projected_deal_size: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    cash_collected: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
 
     # Per-call status (from Opportunity custom fields — primary show/no-show signal)
     # Field IDs: Call 1 = V82ErbW24izA5aQUzRUv, Call 2 = WMj5zj7G8wBTtp3OqjKp
@@ -127,9 +129,9 @@ class Opportunity(Base):
 
     # Deal cycle fields
     # contact_created_at: when the GHL contact record was first created (dateAdded on contact)
-    # close_date: when the deal was won — sourced from opportunity.lastStatusChangeAt on Won records
-    # deal_cycle_days: computed at query time as (close_date - contact_created_at) or
-    #                  (call2_appointment_date - contact_created_at) as proxy
+    # close_date: automation-set via GHL custom field wonlostabandoned_date (vzU9IqXPuwAYkKrJ3I3F)
+    #             Written when deal status changes to won/lost/abandoned — stable, does not drift.
+    # avg_cycle_days: computed at query time as (close_date - call1_appointment_date) for won deals
     contact_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     close_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
 

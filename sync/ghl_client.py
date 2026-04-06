@@ -90,6 +90,13 @@ CUSTOM_FIELD_IDS = {
     "op_book_campaign_source": "siKjWZIScNTHSk38LJqt",
     "op_book_campaign_medium": "itX1JvyAAUtxbHuXtMOB",
     "op_book_campaign_name": "MYzEZQzFw8G42mrTJVKy",
+    # Close date — automation-set when deal status changes to Won/Lost/Abandoned.
+    # More stable than lastStatusChangeAt (system field that can drift on re-syncs).
+    # GHL field: opportunity.wonlostabandoned_date | ID: vzU9IqXPuwAYkKrJ3I3F
+    "wonlostabandoned_date": "vzU9IqXPuwAYkKrJ3I3F",
+    # Cash collected — rep-entered projection of upfront cash collected at close.
+    # Not validated against accounting; directional only. GHL field: opportunity.projected_upfront_cash_collect
+    "cash_collected": "WcEvutCXULqEKdOquVwv",
 }
 
 # Reverse lookup: field ID → our internal key name

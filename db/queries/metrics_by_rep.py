@@ -195,25 +195,35 @@ async def get_by_rep(
             func.count(
                 case((and_(is_1st, Opportunity.outcome_unfilled.is_(True)), 1))
             ).label("outcome_not_logged_count"),
-            # Avg deal cycle (days from contact creation to close) — won deals only.
-            # close proxy: close_date → call2_appointment_date → updated_at_ghl
-            # start proxy: contact_created_at → created_at_ghl
+            # Avg deal cycle: first call date → close date, won deals only.
+            # Both dates must be non-null — no proxy substitution.
             func.avg(
                 case((
-                    Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID,
+                    and_(
+                        Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID,
+                        Opportunity.close_date.isnot(None),
+                        Opportunity.call1_appointment_date.isnot(None),
+                    ),
                     func.extract(
                         "epoch",
-                        func.coalesce(
-                            Opportunity.close_date,
-                            Opportunity.call2_appointment_date,
-                            Opportunity.updated_at_ghl,
-                        ) - func.coalesce(
-                            Opportunity.contact_created_at,
-                            Opportunity.created_at_ghl,
-                        ),
+                        Opportunity.close_date - Opportunity.call1_appointment_date,
                     ) / 86400.0,
                 ))
             ).label("avg_cycle_days"),
+            # Contract value (monetaryValue from GHL) — won deals only
+            func.coalesce(
+                func.sum(
+                    case((Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID, Opportunity.monetary_value))
+                ),
+                0,
+            ).label("contract_value"),
+            # Cash collected (rep-entered projection) — won deals only
+            func.coalesce(
+                func.sum(
+                    case((Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID, Opportunity.cash_collected))
+                ),
+                0,
+            ).label("cash_collected_sum"),
         )
         .where(bf)
         .group_by(Opportunity.opportunity_owner_id, Opportunity.opportunity_owner_name)
@@ -240,6 +250,8 @@ async def get_by_rep(
             "close_rate": safe_rate(row.units_closed, row.total_shows),
             "units_closed": row.units_closed,
             "projected_contract_value": float(row.projected_contract_value),
+            "contract_value": float(row.contract_value),
+            "cash_collected": float(row.cash_collected_sum),
             "total_shows": row.total_shows,
             "compliance_failures": row.compliance_failures,
             "outcome_not_logged_count": row.outcome_not_logged_count,
