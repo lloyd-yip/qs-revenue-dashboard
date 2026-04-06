@@ -356,13 +356,50 @@
 
 <!-- TAB: Cost Analysis -->
 <div id="tab-cost" class="tab-content">
-  <div style="background:rgba(99,102,241,0.06); border:1px solid rgba(99,102,241,0.2); border-radius:var(--radius); padding:20px 24px; margin-bottom:24px; display:flex; align-items:flex-start; gap:16px;">
-    <div style="font-size:22px; margin-top:2px;">📊</div>
-    <div>
-      <div style="font-size:14px; font-weight:600; margin-bottom:6px;">Cost Analysis — Ready When You Are</div>
-      <div style="font-size:13px; color:var(--text2); line-height:1.6;">
-        These metrics are fully structured and will auto-populate the moment ad spend and financial data are connected.
-        All calculations are already defined — provide the numbers and this dashboard fills in instantly.
+
+  <!-- Revenue Metrics — macro business overview -->
+  <div style="margin-bottom:28px;">
+    <div style="display:flex; align-items:baseline; gap:12px; margin-bottom:14px;">
+      <h3 style="font-size:13px; font-weight:600; color:var(--text2); text-transform:uppercase; letter-spacing:0.4px; margin:0;">Revenue Metrics</h3>
+      <span style="font-size:11px; color:var(--text2); background:rgba(99,102,241,0.08); border:1px solid rgba(99,102,241,0.2); border-radius:4px; padding:2px 8px;">Pending accounting data</span>
+    </div>
+    <div class="kpi-row" style="grid-template-columns: repeat(4, 1fr); margin-bottom:12px;">
+      <div class="kpi-card">
+        <div class="kpi-label">Cost / Call Booked</div>
+        <div class="kpi-value" style="font-size:22px; color:var(--text2);">—</div>
+        <div class="kpi-sub">Mktg spend ÷ calls booked</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Cost / Show</div>
+        <div class="kpi-value" style="font-size:22px; color:var(--text2);">—</div>
+        <div class="kpi-sub">Mktg spend ÷ shows</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Cost / Qual Show</div>
+        <div class="kpi-value" style="font-size:22px; color:var(--text2);">—</div>
+        <div class="kpi-sub">Mktg spend ÷ qual shows</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Cost / Acquisition</div>
+        <div class="kpi-value" style="font-size:22px; color:var(--text2);">—</div>
+        <div class="kpi-sub">(Mktg + sales comp) ÷ closed</div>
+      </div>
+    </div>
+    <div class="kpi-row" style="grid-template-columns: repeat(3, 1fr);">
+      <div class="kpi-card">
+        <div class="kpi-label">Avg Contract Value</div>
+        <div class="kpi-value" style="font-size:22px; color:var(--text2);">—</div>
+        <div class="kpi-sub">Avg contract value per close</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Avg Cash Collected Upfront</div>
+        <div class="kpi-value" style="font-size:22px; color:var(--text2);">—</div>
+        <div class="kpi-sub">Cash collected upfront per close</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Avg % Cash Upfront</div>
+        <div class="kpi-value" style="font-size:22px; color:var(--text2);">—</div>
+        <div class="kpi-sub">Upfront cash ÷ contract value</div>
       </div>
     </div>
   </div>
@@ -379,16 +416,15 @@
             <th class="num">Shows</th>
             <th class="num">Qual Shows</th>
             <th class="num">Closed</th>
-            <th class="num" style="color:var(--accent2);">Ad Spend</th>
+            <th class="num" style="color:var(--accent2);">Channel Spend</th>
             <th class="num" style="color:var(--accent2);">Cost / Call Booked</th>
             <th class="num" style="color:var(--accent2);">Cost / Show</th>
             <th class="num" style="color:var(--accent2);">Cost / Qual Show</th>
             <th class="num" style="color:var(--accent2);">Cost / Acquisition</th>
-            <th class="num" style="color:var(--accent2);">Cost / Close</th>
           </tr>
         </thead>
         <tbody id="cost-channel-body">
-          <tr><td colspan="11" class="empty" style="text-align:center; padding:32px; color:var(--text2);">Loading channel data...</td></tr>
+          <tr><td colspan="10" class="empty" style="text-align:center; padding:32px; color:var(--text2);">Loading channel data...</td></tr>
         </tbody>
       </table>
     </div>
@@ -1295,7 +1331,6 @@ async function renderCostAnalysis() {
         <td class="num">${num(d.shows)}</td>
         <td class="num">${num(d.great_count + d.ok_count + d.barely_passable_count)}</td>
         <td class="num">${num(d.units_closed)}</td>
-        <td class="num" style="color:var(--text2);">—</td>
         <td class="num" style="color:var(--text2);">—</td>
         <td class="num" style="color:var(--text2);">—</td>
         <td class="num" style="color:var(--text2);">—</td>
