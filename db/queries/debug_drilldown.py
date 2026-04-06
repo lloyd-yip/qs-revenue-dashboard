@@ -16,6 +16,7 @@ from db.models import Opportunity
 from db.queries.common import (
     QUALIFIED_LEAD_QUALITY,
     base_filter,
+    bookable_1st_call_expr,
     has_1st_call,
     has_2nd_call,
     showed_1st_call_expr,
@@ -126,12 +127,12 @@ def _build_metric_filter(metric: str, start: date, end: date, date_by: str):
         case "no_show_1st" | "no_show_rate_1st":
             return and_(
                 is_1st,
-                ~Opportunity.outcome_unfilled,
+                bookable_1st_call_expr(),
                 ~showed_1st,
             )
 
         case "bookable_1st":
-            return and_(is_1st, ~Opportunity.outcome_unfilled)
+            return and_(is_1st, bookable_1st_call_expr())
 
         case "calls_booked_2nd":
             return is_2nd

@@ -6,7 +6,7 @@ from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Opportunity
-from db.queries.common import base_filter, has_1st_call, showed_1st_call_expr
+from db.queries.common import base_filter, bookable_1st_call_expr, has_1st_call, showed_1st_call_expr
 
 _TRUNC_MAP = {"day": "day", "week": "week", "month": "month"}
 
@@ -47,7 +47,7 @@ async def get_time_series(
                 case((and_(is_1st, showed_1st, ~Opportunity.rep_compliance_failure), 1))
             ).label("shows"),
             func.count(
-                case((and_(is_1st, ~Opportunity.rep_compliance_failure), 1))
+                case((and_(is_1st, bookable_1st_call_expr()), 1))
             ).label("bookable"),
         )
         .where(bf)

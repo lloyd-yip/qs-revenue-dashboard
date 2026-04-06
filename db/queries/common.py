@@ -105,3 +105,18 @@ def showed_2nd_call_expr():
         Opportunity.call2_appointment_status == "Showed",
         Opportunity.pipeline_stage_id == "10e6b1ef-0685-4f73-b3c7-b5006b7bc311",  # 2nd Call Done
     )
+
+
+def bookable_1st_call_expr():
+    """Show rate denominator for 1st call: Showed + No Show + Cancelled.
+
+    Explicit status check — do not use ~outcome_unfilled as a proxy.
+    outcome_unfilled is a compliance flag and can include upcoming appointments
+    still within the 12h grace window, which distorts the denominator.
+    """
+    return Opportunity.call1_appointment_status.in_(["Showed", "No Show", "Cancelled"])
+
+
+def bookable_2nd_call_expr():
+    """Show rate denominator for 2nd call: Showed + No Show + Cancelled."""
+    return Opportunity.call2_appointment_status.in_(["Showed", "No Show", "Cancelled"])

@@ -9,6 +9,8 @@ from db.models import Opportunity
 from db.queries.common import (
     QUALIFIED_LEAD_QUALITY,
     base_filter,
+    bookable_1st_call_expr,
+    bookable_2nd_call_expr,
     has_1st_call,
     has_2nd_call,
     showed_1st_call_expr,
@@ -130,10 +132,13 @@ async def get_by_rep(
                 case((and_(is_1st, showed_1st, ~Opportunity.outcome_unfilled), 1))
             ).label("shows_1st"),
             func.count(
-                case((and_(is_1st, ~Opportunity.outcome_unfilled), 1))
+                case((and_(is_1st, bookable_1st_call_expr()), 1))
             ).label("bookable_1st"),
             func.count(case((is_2nd, 1))).label("calls_booked_2nd"),
             func.count(case((and_(is_2nd, showed_2nd), 1))).label("shows_2nd"),
+            func.count(
+                case((and_(is_2nd, bookable_2nd_call_expr()), 1))
+            ).label("bookable_2nd"),
             func.count(
                 case((
                     and_(is_1st, showed_1st, Opportunity.lead_quality.in_(QUALIFIED_LEAD_QUALITY)),
@@ -228,7 +233,7 @@ async def get_by_rep(
             "no_show_rate_1st": safe_rate(row.bookable_1st - row.shows_1st, row.bookable_1st),
             "calls_booked_2nd": row.calls_booked_2nd,
             "shows_2nd": row.shows_2nd,
-            "show_rate_2nd": safe_rate(row.shows_2nd, row.calls_booked_2nd),
+            "show_rate_2nd": safe_rate(row.shows_2nd, row.bookable_2nd),
             "qualification_rate": safe_rate(row.qualified_shows, row.shows_1st),
             "dq_rate": safe_rate(row.dq_count, row.shows_1st),
             "dq_after_call2_rate": safe_rate(row.dq_after_call2_count, row.shows_1st),

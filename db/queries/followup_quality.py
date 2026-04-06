@@ -6,7 +6,7 @@ from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Opportunity
-from db.queries.common import base_filter, has_2nd_call, showed_2nd_call_expr
+from db.queries.common import base_filter, bookable_2nd_call_expr, has_2nd_call, showed_2nd_call_expr
 
 
 async def get_followup_show_rate_by_quality(
@@ -32,6 +32,7 @@ async def get_followup_show_rate_by_quality(
         select(
             quality_col.label("lead_quality"),
             func.count().label("booked"),
+            func.count(case((bookable_2nd_call_expr(), 1))).label("bookable"),
             func.count(case((showed_2nd, 1))).label("showed"),
             func.count(
                 case(
@@ -67,10 +68,11 @@ async def get_followup_show_rate_by_quality(
     rows = []
     for r in result:
         booked = r.booked or 0
+        bookable = r.bookable or 0
         showed = r.showed or 0
         no_show = r.no_show or 0
         cancelled = r.cancelled or 0
-        show_rate = round(showed / booked * 100, 1) if booked > 0 else 0.0
+        show_rate = round(showed / bookable * 100, 1) if bookable > 0 else 0.0
         rows.append(
             {
                 "lead_quality": r.lead_quality,
