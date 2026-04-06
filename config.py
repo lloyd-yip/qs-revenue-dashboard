@@ -65,6 +65,23 @@ REP_ROSTER: dict[str, str] = {
     "Gonzalo Guitar": "other",
 }
 
+
+def _normalize_name(name: str) -> str:
+    """Collapse multiple spaces so 'Melissa  Fredericks' matches 'Melissa Fredericks'."""
+    return " ".join(name.split())
+
+
+# Normalized lookup: maps both the canonical name and any whitespace variants
+# to the category.  Used by reps.py for classification.
+_REP_ROSTER_NORMALIZED: dict[str, str] = {
+    _normalize_name(n): c for n, c in REP_ROSTER.items()
+}
+
+
+def get_rep_category(name: str) -> str:
+    """Return the roster category for a rep name, handling whitespace variants."""
+    return _REP_ROSTER_NORMALIZED.get(_normalize_name(name), "other")
+
 # Derived sets for quick lookups
 ACTIVE_REP_NAMES = frozenset(n for n, c in REP_ROSTER.items() if c == "active")
 INACTIVE_REP_NAMES = frozenset(n for n, c in REP_ROSTER.items() if c == "inactive")
@@ -75,3 +92,10 @@ SALES_REP_NAMES = ACTIVE_REP_NAMES | INACTIVE_REP_NAMES
 
 # All known names that appear in the dropdown (all 3 groups)
 ALL_KNOWN_REP_NAMES = SALES_REP_NAMES | OTHER_REP_NAMES
+
+# DB-safe name sets — GHL sometimes stores names with extra spaces
+# (e.g. "Melissa  Fredericks"). We need both variants for SQL IN clauses.
+# Approach: we build the "exclude" set (OTHER) and use NOT IN, since there
+# are fewer variants to track and we control those names exactly.
+# If a name is unknown (not in roster), it's treated as sales rep by default.
+_DB_OTHER_NAMES: frozenset[str] = OTHER_REP_NAMES

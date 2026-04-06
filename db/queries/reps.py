@@ -3,7 +3,7 @@
 from sqlalchemy import and_, distinct, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from config import REP_ROSTER, ACTIVE_REP_NAMES, INACTIVE_REP_NAMES, OTHER_REP_NAMES
+from config import get_rep_category
 from db.models import Opportunity
 
 
@@ -33,7 +33,7 @@ async def get_reps(session: AsyncSession) -> list[dict]:
     reps = []
     for row in result.all():
         name = row.opportunity_owner_name or "Unassigned"
-        category = REP_ROSTER.get(name, "other")
+        category = get_rep_category(name)
         reps.append({
             "rep_id": row.opportunity_owner_id,
             "rep_name": name,

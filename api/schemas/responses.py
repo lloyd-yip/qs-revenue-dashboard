@@ -152,6 +152,7 @@ class TimeSeriesResponse(BaseModel):
 class RepItem(BaseModel):
     rep_id: str | None
     rep_name: str
+    category: str = "other"
 
 
 class RepsResponse(BaseModel):

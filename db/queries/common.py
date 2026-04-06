@@ -4,7 +4,7 @@ from datetime import date
 
 from sqlalchemy import and_, case, func, or_
 
-from config import SALES_REP_NAMES
+from config import _DB_OTHER_NAMES
 from db.models import Opportunity
 from sync.ghl_client import (
     DEAL_WON_STAGE_ID,
@@ -40,25 +40,31 @@ def date_filter(start: date, end: date, date_by: str):
 def sales_rep_filter():
     """WHERE clause that restricts to known sales reps (active + inactive).
 
-    Excludes 'other' category reps (assistants, tech coaches) so they don't
-    pollute team-level analytics.
+    Uses NOT IN (other names) approach so whitespace variants in DB names
+    don't cause mismatches. Unknown reps default to included.
     """
-    return Opportunity.opportunity_owner_name.in_(SALES_REP_NAMES)
+    return Opportunity.opportunity_owner_name.notin_(_DB_OTHER_NAMES)
+
+
+# Sentinel value for "show everything" (no rep filter at all)
+ALL_TEAM_SENTINEL = "__all__"
 
 
 def base_filter(start: date, end: date, date_by: str, rep_id: str | None = None):
     """Base filter: not excluded + date range + optional rep filter + sales rep restriction.
 
-    When rep_id is None (team view), automatically restricts to known sales reps
-    so non-sales staff don't skew team metrics.
-    When rep_id is set, the specific rep filter is used instead (the user
-    explicitly chose this person from the dropdown, including 'other' reps).
+    rep_id behaviour:
+      None / ''        → "All Sales Team": restricts to known sales reps
+      '__all__'        → "All Team": no rep filter at all (old default)
+      '<ghl_owner_id>' → specific rep selected from dropdown
     """
     filters = [
         Opportunity.is_excluded.is_(False),
         date_filter(start, end, date_by),
     ]
-    if rep_id:
+    if rep_id == ALL_TEAM_SENTINEL:
+        pass  # no rep filter — show everything
+    elif rep_id:
         filters.append(Opportunity.opportunity_owner_id == rep_id)
     else:
         filters.append(sales_rep_filter())
