@@ -13,6 +13,7 @@ from db.queries.common import (
     bookable_2nd_call_expr,
     has_1st_call,
     has_2nd_call,
+    sales_rep_filter,
     showed_1st_call_expr,
     showed_2nd_call_expr,
 )
@@ -287,6 +288,8 @@ async def get_daily_activity(
     ]
     if rep_id:
         conditions.append(Opportunity.opportunity_owner_id == rep_id)
+    else:
+        conditions.append(sales_rep_filter())
 
     result = await session.execute(
         select(

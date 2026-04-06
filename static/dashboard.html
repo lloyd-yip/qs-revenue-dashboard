@@ -77,8 +77,10 @@
 
     #rep-select {
       background: var(--surface2); border: 1px solid var(--border); color: var(--text);
-      padding: 6px 10px; border-radius: 6px; font-size: 13px; cursor: pointer;
+      padding: 6px 10px; border-radius: 6px; font-size: 13px; cursor: pointer; min-width: 180px;
     }
+    #rep-select optgroup { font-weight: 700; font-size: 12px; color: var(--text2); padding: 6px 0 2px; }
+    #rep-select option { font-weight: 400; font-size: 13px; color: var(--text); padding: 4px 8px; }
 
     .toggle-group { display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
     .toggle-btn {
@@ -1873,16 +1875,33 @@ async function init() {
     }
   } catch { document.getElementById('last-synced').innerHTML = '<span class="sync-dot red"></span>Health check failed'; }
 
-  // Load rep dropdown
+  // Load rep dropdown — grouped by category
   try {
     const { data } = await apiFetch('/api/dashboard/reps');
     const sel = document.getElementById('rep-select');
+    const groups = { active: [], inactive: [], other: [] };
     data.forEach(r => {
-      const opt = document.createElement('option');
-      opt.value = r.rep_id || '';
-      opt.textContent = r.rep_name;
-      sel.appendChild(opt);
+      const cat = r.category || 'other';
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(r);
     });
+    const groupLabels = {
+      active: '✅ Active Sales Reps',
+      inactive: '⏸ Inactive Sales Reps',
+      other: '👥 Other',
+    };
+    for (const cat of ['active', 'inactive', 'other']) {
+      if (!groups[cat] || groups[cat].length === 0) continue;
+      const optgroup = document.createElement('optgroup');
+      optgroup.label = groupLabels[cat] || cat;
+      groups[cat].forEach(r => {
+        const opt = document.createElement('option');
+        opt.value = r.rep_id || '';
+        opt.textContent = r.rep_name;
+        optgroup.appendChild(opt);
+      });
+      sel.appendChild(optgroup);
+    }
   } catch { /* rep dropdown stays at "All Team" only */ }
 
   // Initial render
