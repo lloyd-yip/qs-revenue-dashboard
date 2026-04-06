@@ -55,6 +55,7 @@ class RepMetrics(BaseModel):
     total_shows: int
     compliance_failures: int
     outcome_not_logged_count: int
+    avg_cycle_days: float | None = None
 
 
 class ByRepResponse(BaseModel):
