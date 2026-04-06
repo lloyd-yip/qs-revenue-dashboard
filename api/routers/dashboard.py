@@ -45,6 +45,7 @@ from db.queries.lead_source import (
 from db.queries.data_quality import get_data_quality_issues
 from db.queries.debug_drilldown import get_drilldown_opps
 from db.queries.metrics_by_rep import get_by_rep, get_daily_activity, get_rep_closes, get_rep_opps
+from db.queries.pipeline_intelligence import get_pipeline_intelligence
 from db.queries.metrics_summary import get_summary
 from db.queries.reps import get_reps
 from db.queries.sync_status import get_recent_sync_runs
@@ -304,6 +305,26 @@ async def rep_rankings(
     data = await get_rep_ranking_insights(db, start, end, date_by)
     return InsightsResponse(data=data, meta=_meta(start, end, date_by))
 
+
+
+# ── Pipeline Intelligence ─────────────────────────────────────────────────────
+
+VALID_GROUP_BY = {"rep", "channel", "lead_quality", "intent", "indoctrination"}
+
+
+@router.get("/pipeline-intelligence")
+async def pipeline_intelligence(
+    group_by: str = Query("rep", description="rep | channel | lead_quality | intent | indoctrination"),
+    rep_id: str | None = Query(None, description="Filter to a specific rep (only applies when group_by != 'rep')"),
+    params: tuple = Depends(_date_params),
+    db: AsyncSession = Depends(get_db),
+):
+    """Segment all metrics by any dimension — for the Pipeline Intelligence page."""
+    start, end, date_by = params
+    if group_by not in VALID_GROUP_BY:
+        group_by = "rep"
+    data = await get_pipeline_intelligence(db, group_by, start, end, date_by, rep_id)
+    return {"data": data, "meta": _meta(start, end, date_by).__dict__}
 
 
 # ── Follow-up call show rate by lead quality ─────────────────────────────────

@@ -238,6 +238,8 @@
 <nav class="tabs">
   <button class="tab-btn active" onclick="setTab('sales')">Sales Performance</button>
   <button class="tab-btn" onclick="setTab('channels')">Lead Quality by Channel</button>
+  <button class="tab-btn" onclick="setTab('pipeline')">Pipeline Intelligence</button>
+  <button class="tab-btn" onclick="setTab('cost')">Cost Analysis</button>
   <button class="tab-btn" onclick="setTab('compliance')">Compliance</button>
 </nav>
 
@@ -326,6 +328,96 @@
         </div>
         <div id="followup-quality-table" style="flex:1; min-width:340px;"></div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- TAB: Pipeline Intelligence -->
+<div id="tab-pipeline" class="tab-content">
+  <div style="display:flex; align-items:center; gap:12px; margin-bottom:20px; flex-wrap:wrap;">
+    <div>
+      <label style="font-size:12px; color:var(--text2); margin-right:8px;">Segment by</label>
+      <select id="pi-group-by" onchange="renderPipelineIntelligence()" style="background:var(--surface2); border:1px solid var(--border); color:var(--text); padding:7px 12px; border-radius:6px; font-size:13px; cursor:pointer;">
+        <option value="rep">Rep</option>
+        <option value="channel">Lead Channel</option>
+        <option value="lead_quality">Lead Quality</option>
+        <option value="intent">Intent to Transform</option>
+        <option value="indoctrination">Pre-Call Indoctrination</option>
+      </select>
+    </div>
+    <div style="font-size:12px; color:var(--text2); padding:7px 12px; background:rgba(99,102,241,0.08); border:1px solid rgba(99,102,241,0.2); border-radius:6px;">
+      Uses the date range and rep filter above &nbsp;·&nbsp; Contract Value &amp; Cash Collected columns unlock once financial data is provided
+    </div>
+  </div>
+  <div class="data-table-wrap">
+    <div id="pi-table"><div class="loading">Loading...</div></div>
+  </div>
+</div>
+
+<!-- TAB: Cost Analysis -->
+<div id="tab-cost" class="tab-content">
+  <div style="background:rgba(99,102,241,0.06); border:1px solid rgba(99,102,241,0.2); border-radius:var(--radius); padding:20px 24px; margin-bottom:24px; display:flex; align-items:flex-start; gap:16px;">
+    <div style="font-size:22px; margin-top:2px;">📊</div>
+    <div>
+      <div style="font-size:14px; font-weight:600; margin-bottom:6px;">Cost Analysis — Ready When You Are</div>
+      <div style="font-size:13px; color:var(--text2); line-height:1.6;">
+        These metrics are fully structured and will auto-populate the moment ad spend and financial data are connected.
+        All calculations are already defined — provide the numbers and this dashboard fills in instantly.
+      </div>
+    </div>
+  </div>
+
+  <!-- By Channel -->
+  <div style="margin-bottom:28px;">
+    <h3 style="font-size:13px; font-weight:600; color:var(--text2); text-transform:uppercase; letter-spacing:0.4px; margin-bottom:14px;">Cost Efficiency by Channel</h3>
+    <div class="data-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Channel</th>
+            <th class="num">Calls Booked</th>
+            <th class="num">Shows</th>
+            <th class="num">Qual Shows</th>
+            <th class="num">Closed</th>
+            <th class="num" style="color:var(--accent2);">Ad Spend</th>
+            <th class="num" style="color:var(--accent2);">Cost / Call Booked</th>
+            <th class="num" style="color:var(--accent2);">Cost / Show</th>
+            <th class="num" style="color:var(--accent2);">Cost / Qual Show</th>
+            <th class="num" style="color:var(--accent2);">Cost / Acquisition</th>
+            <th class="num" style="color:var(--accent2);">Cost / Close</th>
+          </tr>
+        </thead>
+        <tbody id="cost-channel-body">
+          <tr><td colspan="11" class="empty" style="text-align:center; padding:32px; color:var(--text2);">Loading channel data...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- By Rep -->
+  <div>
+    <h3 style="font-size:13px; font-weight:600; color:var(--text2); text-transform:uppercase; letter-spacing:0.4px; margin-bottom:14px;">Cost Efficiency by Rep</h3>
+    <div class="data-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Rep</th>
+            <th class="num">Calls Booked</th>
+            <th class="num">Shows</th>
+            <th class="num">Qual Shows</th>
+            <th class="num">Closed</th>
+            <th class="num" style="color:var(--accent2);">Rep Cost</th>
+            <th class="num" style="color:var(--accent2);">Cost / Show</th>
+            <th class="num" style="color:var(--accent2);">Cost / Qual Show</th>
+            <th class="num" style="color:var(--accent2);">Cost / Close</th>
+            <th class="num" style="color:var(--green);">Contract Value</th>
+            <th class="num" style="color:var(--green);">Cash Collected</th>
+          </tr>
+        </thead>
+        <tbody id="cost-rep-body">
+          <tr><td colspan="11" class="empty" style="text-align:center; padding:32px; color:var(--text2);">Loading rep data...</td></tr>
+        </tbody>
+      </table>
     </div>
   </div>
 </div>
@@ -507,6 +599,8 @@ async function renderAll() {
 async function renderTab(tab) {
   if (tab === 'sales') await renderSales();
   else if (tab === 'channels') await renderChannels();
+  else if (tab === 'pipeline') await renderPipelineIntelligence();
+  else if (tab === 'cost') await renderCostAnalysis();
   else if (tab === 'compliance') await renderCompliance();
 }
 
@@ -854,12 +948,27 @@ function renderRepBreakdown(reps) {
       <td class="num clickable" onclick="window.open(debugUrl('qualification_rate','${rid}'),'_blank')" style="cursor:pointer;" title="↗ Debug">${pct(r.qualification_rate)}</td>
       <td class="num clickable" onclick="window.open(debugUrl('close_rate','${rid}'),'_blank')" style="cursor:pointer;" title="↗ Debug">${pct(r.close_rate)}</td>
       <td class="num">${closedCell}</td>
+      <td class="num" style="color:var(--text2);">—</td>
+      <td class="num" style="color:var(--text2);">—</td>
+      <td class="num" style="color:var(--text2);">—</td>
       <td class="num ${r.outcome_not_logged_count > 0 ? 'rate-warn' : ''}">${notLoggedCell}</td>
     </tr>`;
   }).join('');
   document.getElementById('rep-table-view').innerHTML = `
     <table>
-      <thead><tr><th>Rep</th><th class="num">Booked</th><th class="num">Showed</th><th class="num">Show Rate</th><th class="num">Qual Rate</th><th class="num">Close Rate</th><th class="num">Closed</th><th class="num">Not Logged</th></tr></thead>
+      <thead><tr>
+        <th>Rep</th>
+        <th class="num">Booked</th>
+        <th class="num">Showed</th>
+        <th class="num">Show Rate</th>
+        <th class="num">Qual Rate</th>
+        <th class="num">Close Rate</th>
+        <th class="num">Closed</th>
+        <th class="num" title="Avg days from lead creation to won deal">Avg Cycle</th>
+        <th class="num" style="color:var(--green);" title="Coming soon — awaiting financial data">Contract Value</th>
+        <th class="num" style="color:var(--green);" title="Coming soon — awaiting financial data">Cash Collected</th>
+        <th class="num">Not Logged</th>
+      </tr></thead>
       <tbody>${rows}</tbody>
     </table>
   `;
@@ -936,7 +1045,8 @@ function renderChannelTable(data) {
         <td class="num">${num(d.shows)}</td>
         <td class="num ${rateClass(showRate)}">${pct(showRate)}</td>
         <td class="num">${num(d.units_closed)}</td>
-        <td class="num">${money(d.projected_contract_value)}</td>
+        <td class="num" style="color:var(--text2);">—</td>
+        <td class="num" style="color:var(--text2);">—</td>
         <td class="num ${rateClass(d.qual_rate)}">${pct(d.qual_rate)}</td>
         <td class="num ${d.dq_rate !== null && d.dq_rate > 0.3 ? 'rate-bad' : ''}">${pct(d.dq_rate)}</td>
         <td class="num" style="color:var(--green);">${num(d.great_count)}</td>
@@ -948,9 +1058,12 @@ function renderChannelTable(data) {
     `;
   }).join('');
   document.getElementById('channel-table').innerHTML = `
-    <table style="min-width: 1100px;">
+    <table style="min-width: 1200px;">
       <thead><tr>
-        <th>Channel</th><th class="num">Total Opps</th><th class="num">Shows</th><th class="num">Show Rate</th><th class="num">Units Closed</th><th class="num">Proj. Value</th><th class="num">Qual Rate</th><th class="num">DQ Rate</th>
+        <th>Channel</th><th class="num">Total Opps</th><th class="num">Shows</th><th class="num">Show Rate</th><th class="num">Units Closed</th>
+        <th class="num" style="color:var(--green);" title="Coming soon">Contract Value</th>
+        <th class="num" style="color:var(--green);" title="Coming soon">Cash Collected</th>
+        <th class="num">Qual Rate</th><th class="num">DQ Rate</th>
         <th class="num" style="color:var(--green);">Great</th><th class="num" style="color:#84cc16;">Ok</th><th class="num" style="color:var(--yellow);">Barely Pass.</th><th class="num" style="color:var(--red);">Bad</th><th class="num" style="color:var(--yellow);">Missing Data</th>
       </tr></thead>
       <tbody>${rows}</tbody>
@@ -1101,7 +1214,120 @@ async function showAllClosesModal() {
   }
 }
 
-// ─── Tab 3: Compliance ────────────────────────────────────────────────────────
+// ─── Tab 3: Pipeline Intelligence ────────────────────────────────────────────
+async function renderPipelineIntelligence() {
+  const groupBy = document.getElementById('pi-group-by')?.value || 'rep';
+  const repParam = AppState.repId ? `&rep_id=${AppState.repId}` : '';
+  const el = document.getElementById('pi-table');
+  el.innerHTML = '<div class="loading">Loading...</div>';
+  try {
+    const res = await apiFetch(
+      `/api/dashboard/pipeline-intelligence?group_by=${groupBy}&${qs()}${repParam}`
+    );
+    const { dimension_label, rows } = res.data;
+    if (!rows || !rows.length) {
+      el.innerHTML = '<div class="empty">No data for this period.</div>';
+      return;
+    }
+
+    const tableRows = rows.map(r => {
+      const cycleTxt = r.avg_cycle_days !== null ? `${r.avg_cycle_days}d` : '<span style="color:var(--text2);">—</span>';
+      return `<tr>
+        <td style="font-weight:500;">${r.segment}</td>
+        <td class="num">${num(r.calls_booked_1st)}</td>
+        <td class="num ${rateClass(r.show_rate_1st)}">${pct(r.show_rate_1st)}</td>
+        <td class="num ${rateClass(r.qual_rate)}">${pct(r.qual_rate)}</td>
+        <td class="num">${num(r.calls_booked_2nd)}</td>
+        <td class="num ${rateClass(r.show_rate_2nd)}">${pct(r.show_rate_2nd)}</td>
+        <td class="num ${rateClass(r.close_rate)}">${pct(r.close_rate)}</td>
+        <td class="num">${num(r.units_closed)}</td>
+        <td class="num" style="color:var(--text2);">${cycleTxt}</td>
+        <td class="num" style="color:var(--text2);">—</td>
+        <td class="num" style="color:var(--text2);">—</td>
+      </tr>`;
+    }).join('');
+
+    el.innerHTML = `
+      <div style="padding:0 0 0 0; overflow-x:auto;">
+        <table style="min-width:900px;">
+          <thead>
+            <tr>
+              <th>${dimension_label}</th>
+              <th class="num">C1 Booked</th>
+              <th class="num">C1 Show%</th>
+              <th class="num">Qual%</th>
+              <th class="num">C2 Booked</th>
+              <th class="num">C2 Show%</th>
+              <th class="num">Close%</th>
+              <th class="num">Closed</th>
+              <th class="num" title="Avg days from lead creation to won deal">Avg Cycle</th>
+              <th class="num" style="color:var(--green);" title="Coming soon — awaiting financial data">Contract Value</th>
+              <th class="num" style="color:var(--green);" title="Coming soon — awaiting financial data">Cash Collected</th>
+            </tr>
+          </thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+      </div>
+    `;
+  } catch(e) {
+    el.innerHTML = `<div class="empty">Failed to load. ${e.message}</div>`;
+  }
+}
+
+
+// ─── Tab 4: Cost Analysis ─────────────────────────────────────────────────────
+async function renderCostAnalysis() {
+  // Populate the activity columns (booked, shows, qual, closed) using existing data
+  // Financial columns (spend, cost per X) stay as — until data is connected
+  const repParam = AppState.repId ? `&rep_id=${AppState.repId}` : '';
+  try {
+    const [channels, byRep] = await Promise.all([
+      apiFetch(`/api/dashboard/channels?${qs()}${repParam}`),
+      apiFetch(`/api/dashboard/by-rep?${qs()}`),
+    ]);
+
+    // Channel rows
+    const chRows = channels.data.map(d => {
+      const showRate = d.total_ops > 0 ? d.shows / d.total_ops : null;
+      return `<tr>
+        <td>${d.channel}</td>
+        <td class="num">${num(d.total_ops)}</td>
+        <td class="num">${num(d.shows)}</td>
+        <td class="num">${num(d.great_count + d.ok_count + d.barely_passable_count)}</td>
+        <td class="num">${num(d.units_closed)}</td>
+        <td class="num" style="color:var(--text2);">—</td>
+        <td class="num" style="color:var(--text2);">—</td>
+        <td class="num" style="color:var(--text2);">—</td>
+        <td class="num" style="color:var(--text2);">—</td>
+        <td class="num" style="color:var(--text2);">—</td>
+        <td class="num" style="color:var(--text2);">—</td>
+      </tr>`;
+    }).join('');
+    document.getElementById('cost-channel-body').innerHTML = chRows || '<tr><td colspan="11" class="empty">No data.</td></tr>';
+
+    // Rep rows
+    const repRows = byRep.data.map(r => `<tr>
+        <td>${r.rep_name}</td>
+        <td class="num">${num(r.calls_booked_1st)}</td>
+        <td class="num">${num(r.shows_1st)}</td>
+        <td class="num">${r.shows_1st && r.qualification_rate !== null ? num(Math.round(r.shows_1st * r.qualification_rate)) : '—'}</td>
+        <td class="num">${num(r.units_closed)}</td>
+        <td class="num" style="color:var(--text2);">—</td>
+        <td class="num" style="color:var(--text2);">—</td>
+        <td class="num" style="color:var(--text2);">—</td>
+        <td class="num" style="color:var(--text2);">—</td>
+        <td class="num" style="color:var(--text2);">—</td>
+        <td class="num" style="color:var(--text2);">—</td>
+      </tr>`).join('');
+    document.getElementById('cost-rep-body').innerHTML = repRows || '<tr><td colspan="11" class="empty">No data.</td></tr>';
+  } catch(e) {
+    document.getElementById('cost-channel-body').innerHTML = `<tr><td colspan="11" class="empty">Failed to load. ${e.message}</td></tr>`;
+    document.getElementById('cost-rep-body').innerHTML = `<tr><td colspan="11" class="empty">Failed to load. ${e.message}</td></tr>`;
+  }
+}
+
+
+// ─── Tab 5: Compliance ────────────────────────────────────────────────────────
 let _complianceFailures = [];
 
 async function renderCompliance() {
