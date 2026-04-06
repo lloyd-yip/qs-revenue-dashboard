@@ -18,7 +18,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column('opportunities', sa.Column('call2_calendar_id', sa.String(), nullable=True))
+    # IF NOT EXISTS guards against re-running when the column already exists in production
+    op.execute("ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS call2_calendar_id TEXT")
 
 
 def downgrade() -> None:

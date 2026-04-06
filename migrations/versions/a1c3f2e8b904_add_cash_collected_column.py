@@ -18,7 +18,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column('opportunities', sa.Column('cash_collected', sa.Numeric(precision=12, scale=2), nullable=True))
+    # IF NOT EXISTS guards against re-running when the column already exists in production
+    op.execute("ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS cash_collected NUMERIC(12, 2)")
 
 
 def downgrade() -> None:
