@@ -42,7 +42,21 @@
       background: var(--surface);
     }
     header h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.3px; }
-    #last-synced { font-size: 12px; color: var(--text2); }
+    .header-left { display: flex; align-items: center; gap: 14px; }
+    #last-synced { font-size: 12px; color: var(--text2); text-decoration: none; display: inline-flex; align-items: center; gap: 6px; transition: color 0.15s; cursor: pointer; }
+    #last-synced:hover { color: var(--text); }
+    .sync-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+    .sync-dot.green { background: var(--green); box-shadow: 0 0 6px rgba(34,197,94,0.4); }
+    .sync-dot.yellow { background: var(--yellow); box-shadow: 0 0 6px rgba(245,158,11,0.4); }
+    .sync-dot.red { background: var(--red); box-shadow: 0 0 6px rgba(239,68,68,0.4); animation: pulse-red 2s infinite; }
+    @keyframes pulse-red { 0%,100% { opacity:1; } 50% { opacity:0.5; } }
+    .dq-btn {
+      background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.3);
+      color: #fbbf24; padding: 6px 14px; border-radius: 8px; cursor: pointer;
+      font-size: 12px; font-weight: 600; font-family: var(--font); transition: all 0.15s;
+      display: inline-flex; align-items: center; gap: 5px;
+    }
+    .dq-btn:hover { background: rgba(245, 158, 11, 0.22); border-color: #f59e0b; }
 
     /* Filters bar */
     .filters {
@@ -105,6 +119,8 @@
     .kpi-card .kpi-value { font-size: 26px; font-weight: 700; letter-spacing: -0.5px; }
     .kpi-card .kpi-sub { font-size: 11px; color: var(--text2); }
     .kpi-card.highlight { border-color: var(--accent); }
+    .kpi-card.clickable { cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+    .kpi-card.clickable:hover { border-color: var(--accent); background: rgba(99,102,241,0.06); }
 
     /* Charts row */
     .charts-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
@@ -190,8 +206,11 @@
 <body>
 
 <header>
-  <h1>QS Analytics Dashboard</h1>
-  <span id="last-synced">Loading...</span>
+  <div class="header-left">
+    <h1>QS Analytics Dashboard</h1>
+    <button class="dq-btn" onclick="window.open('/data-quality','_blank')" title="Open Data Quality Audit">🔍 Data Quality</button>
+  </div>
+  <a id="last-synced" href="/sync-history" title="View sync history">Loading...</a>
 </header>
 
 <div class="filters">
@@ -200,6 +219,7 @@
     <button class="preset-btn active" onclick="applyPreset(30)">Last 30d</button>
     <button class="preset-btn" onclick="applyPreset(90)">Last 90d</button>
     <button class="preset-btn" onclick="applyPresetThisMonth()">This month</button>
+    <button class="preset-btn" onclick="applyPresetAllTime()">All time</button>
   </div>
   <input id="date-range-input" placeholder="Custom range..." readonly />
   <div class="filter-sep"></div>
@@ -235,6 +255,7 @@
       <canvas id="chart-funnel"></canvas>
     </div>
   </div>
+
 
   <div class="data-table-wrap" style="margin-bottom:16px;">
     <div class="section-header" style="padding: 14px 16px 0;">
@@ -291,6 +312,24 @@
   </div>
 </div>
 
+<!-- Follow-Up Call Show Rate by Lead Quality modal -->
+<div id="followup-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:1000; align-items:center; justify-content:center;" onclick="if(event.target===this)closeFollowupModal()">
+  <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); width:1100px; max-width:96vw; max-height:90vh; display:flex; flex-direction:column;">
+    <div style="display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid var(--border);">
+      <h3 id="followup-modal-title" style="font-size:14px; font-weight:600;">Follow-Up Call Show Rate by Lead Quality</h3>
+      <button onclick="closeFollowupModal()" style="background:none; border:none; color:var(--text2); font-size:20px; cursor:pointer; line-height:1;">×</button>
+    </div>
+    <div style="overflow-y:auto; padding:24px;">
+      <div style="display:flex; gap:28px; flex-wrap:wrap; align-items:flex-start;">
+        <div style="flex:1; min-width:340px;">
+          <canvas id="chart-followup-quality" style="max-height:280px;"></canvas>
+        </div>
+        <div id="followup-quality-table" style="flex:1; min-width:340px;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- TAB: Compliance -->
 <div id="tab-compliance" class="tab-content">
   <div class="kpi-row" id="compliance-kpis" style="margin-bottom:20px;"></div>
@@ -344,6 +383,12 @@ function applyPresetThisMonth() {
   const now = new Date();
   const start = new Date(now.getFullYear(), now.getMonth(), 1);
   setDateRange(toISO(start), toISO(now));
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+}
+
+function applyPresetAllTime() {
+  setDateRange('2020-01-01', toISO(new Date()));
   document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
   event.target.classList.add('active');
 }
@@ -415,6 +460,13 @@ function qs() {
   return `start=${AppState.dateStart}&end=${AppState.dateEnd}&date_by=${AppState.dateBy}`;
 }
 
+function debugUrl(metric, repId) {
+  let url = `/debug?metric=${metric}&start=${AppState.dateStart}&end=${AppState.dateEnd}&date_by=${AppState.dateBy}`;
+  if (repId) url += `&rep_id=${encodeURIComponent(repId)}`;
+  else if (AppState.repId) url += `&rep_id=${encodeURIComponent(AppState.repId)}`;
+  return url;
+}
+
 async function apiFetch(path) {
   const res = await fetch(path);
   if (!res.ok) throw new Error(`API error ${res.status}: ${path}`);
@@ -475,6 +527,157 @@ async function renderSales() {
     document.getElementById('kpi-cards').innerHTML = `<div class="empty">Failed to load data. ${e.message}</div>`;
   }
   renderDailyActivity();
+}
+
+// ─── Follow-Up Call Show Rate by Lead Quality ─────────────────────────────────
+let followupQualityChart = null;
+
+const QUALITY_COLORS = {
+  'Great': '#22c55e',
+  'Ok': '#84cc16',
+  'Barely Passable': '#f59e0b',
+  'Bad / DQ': '#ef4444',
+  '(Not Set)': '#6b7280',
+};
+
+function renderFollowupQuality(data) {
+  if (!data || !data.length) {
+    document.getElementById('followup-quality-table').innerHTML =
+      '<div style="color:var(--text2); font-size:13px; padding:20px;">No follow-up calls found in this period.</div>';
+    return;
+  }
+
+  // Totals row
+  const totals = data.reduce((acc, r) => ({
+    booked: acc.booked + r.booked,
+    showed: acc.showed + r.showed,
+    no_show: acc.no_show + r.no_show,
+    cancelled: acc.cancelled + r.cancelled,
+  }), { booked: 0, showed: 0, no_show: 0, cancelled: 0 });
+  totals.show_rate = totals.booked > 0 ? (totals.showed / totals.booked * 100).toFixed(1) : '0.0';
+
+  // ── Table ──
+  const tableRows = data.map(r => {
+    const color = QUALITY_COLORS[r.lead_quality] || '#6b7280';
+    const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color};margin-right:6px;"></span>`;
+    return `<tr>
+      <td style="font-weight:500;">${dot}${r.lead_quality}</td>
+      <td class="num">${r.booked}</td>
+      <td class="num" style="color:var(--green);">${r.showed}</td>
+      <td class="num" style="color:var(--red);">${r.no_show}</td>
+      <td class="num" style="color:var(--text2);">${r.cancelled}</td>
+      <td class="num" style="font-weight:600;">${r.show_rate}%</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('followup-quality-table').innerHTML = `
+    <table style="width:100%; border-collapse:collapse; font-size:13px;">
+      <thead>
+        <tr style="border-bottom:2px solid var(--border);">
+          <th style="text-align:left; padding:8px 12px; color:var(--text2); font-size:11px; text-transform:uppercase; letter-spacing:0.5px;">Lead Quality</th>
+          <th style="text-align:right; padding:8px 12px; color:var(--text2); font-size:11px; text-transform:uppercase;">Booked</th>
+          <th style="text-align:right; padding:8px 12px; color:var(--text2); font-size:11px; text-transform:uppercase;">Showed</th>
+          <th style="text-align:right; padding:8px 12px; color:var(--text2); font-size:11px; text-transform:uppercase;">No-Show</th>
+          <th style="text-align:right; padding:8px 12px; color:var(--text2); font-size:11px; text-transform:uppercase;">Cancelled</th>
+          <th style="text-align:right; padding:8px 12px; color:var(--text2); font-size:11px; text-transform:uppercase;">Show Rate</th>
+        </tr>
+      </thead>
+      <tbody>${tableRows}</tbody>
+      <tfoot>
+        <tr style="border-top:2px solid var(--border); font-weight:600;">
+          <td style="padding:8px 12px;">All Qualities</td>
+          <td class="num" style="padding:8px 12px;">${totals.booked}</td>
+          <td class="num" style="padding:8px 12px; color:var(--green);">${totals.showed}</td>
+          <td class="num" style="padding:8px 12px; color:var(--red);">${totals.no_show}</td>
+          <td class="num" style="padding:8px 12px; color:var(--text2);">${totals.cancelled}</td>
+          <td class="num" style="padding:8px 12px;">${totals.show_rate}%</td>
+        </tr>
+      </tfoot>
+    </table>
+  `;
+
+  // ── Chart ──
+  const ctx = document.getElementById('chart-followup-quality').getContext('2d');
+  if (followupQualityChart) followupQualityChart.destroy();
+
+  const labels = data.map(r => r.lead_quality);
+  const rates = data.map(r => r.show_rate);
+  const colors = data.map(r => QUALITY_COLORS[r.lead_quality] || '#6b7280');
+
+  followupQualityChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Show Rate %',
+        data: rates,
+        backgroundColor: colors.map(c => c + 'cc'),
+        borderColor: colors,
+        borderWidth: 1,
+        borderRadius: 4,
+        barPercentage: 0.7,
+      }],
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const r = data[ctx.dataIndex];
+              return `${r.show_rate}% (${r.showed}/${r.booked} showed)`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          beginAtZero: true,
+          max: 100,
+          ticks: { callback: v => v + '%', color: '#94a3b8', font: { size: 11 } },
+          grid: { color: 'rgba(255,255,255,0.05)' },
+        },
+        y: {
+          ticks: { color: '#e2e8f0', font: { size: 12, weight: 500 } },
+          grid: { display: false },
+        },
+      },
+    },
+  });
+}
+
+async function openFollowupModal() {
+  const modal = document.getElementById('followup-modal');
+  modal.style.display = 'flex';
+
+  // Set title with rep name if filtered
+  const titleEl = document.getElementById('followup-modal-title');
+  const repName = AppState.repId
+    ? (document.querySelector(`#rep-select option[value="${AppState.repId}"]`)?.textContent || '')
+    : '';
+  titleEl.textContent = repName
+    ? `Follow-Up Call Show Rate by Lead Quality — ${repName}`
+    : 'Follow-Up Call Show Rate by Lead Quality';
+
+  document.getElementById('followup-quality-table').innerHTML =
+    '<div style="color:var(--text2); font-size:13px; padding:20px;">Loading...</div>';
+
+  const repParam = AppState.repId ? `&rep_id=${AppState.repId}` : '';
+  try {
+    const { data } = await apiFetch(`/api/dashboard/followup-by-quality?${qs()}${repParam}`);
+    renderFollowupQuality(data);
+  } catch (e) {
+    document.getElementById('followup-quality-table').innerHTML =
+      `<div style="color:var(--red); font-size:13px; padding:20px;">Failed to load data: ${e.message}</div>`;
+  }
+}
+
+function closeFollowupModal() {
+  document.getElementById('followup-modal').style.display = 'none';
+  if (followupQualityChart) { followupQualityChart.destroy(); followupQualityChart = null; }
 }
 
 function weekDates(offset) {
@@ -550,16 +753,16 @@ async function renderDailyActivity() {
 
 function renderKPICards(d) {
   document.getElementById('kpi-cards').innerHTML = `
-    <div class="kpi-card"><div class="kpi-label">1st Calls Booked</div><div class="kpi-value">${num(d.calls_booked_1st)}</div></div>
-    <div class="kpi-card"><div class="kpi-label">1st Call Shows</div><div class="kpi-value">${num(d.shows_1st)}</div></div>
-    <div class="kpi-card"><div class="kpi-label">Show Rate</div><div class="kpi-value ${rateClass(d.show_rate_1st)}">${pct(d.show_rate_1st)}</div><div class="kpi-sub">No-show: ${pct(d.no_show_rate_1st)}</div></div>
-    <div class="kpi-card"><div class="kpi-label">2nd Calls Booked</div><div class="kpi-value">${num(d.calls_booked_2nd)}</div></div>
-    <div class="kpi-card"><div class="kpi-label">2nd Call Shows</div><div class="kpi-value">${num(d.shows_2nd)}</div></div>
-    <div class="kpi-card"><div class="kpi-label">2nd Call Show Rate</div><div class="kpi-value ${rateClass(d.show_rate_2nd)}">${pct(d.show_rate_2nd)}</div></div>
-    <div class="kpi-card"><div class="kpi-label">Qual Rate</div><div class="kpi-value ${rateClass(d.qualification_rate)}">${pct(d.qualification_rate)}</div><div class="kpi-sub-stack"><span>DQ after call 2: ${pct(d.dq_after_call2_rate)}</span><span>Overall DQ: ${pct(d.dq_rate)}</span></div></div>
-    <div class="kpi-card"><div class="kpi-label">Close Rate</div><div class="kpi-value ${rateClass(d.close_rate)}">${pct(d.close_rate)}</div></div>
-    <div class="kpi-card highlight clickable" onclick="showAllClosesModal()"><div class="kpi-label">Units Closed</div><div class="kpi-value">${num(d.units_closed)}</div><div class="kpi-sub">↗ See deals</div></div>
-    <div class="kpi-card"><div class="kpi-label">Proj. Contract Value</div><div class="kpi-value" style="font-size:20px;">${money(d.projected_contract_value)}</div><div class="kpi-sub">Rep-estimated</div></div>
+    <div class="kpi-card clickable" onclick="window.open(debugUrl('calls_booked_1st'),'_blank')"><div class="kpi-label">1st Calls Booked</div><div class="kpi-value">${num(d.calls_booked_1st)}</div><div class="kpi-sub">↗ Debug</div></div>
+    <div class="kpi-card clickable" onclick="window.open(debugUrl('shows_1st'),'_blank')"><div class="kpi-label">1st Call Shows</div><div class="kpi-value">${num(d.shows_1st)}</div><div class="kpi-sub">↗ Debug</div></div>
+    <div class="kpi-card clickable" onclick="window.open(debugUrl('show_rate_1st'),'_blank')"><div class="kpi-label">Show Rate</div><div class="kpi-value ${rateClass(d.show_rate_1st)}">${pct(d.show_rate_1st)}</div><div class="kpi-sub">No-show: ${pct(d.no_show_rate_1st)} · ↗ Debug</div></div>
+    <div class="kpi-card clickable" onclick="window.open(debugUrl('calls_booked_2nd'),'_blank')"><div class="kpi-label">2nd Calls Booked</div><div class="kpi-value">${num(d.calls_booked_2nd)}</div><div class="kpi-sub">↗ Debug</div></div>
+    <div class="kpi-card clickable" onclick="window.open(debugUrl('shows_2nd'),'_blank')"><div class="kpi-label">2nd Call Shows</div><div class="kpi-value">${num(d.shows_2nd)}</div><div class="kpi-sub">↗ Debug</div></div>
+    <div class="kpi-card clickable" onclick="window.open(debugUrl('show_rate_2nd'),'_blank')"><div class="kpi-label">2nd Call Show Rate</div><div class="kpi-value ${rateClass(d.show_rate_2nd)}">${pct(d.show_rate_2nd)}</div><div class="kpi-sub">↗ Debug</div><a href="#" onclick="event.stopPropagation();openFollowupModal();return false;" style="display:block;margin-top:6px;font-size:11px;color:var(--accent);text-decoration:none;opacity:0.85;">Show rate by Lead Quality →</a></div>
+    <div class="kpi-card clickable" onclick="window.open(debugUrl('qualification_rate'),'_blank')"><div class="kpi-label">Qual Rate</div><div class="kpi-value ${rateClass(d.qualification_rate)}">${pct(d.qualification_rate)}</div><div class="kpi-sub-stack"><span>DQ after call 2: ${pct(d.dq_after_call2_rate)}</span><span>Overall DQ: ${pct(d.dq_rate)}</span><span>↗ Debug</span></div></div>
+    <div class="kpi-card clickable" onclick="window.open(debugUrl('close_rate'),'_blank')"><div class="kpi-label">Close Rate</div><div class="kpi-value ${rateClass(d.close_rate)}">${pct(d.close_rate)}</div><div class="kpi-sub">↗ Debug</div></div>
+    <div class="kpi-card highlight clickable" onclick="window.open(debugUrl('units_closed'),'_blank')"><div class="kpi-label">Units Closed</div><div class="kpi-value">${num(d.units_closed)}</div><div class="kpi-sub">↗ Debug</div></div>
+    <div class="kpi-card clickable" onclick="window.open(debugUrl('projected_contract_value'),'_blank')"><div class="kpi-label">Proj. Contract Value</div><div class="kpi-value" style="font-size:20px;">${money(d.projected_contract_value)}</div><div class="kpi-sub">Rep-estimated · ↗ Debug</div></div>
   `;
 }
 
@@ -631,25 +834,25 @@ function renderRepBreakdown(reps) {
     const n = r.rep_name.replace(/'/g, "\\'");
     const rid = r.rep_id;
     const bookedCell = rid
-      ? `<span class="closes-link" onclick="showRepOppsModal('${rid}','${n}','booked')">↗ ${num(r.calls_booked_1st)}</span>`
+      ? `<span class="closes-link" onclick="window.open(debugUrl('calls_booked_1st','${rid}'),'_blank')">↗ ${num(r.calls_booked_1st)}</span>`
       : num(r.calls_booked_1st);
     const showedCell = rid
-      ? `<span class="closes-link" onclick="showRepOppsModal('${rid}','${n}','showed')">↗ ${num(r.shows_1st)}</span>`
+      ? `<span class="closes-link" onclick="window.open(debugUrl('shows_1st','${rid}'),'_blank')">↗ ${num(r.shows_1st)}</span>`
       : num(r.shows_1st);
     const closedCell = rid
-      ? `<span class="closes-link" onclick="showRepClosesModal('${rid}','${n}')">↗ ${num(r.units_closed)}</span>`
+      ? `<span class="closes-link" onclick="window.open(debugUrl('units_closed','${rid}'),'_blank')">↗ ${num(r.units_closed)}</span>`
       : num(r.units_closed);
     const notLoggedCell = rid
-      ? `<span class="closes-link" onclick="showRepOppsModal('${rid}','${n}','not_logged')">↗ ${num(r.outcome_not_logged_count)}</span>`
+      ? `<span class="closes-link" onclick="window.open(debugUrl('outcome_unfilled','${rid}'),'_blank')">↗ ${num(r.outcome_not_logged_count)}</span>`
       : num(r.outcome_not_logged_count);
     return `
     <tr>
       <td>${r.rep_name}</td>
       <td class="num">${bookedCell}</td>
       <td class="num">${showedCell}</td>
-      <td class="num ${rateClass(r.show_rate_1st)}">${pct(r.show_rate_1st)}</td>
-      <td class="num ${rateClass(r.qualification_rate)}">${pct(r.qualification_rate)}</td>
-      <td class="num ${rateClass(r.close_rate)}">${pct(r.close_rate)}</td>
+      <td class="num clickable" onclick="window.open(debugUrl('show_rate_1st','${rid}'),'_blank')" style="cursor:pointer;" title="↗ Debug">${pct(r.show_rate_1st)}</td>
+      <td class="num clickable" onclick="window.open(debugUrl('qualification_rate','${rid}'),'_blank')" style="cursor:pointer;" title="↗ Debug">${pct(r.qualification_rate)}</td>
+      <td class="num clickable" onclick="window.open(debugUrl('close_rate','${rid}'),'_blank')" style="cursor:pointer;" title="↗ Debug">${pct(r.close_rate)}</td>
       <td class="num">${closedCell}</td>
       <td class="num ${r.outcome_not_logged_count > 0 ? 'rate-warn' : ''}">${notLoggedCell}</td>
     </tr>`;
@@ -1116,18 +1319,38 @@ function renderComplianceTable(failures) {
 
 // ─── Bootstrap ────────────────────────────────────────────────────────────────
 async function init() {
-  // Load last synced timestamp
+  // Load last synced timestamp with health indicator
   try {
     const health = await apiFetch('/api/health');
+    const el = document.getElementById('last-synced');
     if (health.last_sync_at) {
       const d = new Date(health.last_sync_at);
-      document.getElementById('last-synced').textContent =
-        'Data as of ' + d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) +
-        ' at ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+      const ageMin = (Date.now() - d.getTime()) / 60000;
+      let dotClass = 'green';
+      let label = '';
+      if (ageMin < 20) {
+        dotClass = 'green';
+        label = 'Synced ' + Math.round(ageMin) + ' min ago';
+      } else if (ageMin < 60) {
+        dotClass = 'yellow';
+        label = 'Synced ' + Math.round(ageMin) + ' min ago';
+      } else if (ageMin < 1440) {
+        dotClass = 'red';
+        const hrs = Math.round(ageMin / 60);
+        label = 'Synced ' + hrs + 'h ago — check sync history';
+      } else {
+        dotClass = 'red';
+        label = 'Last sync: ' + d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' — stale!';
+      }
+      if (health.status === 'degraded') {
+        dotClass = 'red';
+        label = 'DB connection issue — ' + label;
+      }
+      el.innerHTML = `<span class="sync-dot ${dotClass}"></span>${label}`;
     } else {
-      document.getElementById('last-synced').textContent = 'No sync completed yet';
+      el.innerHTML = '<span class="sync-dot red"></span>No sync completed yet';
     }
-  } catch { document.getElementById('last-synced').textContent = ''; }
+  } catch { document.getElementById('last-synced').innerHTML = '<span class="sync-dot red"></span>Health check failed'; }
 
   // Load rep dropdown
   try {

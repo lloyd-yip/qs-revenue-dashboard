@@ -14,9 +14,10 @@ from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.models import Opportunity, SourceNormalization, SyncRun
+from db.models import Appointment, Opportunity, SourceNormalization, SyncRun
 from db.session import AsyncSessionLocal
 from sync.ghl_client import (
+    FOLLOW_UP_CALENDAR_IDS,
     GHLClient,
     extract_attributions,
     extract_custom_fields,
@@ -52,6 +53,45 @@ async def _get_last_successful_sync(session: AsyncSession) -> datetime | None:
     return row
 
 
+def _normalize_appt_status(raw: str) -> str | None:
+    """Map GHL calendar appointment status values to our internal labels."""
+    mapping = {
+        "showed": "Showed",
+        "noshow": "No Show",
+        "confirmed": "Confirmed",
+        "cancelled": "Cancelled",
+        "new": "Confirmed",
+    }
+    return mapping.get(raw.lower().strip()) if raw else None
+
+
+def _find_appointment_for_date(appointments: list[dict], target_dt: datetime) -> dict | None:
+    """Find the calendar appointment whose date matches target_dt (within ±1 day tolerance)."""
+    if not appointments or not target_dt:
+        return None
+    target_date = target_dt.date()
+    for appt in appointments:
+        start = appt.get("startTime")
+        if not start:
+            continue
+        appt_dt = parse_ghl_datetime(start)
+        if appt_dt and appt_dt.date() == target_date:
+            return appt
+    return None
+
+
+def _find_first_followup_appointment(appointments: list[dict]) -> dict | None:
+    """Return the chronologically first non-deleted Follow Up calendar appointment."""
+    candidates = [
+        a for a in appointments
+        if a.get("calendarId") in FOLLOW_UP_CALENDAR_IDS
+        and not a.get("deleted", False)
+    ]
+    if not candidates:
+        return None
+    return min(candidates, key=lambda a: a.get("startTime") or "")
+
+
 async def _build_opportunity_row(
     opp: dict,
     normalization_map: dict[str, str],
@@ -76,12 +116,10 @@ async def _build_opportunity_row(
     user_map = user_map or {}
     owner_name = user_map.get(owner_id) if owner_id else None
 
-    # Appointment dates from custom fields
-    # Use rescheduled date if present, otherwise initial date
+    # Appointment dates
+    # call1: from custom fields (rescheduled date preferred over initial)
     call1_date_raw = custom.get("call1_appointment_date") or custom.get("call1_initial_appointment_date")
-    call2_date_raw = custom.get("call2_appointment_date")
     call1_date = parse_ghl_datetime(call1_date_raw)
-    call2_date = parse_ghl_datetime(call2_date_raw)
 
     # Attribution
     op_book_source = custom.get("op_book_campaign_source")
@@ -96,9 +134,37 @@ async def _build_opportunity_row(
         raw_ghl_source=raw_ghl_source,
     )
 
-    # Call statuses
+    # call1 status from custom field (rep-entered)
     call1_status = custom.get("call1_appointment_status")
-    call2_status = custom.get("call2_appointment_status")
+
+    # call2 date + status from GHL calendar — specifically the first Follow Up appointment.
+    # Custom field call2_appointment_date is unreliable: it gets overwritten every time a
+    # new follow-up is booked, so it tracks the LATEST follow-up, not the first.
+    call2_date: datetime | None = None
+    call2_status: str | None = None
+    contact_id = opp.get("contactId")
+    all_appointments: list[dict] = []
+    if contact_id:
+        all_appointments = await ghl_client.get_contact_appointments(contact_id)
+        followup_appt = _find_first_followup_appointment(all_appointments)
+        if followup_appt:
+            call2_date = parse_ghl_datetime(followup_appt.get("startTime"))
+            call2_status = _normalize_appt_status(followup_appt.get("appointmentStatus") or "")
+
+    # contact_created_at: fetch from GHL contact record (dateAdded).
+    # Only fetched if not already stored — incremental syncs avoid re-fetching.
+    contact_created_at: datetime | None = None
+    if contact_id:
+        contact = await ghl_client.get_contact(contact_id)
+        if contact:
+            contact_created_at = parse_ghl_datetime(contact.get("dateAdded"))
+
+    # close_date: lastStatusChangeAt on won deals only.
+    # GHL does not have a dedicated wonAt field — lastStatusChangeAt is the closest proxy.
+    is_won = opp.get("status") == "won"
+    close_date: datetime | None = None
+    if is_won:
+        close_date = parse_ghl_datetime(opp.get("lastStatusChangeAt"))
 
     # Legacy compliance flag (stage-specific — kept for backward compat)
     compliance_failure = compute_compliance_failure(
@@ -161,9 +227,12 @@ async def _build_opportunity_row(
         "rep_compliance_failure": compliance_failure,
         "outcome_unfilled": outcome_unfilled,
         "post_call_note_word_count": post_call_note_word_count,
+        "contact_created_at": contact_created_at,
+        "close_date": close_date,
         "created_at_ghl": parse_ghl_datetime(opp.get("createdAt")),
         "updated_at_ghl": parse_ghl_datetime(opp.get("updatedAt")),
         "synced_at": datetime.now(timezone.utc),
+        "_all_appointments": all_appointments,  # passed through for appointments upsert; stripped before DB insert
     }
 
 
@@ -215,6 +284,10 @@ async def run_sync(sync_type: str = "incremental") -> dict:
             try:
                 row = await _build_opportunity_row(raw_opp, normalization_map, ghl_client, user_map)
 
+                # Pull appointments out before DB insert — not a DB column
+                all_appointments = row.pop("_all_appointments", [])
+                contact_id_for_appts = row.get("ghl_contact_id")
+
                 # PostgreSQL upsert — idempotent on ghl_opportunity_id.
                 # Exclude compliance history columns — they are managed by the
                 # conditional UPDATE below, not overwritten on every sync.
@@ -228,6 +301,32 @@ async def run_sync(sync_type: str = "incremental") -> dict:
                     )
                 )
                 await session.execute(stmt)
+
+                # Upsert all appointments for this contact into the appointments table
+                if contact_id_for_appts and all_appointments:
+                    for appt in all_appointments:
+                        appt_id = appt.get("id")
+                        if not appt_id:
+                            continue
+                        cal_id = appt.get("calendarId")
+                        appt_type = "call_2" if cal_id in FOLLOW_UP_CALENDAR_IDS else "call_1"
+                        appt_row = {
+                            "ghl_contact_id": contact_id_for_appts,
+                            "ghl_appointment_id": appt_id,
+                            "calendar_id": cal_id,
+                            "appointment_type": appt_type,
+                            "appointment_date": parse_ghl_datetime(appt.get("startTime")),
+                            "appointment_status": _normalize_appt_status(appt.get("appointmentStatus") or ""),
+                        }
+                        appt_stmt = (
+                            pg_insert(Appointment)
+                            .values(**appt_row)
+                            .on_conflict_do_update(
+                                index_elements=["ghl_appointment_id"],
+                                set_={k: v for k, v in appt_row.items() if k != "ghl_appointment_id"},
+                            )
+                        )
+                        await session.execute(appt_stmt)
 
                 # Compliance history: track when outcome_unfilled was first set and when resolved.
                 # - first_flagged_at: set once when outcome_unfilled first becomes TRUE

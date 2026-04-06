@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Data Quality Audit — QS Analytics</title>
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #22263a;
+      --border: #2e3347;
+      --accent: #6366f1;
+      --accent2: #818cf8;
+      --text: #e2e8f0;
+      --text2: #94a3b8;
+      --green: #22c55e;
+      --red: #ef4444;
+      --yellow: #f59e0b;
+      --orange: #f97316;
+      --radius: 10px;
+      --font: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+
+    body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; min-height: 100vh; }
+
+    /* Header */
+    .dq-header {
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 20px 28px; display: flex; align-items: center; justify-content: space-between;
+    }
+    .dq-header-left { display: flex; flex-direction: column; gap: 6px; }
+    .dq-header h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.3px; }
+    .dq-header .subtitle { font-size: 13px; color: var(--text2); display: flex; gap: 16px; flex-wrap: wrap; }
+    .dq-header .subtitle span { display: inline-flex; align-items: center; gap: 4px; }
+    .dq-header-right { display: flex; align-items: center; gap: 12px; }
+    .badge {
+      color: #fff; font-size: 13px; font-weight: 600;
+      padding: 6px 16px; border-radius: 20px; letter-spacing: -0.2px;
+    }
+    .badge-clean { background: var(--green); }
+    .badge-warn { background: var(--orange); }
+    .badge-bad { background: var(--red); }
+    .back-link {
+      color: var(--accent2); text-decoration: none; font-size: 13px;
+      display: inline-flex; align-items: center; gap: 4px; margin-bottom: 4px;
+    }
+    .back-link:hover { text-decoration: underline; }
+
+    /* Anomaly summary bar */
+    .anomaly-summary {
+      padding: 12px 28px; background: var(--surface); border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    }
+    .anomaly-summary-label { font-size: 12px; color: var(--text2); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-right: 4px; }
+    .anomaly-chip {
+      display: inline-flex; align-items: center; gap: 5px; padding: 4px 12px;
+      border-radius: 16px; font-size: 12px; font-weight: 500; cursor: pointer;
+      border: 1px solid var(--border); background: var(--surface2); color: var(--text2);
+      transition: all 0.15s;
+    }
+    .anomaly-chip:hover { border-color: var(--accent); color: var(--text); }
+    .anomaly-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .anomaly-chip .chip-count { font-weight: 700; }
+    .anomaly-chip.severity-high .chip-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--red); }
+    .anomaly-chip.severity-medium .chip-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--yellow); }
+
+    /* Filters bar */
+    .filters {
+      padding: 12px 28px; background: var(--surface); border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    }
+    .preset-btns { display: flex; gap: 4px; }
+    .preset-btn {
+      background: var(--surface2); border: 1px solid var(--border); color: var(--text2);
+      padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px;
+      font-family: var(--font); font-weight: 500; transition: all 0.15s;
+    }
+    .preset-btn:hover { border-color: var(--accent); color: var(--text); }
+    .preset-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    #date-range-input {
+      background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+      padding: 6px 12px; border-radius: 6px; font-size: 12px; width: 200px;
+      outline: none; cursor: pointer; font-family: var(--font);
+    }
+    #date-range-input:focus { border-color: var(--accent); }
+    .filter-sep { width: 1px; height: 24px; background: var(--border); }
+
+    /* Toolbar */
+    .toolbar {
+      padding: 14px 28px; background: var(--surface); border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    }
+    #search-input {
+      background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+      padding: 8px 14px; border-radius: 8px; font-size: 13px; width: 320px;
+      outline: none; transition: border-color 0.15s;
+    }
+    #search-input:focus { border-color: var(--accent); }
+    #search-input::placeholder { color: var(--text2); }
+    #rep-filter {
+      background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+      padding: 8px 14px; border-radius: 8px; font-size: 13px;
+      outline: none; cursor: pointer;
+    }
+    #rep-filter:focus { border-color: var(--accent); }
+    .result-count { font-size: 12px; color: var(--text2); margin-left: auto; }
+
+    /* Table */
+    .table-wrap { padding: 0 28px 28px; overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; margin-top: 0; }
+    thead { position: sticky; top: 0; z-index: 10; }
+    th {
+      background: var(--surface2); color: var(--text2); font-size: 11px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.5px; padding: 10px 12px; text-align: left;
+      white-space: nowrap; cursor: pointer; user-select: none;
+      border-bottom: 2px solid var(--border);
+    }
+    th:hover { color: var(--text); }
+    th .sort-arrow { margin-left: 4px; font-size: 10px; opacity: 0.4; }
+    th.sorted .sort-arrow { opacity: 1; color: var(--accent2); }
+    td {
+      padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 13px;
+      white-space: nowrap; max-width: 240px; overflow: hidden; text-overflow: ellipsis;
+    }
+    tr:hover td { background: var(--surface2); }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+    /* Row severity highlights */
+    tr.row-high { background: rgba(239, 68, 68, 0.04); }
+    tr.row-high td:first-child { border-left: 3px solid var(--red); }
+    tr.row-medium { background: rgba(245, 158, 11, 0.03); }
+    tr.row-medium td:first-child { border-left: 3px solid var(--yellow); }
+
+    /* Links */
+    .ghl-link { color: var(--accent2); text-decoration: none; font-weight: 500; }
+    .ghl-link:hover { text-decoration: underline; }
+    .contact-link { color: var(--text2); text-decoration: none; font-size: 11px; font-family: monospace; }
+    .contact-link:hover { color: var(--accent2); text-decoration: underline; }
+
+    /* Status badges */
+    .status-showed { color: var(--green); font-weight: 600; }
+    .status-noshow { color: var(--red); font-weight: 600; }
+    .status-confirmed { color: var(--yellow); font-weight: 500; }
+    .status-cancelled { color: var(--text2); }
+
+    /* Quality badges */
+    .qual-great { color: var(--green); font-weight: 600; }
+    .qual-ok { color: #84cc16; font-weight: 500; }
+    .qual-barely { color: var(--yellow); font-weight: 500; }
+    .qual-bad { color: var(--red); font-weight: 600; }
+    .qual-dq { color: var(--red); font-weight: 700; }
+
+    /* Anomaly badges */
+    .anomaly-badges { display: flex; flex-direction: column; gap: 4px; white-space: normal; max-width: 360px; }
+    .anomaly-badge {
+      display: inline-flex; align-items: flex-start; gap: 5px; padding: 3px 8px;
+      border-radius: 4px; font-size: 11px; line-height: 1.4;
+    }
+    .anomaly-badge.high { background: rgba(239, 68, 68, 0.12); color: #fca5a5; }
+    .anomaly-badge.medium { background: rgba(245, 158, 11, 0.12); color: #fcd34d; }
+    .anomaly-badge .anomaly-icon { flex-shrink: 0; }
+    .anomaly-badge .anomaly-action { color: var(--text2); font-size: 10px; display: block; margin-top: 1px; }
+
+    /* Loading / empty states */
+    .loading { text-align: center; color: var(--text2); padding: 80px; font-size: 14px; }
+    .empty { text-align: center; color: var(--text2); padding: 80px; font-size: 14px; }
+    .error { text-align: center; color: var(--red); padding: 80px; font-size: 14px; }
+
+    @media (max-width: 768px) {
+      .dq-header { flex-direction: column; align-items: flex-start; gap: 12px; }
+      #search-input { width: 100%; }
+      .toolbar { flex-direction: column; align-items: stretch; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="dq-header">
+  <div class="dq-header-left">
+    <a class="back-link" href="/">← Back to Dashboard</a>
+    <h1>Data Quality Audit</h1>
+    <div class="subtitle" id="page-subtitle">
+      <span>Scanning all active opportunities for GHL inconsistencies</span>
+    </div>
+  </div>
+  <div class="dq-header-right">
+    <div class="badge badge-clean" id="total-badge">Loading…</div>
+  </div>
+</div>
+
+<div class="filters">
+  <div class="preset-btns">
+    <button class="preset-btn" onclick="applyPreset(7)">Last 7d</button>
+    <button class="preset-btn" onclick="applyPreset(30)">Last 30d</button>
+    <button class="preset-btn" onclick="applyPreset(90)">Last 90d</button>
+    <button class="preset-btn" onclick="applyPresetThisMonth()">This month</button>
+    <button class="preset-btn active" onclick="applyPresetAll()">All time</button>
+  </div>
+  <input id="date-range-input" placeholder="Custom range..." readonly />
+  <div class="filter-sep"></div>
+  <select id="rep-filter" onchange="loadData()">
+    <option value="">All Reps</option>
+  </select>
+</div>
+
+<div class="anomaly-summary" id="anomaly-summary" style="display:none;">
+  <span class="anomaly-summary-label">Filter by issue:</span>
+  <div id="anomaly-chips"></div>
+</div>
+
+<div class="toolbar">
+  <input type="text" id="search-input" placeholder="Search by name, rep, stage, issue…" oninput="applyFilterAndSort()" />
+  <span class="result-count" id="result-count"></span>
+</div>
+
+<div class="table-wrap">
+  <div id="table-container"><div class="loading">Loading data quality audit…</div></div>
+</div>
+
+<script>
+// ─── Config ──────────────────────────────────────────────────────────────────
+const GHL_OPP_BASE = 'https://app.gohighlevel.com/v2/location/G7ZOWCq78JrzUjlLMCxt/opportunities/list';
+const GHL_CONTACT_BASE = 'https://app.gohighlevel.com/v2/location/G7ZOWCq78JrzUjlLMCxt/contacts/detail';
+
+const ANOMALY_LABELS = {
+  stage_showed_status_stale: 'Stage/Status Mismatch (Showed)',
+  stage_noshow_status_showed: 'Stage/Status Conflict (No-Show)',
+  stage_cancelled_status_showed: 'Stage/Status Conflict (Cancelled)',
+  note_exists_status_stale: 'Note Exists, Status Stale',
+  outcome_unfilled: 'Outcome Not Logged',
+  showed_no_lead_quality: 'Missing Lead Quality',
+  showed_no_note: 'Missing Post-Call Note',
+  deal_won_no_value: 'Deal Won, No Value',
+  call2_without_call1_showed: '2nd Call Without 1st Show',
+  stage_noshow_status_stale: 'No-Show Stage, Status Stale',
+};
+
+// ─── State ───────────────────────────────────────────────────────────────────
+let allRows = [];
+let sortCol = '_anomaly_count';
+let sortDir = 'desc';
+let activeAnomalyFilter = null;
+let lookupData = { calendars: {}, stages: {} };
+let dateStart = '';
+let dateEnd = '';
+
+function toISO(d) {
+  return d.toISOString().slice(0, 10);
+}
+
+// ─── Date presets ────────────────────────────────────────────────────────────
+function applyPreset(days) {
+  const end = new Date();
+  const start = new Date();
+  start.setDate(end.getDate() - (days - 1));
+  dateStart = toISO(start);
+  dateEnd = toISO(end);
+  fp.setDate([dateStart, dateEnd]);
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+  loadData();
+}
+
+function applyPresetThisMonth() {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  dateStart = toISO(start);
+  dateEnd = toISO(now);
+  fp.setDate([dateStart, dateEnd]);
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+  loadData();
+}
+
+function applyPresetAll() {
+  dateStart = '';
+  dateEnd = '';
+  fp.clear();
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+  loadData();
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+function formatDate(iso) {
+  if (!iso) return '–';
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function formatDateTime(iso) {
+  if (!iso) return '–';
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' +
+         d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+}
+
+function money(v) {
+  if (v === null || v === undefined) return '–';
+  return '$' + Math.round(v).toLocaleString();
+}
+
+function statusClass(s) {
+  if (!s) return '';
+  const low = s.toLowerCase();
+  if (low === 'showed') return 'status-showed';
+  if (low === 'no show') return 'status-noshow';
+  if (low === 'confirmed') return 'status-confirmed';
+  if (low === 'cancelled') return 'status-cancelled';
+  return '';
+}
+
+function qualClass(q) {
+  if (!q) return '';
+  const low = q.toLowerCase();
+  if (low === 'great') return 'qual-great';
+  if (low === 'ok') return 'qual-ok';
+  if (low === 'barely passable') return 'qual-barely';
+  if (low === 'bad') return 'qual-bad';
+  if (low === 'dq') return 'qual-dq';
+  return '';
+}
+
+function resolveCalendarName(calId) {
+  if (!calId) return '–';
+  return lookupData.calendars[calId] || calId.slice(0, 8) + '…';
+}
+
+function resolveStageName(stageId, dbName) {
+  if (dbName) return dbName;
+  if (!stageId) return '–';
+  return lookupData.stages[stageId] || stageId.slice(0, 8) + '…';
+}
+
+function getRowSeverity(anomalies) {
+  if (!anomalies || !anomalies.length) return '';
+  if (anomalies.some(a => a.severity === 'high')) return 'high';
+  return 'medium';
+}
+
+// ─── Anomaly Summary Chips ───────────────────────────────────────────────────
+function renderAnomalyChips(summary) {
+  if (!summary || Object.keys(summary).length === 0) return;
+
+  const summaryEl = document.getElementById('anomaly-summary');
+  summaryEl.style.display = 'flex';
+
+  // Determine severity for each anomaly type from the data
+  const severities = {};
+  for (const row of allRows) {
+    for (const a of (row.anomalies || [])) {
+      severities[a.id] = a.severity;
+    }
+  }
+
+  // Sort by count desc
+  const sorted = Object.entries(summary).sort((a, b) => b[1] - a[1]);
+
+  let html = `<span class="anomaly-chip ${activeAnomalyFilter === null ? 'active' : ''}" onclick="setAnomalyFilter(null)">
+    <span class="chip-count">${allRows.length}</span> All Issues
+  </span>`;
+
+  for (const [id, count] of sorted) {
+    const label = ANOMALY_LABELS[id] || id;
+    const sev = severities[id] || 'medium';
+    const active = activeAnomalyFilter === id ? 'active' : '';
+    html += `<span class="anomaly-chip severity-${sev} ${active}" onclick="setAnomalyFilter('${id}')">
+      <span class="chip-dot"></span>
+      <span class="chip-count">${count}</span> ${label}
+    </span>`;
+  }
+
+  document.getElementById('anomaly-chips').innerHTML = html;
+}
+
+function setAnomalyFilter(id) {
+  activeAnomalyFilter = id;
+  // Re-render chips to update active state
+  const summary = {};
+  for (const row of allRows) {
+    for (const a of (row.anomalies || [])) {
+      summary[a.id] = (summary[a.id] || 0) + 1;
+    }
+  }
+  renderAnomalyChips(summary);
+  applyFilterAndSort();
+}
+
+// ─── Render Table ────────────────────────────────────────────────────────────
+function renderTable(rows) {
+  const container = document.getElementById('table-container');
+  if (!rows.length) {
+    container.innerHTML = '<div class="empty">No data quality issues found. All records look clean!</div>';
+    document.getElementById('result-count').textContent = '0 results';
+    return;
+  }
+
+  document.getElementById('result-count').textContent = rows.length + ' result' + (rows.length !== 1 ? 's' : '');
+
+  const headerCells = [
+    { key: 'opportunity_name', label: 'Opportunity' },
+    { key: 'rep_name', label: 'Rep' },
+    { key: 'stage_name', label: 'Stage' },
+    { key: 'call1_appointment_date', label: '1st Call Date' },
+    { key: 'call1_appointment_status', label: 'Status' },
+    { key: '_calendar_name', label: 'Calendar' },
+    { key: 'lead_quality', label: 'Lead Quality' },
+    { key: 'post_call_note_word_count', label: 'Notes WC' },
+    { key: 'projected_deal_size', label: 'Value' },
+    { key: '_anomaly_count', label: 'Issues' },
+  ];
+
+  const ths = headerCells.map(h => {
+    const isSorted = sortCol === h.key;
+    const arrow = isSorted ? (sortDir === 'asc' ? '▲' : '▼') : '⇅';
+    const cls = isSorted ? 'sorted' : '';
+    return `<th class="${cls}" onclick="sortTable('${h.key}')">${h.label} <span class="sort-arrow">${arrow}</span></th>`;
+  }).join('');
+
+  const trs = rows.map(r => {
+    const oppLink = `${GHL_OPP_BASE}/${r.ghl_opportunity_id}?tab=Opportunity+Details`;
+    const contactLink = r.ghl_contact_id ? `${GHL_CONTACT_BASE}/${r.ghl_contact_id}` : null;
+    const nameCell = `<a class="ghl-link" href="${oppLink}" target="_blank" title="Open in GHL">↗ ${r.opportunity_name || r.ghl_opportunity_id.slice(0, 10) + '…'}</a>`
+      + (contactLink ? `<br><a class="contact-link" href="${contactLink}" target="_blank" title="Open contact in GHL">contact</a>` : '');
+
+    const severity = getRowSeverity(r.anomalies);
+    const rowClass = severity ? `row-${severity}` : '';
+
+    const badges = (r.anomalies || []).map(a => {
+      const icon = a.severity === 'high' ? '🔴' : '🟡';
+      return `<div class="anomaly-badge ${a.severity}">
+        <span class="anomaly-icon">${icon}</span>
+        <span>${a.label}<span class="anomaly-action">→ ${a.action}</span></span>
+      </div>`;
+    }).join('');
+
+    const noteWc = r.post_call_note_word_count;
+    const noteDisplay = noteWc === null ? '–' : noteWc;
+
+    return `<tr class="${rowClass}">
+      <td>${nameCell}</td>
+      <td>${r.rep_name || '–'}</td>
+      <td>${resolveStageName(r.stage_id, r.stage_name)}</td>
+      <td>${formatDateTime(r.call1_appointment_date)}</td>
+      <td class="${statusClass(r.call1_appointment_status)}">${r.call1_appointment_status || '–'}</td>
+      <td>${resolveCalendarName(r.call1_calendar_id)}</td>
+      <td class="${qualClass(r.lead_quality)}">${r.lead_quality || '–'}</td>
+      <td class="num">${noteDisplay}</td>
+      <td class="num">${money(r.projected_deal_size)}</td>
+      <td><div class="anomaly-badges">${badges}</div></td>
+    </tr>`;
+  }).join('');
+
+  container.innerHTML = `
+    <table>
+      <thead><tr>${ths}</tr></thead>
+      <tbody>${trs}</tbody>
+    </table>
+  `;
+}
+
+// ─── Sort ────────────────────────────────────────────────────────────────────
+function sortTable(col) {
+  if (sortCol === col) {
+    sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    sortCol = col;
+    sortDir = col === '_anomaly_count' ? 'desc' : 'asc';
+  }
+  applyFilterAndSort();
+}
+
+function applyFilterAndSort() {
+  let rows = [...allRows];
+
+  // Anomaly type filter
+  if (activeAnomalyFilter) {
+    rows = rows.filter(r =>
+      r.anomalies && r.anomalies.some(a => a.id === activeAnomalyFilter)
+    );
+  }
+
+  // Text search
+  const query = document.getElementById('search-input').value.toLowerCase().trim();
+  if (query) {
+    rows = rows.filter(r =>
+      (r.opportunity_name || '').toLowerCase().includes(query) ||
+      (r.rep_name || '').toLowerCase().includes(query) ||
+      (r.stage_name || '').toLowerCase().includes(query) ||
+      (r.call1_appointment_status || '').toLowerCase().includes(query) ||
+      (r.lead_quality || '').toLowerCase().includes(query) ||
+      (r.ghl_opportunity_id || '').toLowerCase().includes(query) ||
+      resolveCalendarName(r.call1_calendar_id).toLowerCase().includes(query) ||
+      (r.anomalies || []).some(a => a.label.toLowerCase().includes(query))
+    );
+  }
+
+  // Sort
+  if (sortCol) {
+    rows.sort((a, b) => {
+      let va, vb;
+      if (sortCol === '_anomaly_count') {
+        // Sort by severity first (high before medium), then by count
+        const sa = getRowSeverity(a.anomalies) === 'high' ? 0 : 1;
+        const sb = getRowSeverity(b.anomalies) === 'high' ? 0 : 1;
+        if (sa !== sb) return sortDir === 'desc' ? sa - sb : sb - sa;
+        va = (a.anomalies || []).length;
+        vb = (b.anomalies || []).length;
+      } else if (sortCol === '_calendar_name') {
+        va = resolveCalendarName(a.call1_calendar_id);
+        vb = resolveCalendarName(b.call1_calendar_id);
+      } else {
+        va = a[sortCol];
+        vb = b[sortCol];
+      }
+      if (va === null || va === undefined) va = '';
+      if (vb === null || vb === undefined) vb = '';
+      if (typeof va === 'number' && typeof vb === 'number') {
+        return sortDir === 'asc' ? va - vb : vb - va;
+      }
+      va = String(va).toLowerCase();
+      vb = String(vb).toLowerCase();
+      if (va < vb) return sortDir === 'asc' ? -1 : 1;
+      if (va > vb) return sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }
+
+  renderTable(rows);
+}
+
+// ─── Load Data ───────────────────────────────────────────────────────────────
+async function loadData() {
+  const repId = document.getElementById('rep-filter').value;
+  const apiParams = new URLSearchParams();
+  if (repId) apiParams.set('rep_id', repId);
+  if (dateStart) apiParams.set('start', dateStart);
+  if (dateEnd) apiParams.set('end', dateEnd);
+
+  // Update subtitle
+  const subtitle = document.getElementById('page-subtitle');
+  if (dateStart && dateEnd) {
+    subtitle.innerHTML = `<span>Filtering by created date: ${dateStart} → ${dateEnd}</span>`;
+  } else {
+    subtitle.innerHTML = `<span>Scanning all active opportunities for GHL inconsistencies</span>`;
+  }
+
+  try {
+    const res = await fetch(`/api/dashboard/data-quality?${apiParams}`);
+    if (!res.ok) throw new Error(`API error ${res.status}`);
+    const json = await res.json();
+
+    allRows = json.issues;
+
+    // Update badge
+    const badgeEl = document.getElementById('total-badge');
+    const highCount = allRows.filter(r => (r.anomalies || []).some(a => a.severity === 'high')).length;
+    if (allRows.length === 0) {
+      badgeEl.textContent = 'All Clean';
+      badgeEl.className = 'badge badge-clean';
+    } else {
+      badgeEl.textContent = `${allRows.length} issues`;
+      badgeEl.className = highCount > 0 ? 'badge badge-bad' : 'badge badge-warn';
+    }
+
+    document.title = `Data Quality (${allRows.length} issues) — QS Analytics`;
+
+    // Extract unique reps for filter dropdown (preserve current selection)
+    const currentRep = document.getElementById('rep-filter').value;
+    const reps = [...new Set(allRows.map(r => r.rep_name).filter(Boolean))].sort();
+    const repSelect = document.getElementById('rep-filter');
+    const existingOptions = repSelect.querySelectorAll('option:not(:first-child)');
+    if (existingOptions.length === 0) {
+      for (const name of reps) {
+        const repRows = allRows.filter(r => r.rep_name === name);
+        const repId = repRows.length > 0 ? repRows[0].rep_id : '';
+        const opt = document.createElement('option');
+        opt.value = repId;
+        opt.textContent = `${name} (${repRows.length})`;
+        repSelect.appendChild(opt);
+      }
+      if (currentRep) repSelect.value = currentRep;
+    }
+
+    activeAnomalyFilter = null;
+    renderAnomalyChips(json.summary);
+    applyFilterAndSort();
+  } catch (e) {
+    document.getElementById('table-container').innerHTML =
+      `<div class="error">Failed to load data: ${e.message}</div>`;
+  }
+}
+
+// ─── Flatpickr init ──────────────────────────────────────────────────────────
+const fp = flatpickr('#date-range-input', {
+  mode: 'range',
+  dateFormat: 'Y-m-d',
+  onChange(selectedDates) {
+    if (selectedDates.length === 2) {
+      dateStart = toISO(selectedDates[0]);
+      dateEnd = toISO(selectedDates[1]);
+      document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+      loadData();
+    }
+  },
+});
+
+// ─── Init ────────────────────────────────────────────────────────────────────
+async function init() {
+  // Fetch lookups (calendar names, stage names) from GHL API
+  try {
+    const lookupRes = await fetch('/api/dashboard/lookups');
+    if (lookupRes.ok) lookupData = await lookupRes.json();
+  } catch (e) {
+    console.warn('Failed to load lookups:', e);
+  }
+
+  await loadData();
+}
+
+init();
+</script>
+</body>
+</html>

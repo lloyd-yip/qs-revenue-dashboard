@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sync History — QS Analytics</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #22263a;
+      --border: #2e3347;
+      --accent: #6366f1;
+      --accent2: #818cf8;
+      --text: #e2e8f0;
+      --text2: #94a3b8;
+      --green: #22c55e;
+      --red: #ef4444;
+      --yellow: #f59e0b;
+      --radius: 10px;
+      --font: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+
+    body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; min-height: 100vh; }
+
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 16px 24px; border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    header h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.3px; }
+    .header-left { display: flex; align-items: center; gap: 14px; }
+    .back-link {
+      color: var(--accent2); text-decoration: none; font-size: 13px;
+      display: inline-flex; align-items: center; gap: 4px; transition: color 0.15s;
+    }
+    .back-link:hover { color: var(--text); }
+
+    .content { padding: 24px; max-width: 1200px; margin: 0 auto; }
+
+    /* Stats summary strip */
+    .stats-strip {
+      display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap;
+    }
+    .stat-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 16px 24px; flex: 1; min-width: 160px;
+    }
+    .stat-card .label { font-size: 11px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+    .stat-card .value { font-size: 24px; font-weight: 700; }
+    .stat-card .value.green { color: var(--green); }
+    .stat-card .value.yellow { color: var(--yellow); }
+    .stat-card .value.red { color: var(--red); }
+
+    /* Table */
+    .table-wrap {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      overflow: hidden;
+    }
+    table { width: 100%; border-collapse: collapse; }
+    th {
+      background: var(--surface2); color: var(--text2); font-size: 11px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.4px; padding: 10px 14px; text-align: left;
+      position: sticky; top: 0;
+    }
+    td { padding: 10px 14px; border-top: 1px solid var(--border); font-size: 13px; }
+    tr:hover td { background: var(--surface2); }
+
+    /* Status badges */
+    .badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.3px;
+    }
+    .badge-completed { background: rgba(34,197,94,0.12); color: var(--green); }
+    .badge-failed { background: rgba(239,68,68,0.12); color: var(--red); }
+    .badge-running { background: rgba(99,102,241,0.12); color: var(--accent2); animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.6; } }
+
+    .badge-type {
+      padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 500;
+      text-transform: lowercase;
+    }
+    .badge-type.full { background: rgba(99,102,241,0.12); color: var(--accent2); }
+    .badge-type.incremental { background: rgba(148,163,184,0.12); color: var(--text2); }
+
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+    /* Error expand */
+    .error-toggle {
+      background: none; border: none; color: var(--red); cursor: pointer;
+      font-size: 12px; text-decoration: underline; padding: 0;
+    }
+    .error-toggle:hover { color: #f87171; }
+    .error-details {
+      display: none; margin-top: 8px; padding: 8px 12px;
+      background: rgba(239,68,68,0.06); border: 1px solid rgba(239,68,68,0.15);
+      border-radius: 6px; font-size: 11px; font-family: monospace;
+      color: var(--text2); max-height: 200px; overflow-y: auto; white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .loading { text-align: center; color: var(--text2); padding: 48px; font-size: 13px; }
+    .empty { text-align: center; color: var(--text2); padding: 48px; font-size: 13px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <h1>Sync History</h1>
+    <span id="tz-label" style="font-size: 11px; color: var(--text2); margin-left: 4px;"></span>
+  </div>
+  <a class="back-link" href="/">← Back to Dashboard</a>
+</header>
+
+<div class="content">
+  <div class="stats-strip" id="stats-strip">
+    <div class="stat-card"><div class="label">Last Sync</div><div class="value" id="stat-last-sync">–</div></div>
+    <div class="stat-card"><div class="label">Status</div><div class="value" id="stat-status">–</div></div>
+    <div class="stat-card"><div class="label">Recent Failures (24h)</div><div class="value" id="stat-failures">–</div></div>
+    <div class="stat-card"><div class="label">Avg Duration</div><div class="value" id="stat-avg-duration">–</div></div>
+    <div class="stat-card"><div class="label">Total Synced (24h)</div><div class="value" id="stat-total-synced">–</div></div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Started</th>
+          <th>Type</th>
+          <th>Status</th>
+          <th class="num">Duration</th>
+          <th class="num">Opps Synced</th>
+          <th class="num">Errors</th>
+        </tr>
+      </thead>
+      <tbody id="sync-table-body">
+        <tr><td colspan="6" class="loading">Loading sync history...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+// ── Timezone helpers ──
+const userTZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+const tzAbbr = new Date().toLocaleTimeString('en-US', { timeZoneName: 'short' }).split(' ').pop();
+document.getElementById('tz-label').textContent = `All times in ${tzAbbr} (${userTZ})`;
+
+function fmtDate(isoStr) {
+  const d = new Date(isoStr);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
+    ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' }) +
+    ' ' + tzAbbr;
+}
+
+function fmtDuration(secs) {
+  if (secs == null) return '–';
+  if (secs < 60) return secs + 's';
+  const min = Math.floor(secs / 60);
+  const sec = Math.round(secs % 60);
+  return min + 'm ' + sec + 's';
+}
+
+async function loadSyncHistory() {
+  try {
+    const res = await fetch('/api/dashboard/sync-history?limit=100');
+    if (!res.ok) throw new Error(`API error ${res.status}`);
+    const { data } = await res.json();
+
+    if (!data || !data.length) {
+      document.getElementById('sync-table-body').innerHTML =
+        '<tr><td colspan="6" class="empty">No sync runs found.</td></tr>';
+      return;
+    }
+
+    // ── Stats ──
+    const now = new Date();
+    const last24h = data.filter(r => (now - new Date(r.started_at)) < 86400000);
+    const failures24h = last24h.filter(r => r.status === 'failed').length;
+    const totalSynced24h = last24h.reduce((s, r) => s + (r.opportunities_synced || 0), 0);
+    const withDuration = last24h.filter(r => r.duration_seconds != null);
+    const avgDuration = withDuration.length
+      ? (withDuration.reduce((s, r) => s + r.duration_seconds, 0) / withDuration.length)
+      : null;
+
+    // Last sync
+    const lastRun = data[0];
+    const lastSyncDate = new Date(lastRun.started_at);
+    const ageMin = Math.round((now - lastSyncDate) / 60000);
+    let lastSyncLabel;
+    if (ageMin < 2) lastSyncLabel = 'Just now';
+    else if (ageMin < 60) lastSyncLabel = ageMin + ' min ago';
+    else if (ageMin < 1440) lastSyncLabel = Math.round(ageMin / 60) + 'h ago';
+    else lastSyncLabel = lastSyncDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+    document.getElementById('stat-last-sync').textContent = lastSyncLabel;
+
+    const statusEl = document.getElementById('stat-status');
+    statusEl.textContent = lastRun.status;
+    statusEl.className = 'value ' + (lastRun.status === 'completed' ? 'green' : lastRun.status === 'failed' ? 'red' : '');
+
+    const failEl = document.getElementById('stat-failures');
+    failEl.textContent = failures24h;
+    failEl.className = 'value ' + (failures24h === 0 ? 'green' : 'red');
+
+    document.getElementById('stat-avg-duration').textContent = avgDuration ? fmtDuration(Math.round(avgDuration)) : '–';
+    document.getElementById('stat-total-synced').textContent = totalSynced24h.toLocaleString();
+
+    // ── Table rows ──
+    const rows = data.map((run, i) => {
+      const typeBadge = `<span class="badge-type ${run.sync_type}">${run.sync_type}</span>`;
+
+      let statusBadge;
+      if (run.status === 'completed') {
+        statusBadge = `<span class="badge badge-completed">✓ Completed</span>`;
+      } else if (run.status === 'failed') {
+        statusBadge = `<span class="badge badge-failed">✗ Failed</span>`;
+      } else {
+        statusBadge = `<span class="badge badge-running">⟳ Running</span>`;
+      }
+
+      let errorsCell = run.errors_count || 0;
+      let errorDetailHtml = '';
+      if (run.errors_count > 0 && run.error_details) {
+        const detailStr = typeof run.error_details === 'string'
+          ? run.error_details
+          : JSON.stringify(run.error_details, null, 2);
+        errorDetailHtml = `
+          <button class="error-toggle" onclick="toggleErrors(${i})">show details</button>
+          <div class="error-details" id="err-${i}">${escHtml(detailStr)}</div>
+        `;
+      }
+
+      return `<tr>
+        <td>${fmtDate(run.started_at)}</td>
+        <td>${typeBadge}</td>
+        <td>${statusBadge}</td>
+        <td class="num">${fmtDuration(run.duration_seconds)}</td>
+        <td class="num">${(run.opportunities_synced || 0).toLocaleString()}</td>
+        <td class="num">${errorsCell > 0 ? `<span style="color:var(--red);font-weight:600;">${errorsCell}</span>${errorDetailHtml}` : '0'}</td>
+      </tr>`;
+    }).join('');
+
+    document.getElementById('sync-table-body').innerHTML = rows;
+
+  } catch (e) {
+    document.getElementById('sync-table-body').innerHTML =
+      `<tr><td colspan="6" class="empty">Failed to load sync history: ${e.message}</td></tr>`;
+  }
+}
+
+function toggleErrors(idx) {
+  const el = document.getElementById('err-' + idx);
+  el.style.display = el.style.display === 'none' || !el.style.display ? 'block' : 'none';
+}
+
+function escHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+loadSyncHistory();
+</script>
+</body>
+</html>

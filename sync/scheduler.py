@@ -16,13 +16,14 @@ logger = logging.getLogger(__name__)
 def create_scheduler() -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler(timezone="UTC")
 
-    # 15-minute compliance sync — keeps compliance board fresh for reps.
-    # Only re-fetches GHL opps modified in the last ~16 minutes, so it's fast and cheap.
+    # Hourly incremental sync — keeps dashboard data fresh.
+    # Each sync takes ~30 min (fetches contact appointments per opp), so 60 min
+    # interval gives ~30 min rest between runs. Data is at most ~1.5h old.
     scheduler.add_job(
         _run_incremental,
-        trigger=IntervalTrigger(minutes=15),
-        id="compliance_sync_15min",
-        name="15-min incremental GHL sync (compliance freshness)",
+        trigger=IntervalTrigger(minutes=60),
+        id="compliance_sync_60min",
+        name="Hourly incremental GHL sync",
         replace_existing=True,
         misfire_grace_time=60,
         max_instances=1,  # Never overlap — if one is still running, skip the next fire
@@ -61,7 +62,7 @@ def create_scheduler() -> AsyncIOScheduler:
 async def _run_appointment_resolver() -> None:
     logger.info("Scheduler: starting daily appointment resolver")
     try:
-        summary = await resolve_appointments(lookback_days=3)
+        summary = await resolve_appointments(lookback_days=14)
         logger.info("Scheduler: appointment resolver complete — %s", summary)
     except Exception as exc:
         logger.error("Scheduler: appointment resolver failed — %s", exc)

@@ -122,6 +122,14 @@ class Opportunity(Base):
     # Set when outcome_unfilled transitions True → False (rep fixed it)
     outcome_unfilled_resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # Deal cycle fields
+    # contact_created_at: when the GHL contact record was first created (dateAdded on contact)
+    # close_date: when the deal was won — sourced from opportunity.lastStatusChangeAt on Won records
+    # deal_cycle_days: computed at query time as (close_date - contact_created_at) or
+    #                  (call2_appointment_date - contact_created_at) as proxy
+    contact_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    close_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+
     # GHL timestamps
     created_at_ghl: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     updated_at_ghl: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -132,6 +140,27 @@ class Opportunity(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
+
+
+class Appointment(Base):
+    """Full appointment history per contact — used for Total Calls to Close metric.
+
+    Populated during sync from GET /contacts/{id}/appointments.
+    Upserted on ghl_appointment_id — safe to re-run.
+    appointment_type is derived from calendar_id:
+      'call_1' if calendar_id is NOT in FOLLOW_UP_CALENDAR_IDS,
+      'call_2' if calendar_id IS in FOLLOW_UP_CALENDAR_IDS.
+    """
+    __tablename__ = "appointments"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    ghl_contact_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    ghl_appointment_id: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    calendar_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    appointment_type: Mapped[str | None] = mapped_column(String, nullable=True)  # 'call_1' | 'call_2'
+    appointment_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    appointment_status: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class SyncRun(Base):

@@ -44,6 +44,31 @@ DISQUALIFIED_STAGE_ID = "62448525-88ab-4e82-b414-b6880e69e2de"
 NO_SHOW_STAGE_ID = "1201d3c3-166e-4c01-90b5-7f02e02a77c4"
 CANCELLED_STAGE_ID = "b9624f39-9697-418c-864b-bd28c1db6182"
 
+# Follow Up calendar IDs — used to identify the first follow-up (2nd call) appointment.
+# Only appointments in these calendars are considered when deriving call2 date/status.
+FOLLOW_UP_CALENDAR_IDS = {
+    "1x7zUMVU0kxwzg7oXpfx",  # Follow Up 15 Min: Ryan Matsumori
+    "2tSqrt0XkVhK7Kl0vxio",  # Follow-up call: quantumSCALE Institute
+    "4KrqrdnOkPhkxzvJL7I5",  # Follow Up 15 Min: Ryan McNichol (inactive)
+    "6DkhGssD7tXSykMlXAGX",  # Follow Up 10 Min: Ryan McNichol (inactive)
+    "6awVFlxsbNZ0qjTfNsXI",  # Follow Up 20 min: Jason Bern
+    "CibYVwilKlubh8bYVb8n",  # Follow Up 45 min: Ryan McNichol (inactive)
+    "MTcxZHDrjHOIhhBaga9J",  # Follow Up 45 Min: Ryan Matsumori
+    "RDwSd8TVk0GZIOQ2Z5MH",  # Follow Up 5 min: Alex
+    "RqelJODps7Kq0zUnm0ye",  # Follow up 20 min - Alex, Ryan Matsumori
+    "TYRoyJFhmoPWmlMndjwp",  # Follow Up 15 min: Darrin Glesser
+    "WrcNPG23XADQV175CDwX",  # Follow Up 10 Min: Ryan Matsumori
+    "XL78xBJZE2SAhTNier41",  # Follow Up 10 min: Alex
+    "XgFMJ6gGoFYcTws4j9x1",  # Follow Up 20 min: Ryan McNichol (inactive)
+    "Z6HQ3vzGixfY3ccWFfPF",  # Follow Up 20 min: Mathieu Hutin
+    "caskcMAxaa4dKeQUom11",  # Follow Up 30 min: Darrin Glesser
+    "jZKp4Ug5FzFS07GWeFO5",  # Follow Up 5 Min: Ryan Matsumori
+    "kdCflu9TNf4XzdFTfQ1d",  # Follow Up 20 min: Ryan Matsumori
+    "polkGAdi3wwt3UgVYaLS",  # Follow Up 20 min: Alex
+    "usW7UX5bzbjDidlDRgIn",  # Follow Up 5 Min: Ryan McNichol (inactive)
+    "zvec4paWrmy98caYEW3a",  # Follow Up 20 min: Melissa
+}
+
 # Opportunity custom field IDs
 CUSTOM_FIELD_IDS = {
     "call1_appointment_status": "V82ErbW24izA5aQUzRUv",
@@ -145,6 +170,20 @@ class GHLClient:
                 json={"appointmentStatus": status},
             )
             response.raise_for_status()
+
+    async def get_contact(self, contact_id: str) -> dict | None:
+        """Fetch a single GHL contact by ID. Returns None on any failure.
+
+        Used during sync to extract dateAdded (→ contact_created_at).
+        """
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                data = await self._get(client, f"/contacts/{contact_id}", {})
+                await asyncio.sleep(self._page_delay_s)
+                return data.get("contact") or data
+            except Exception as exc:
+                logger.warning("Failed to fetch contact %s: %s", contact_id, exc)
+                return None
 
     async def get_contact_notes(self, contact_id: str) -> list[dict]:
         """Fetch all notes for a contact. Returns empty list on any failure.

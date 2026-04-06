@@ -20,7 +20,6 @@ from db.models import Opportunity
 from db.session import AsyncSessionLocal
 from sync.fireflies_client import MIN_PROSPECT_SENTENCES, FirefliesClient
 from sync.ghl_client import GHLClient
-from sync.sync_engine import _find_appointment_for_date
 
 logger = logging.getLogger(__name__)
 
@@ -200,3 +199,19 @@ def _titles_match(appt_title: str, ff_title: str) -> bool:
     a = appt_title.lower().strip()
     f = ff_title.lower().strip()
     return bool(a) and bool(f) and (a == f or a in f or f in a)
+
+
+def _find_appointment_for_date(appointments: list[dict], target_date) -> dict | None:
+    """Find an appointment that occurred on the targeted date."""
+    if not target_date or not appointments:
+        return None
+    
+    target_date_str = target_date.date().isoformat()
+    for appt in appointments:
+        # GHL appointments typically have startTime in ISO format
+        start_time = appt.get("startTime", "")
+        if start_time.startswith(target_date_str):
+            return appt
+            
+    return None
+

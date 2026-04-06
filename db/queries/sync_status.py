@@ -33,3 +33,29 @@ async def check_db_health(session: AsyncSession) -> tuple[bool, datetime | None]
         return True, last_sync_at
     except Exception:
         return False, None
+
+
+async def get_recent_sync_runs(session: AsyncSession, limit: int = 50) -> list[dict]:
+    """Return the most recent sync runs as dicts for the sync history page."""
+    result = await session.execute(
+        select(SyncRun)
+        .order_by(desc(SyncRun.started_at))
+        .limit(limit)
+    )
+    runs = result.scalars().all()
+    return [
+        {
+            "id": str(run.id),
+            "sync_type": run.sync_type,
+            "status": run.status,
+            "started_at": run.started_at.isoformat() if run.started_at else None,
+            "completed_at": run.completed_at.isoformat() if run.completed_at else None,
+            "duration_seconds": round((run.completed_at - run.started_at).total_seconds(), 1)
+                if run.completed_at and run.started_at else None,
+            "opportunities_synced": run.opportunities_synced,
+            "errors_count": run.errors_count,
+            "error_details": run.error_details,
+        }
+        for run in runs
+    ]
+

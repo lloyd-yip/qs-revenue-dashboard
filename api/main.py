@@ -57,7 +57,7 @@ async def lifespan(app: FastAPI):
 
     _scheduler = create_scheduler()
     _scheduler.start()
-    logger.info("Scheduler started — daily sync at 02:00 UTC, full sync on Sundays")
+    logger.info("Scheduler started — hourly incremental sync, daily appointment resolver, full sync on Sundays")
 
     # Trigger initial full sync if this is the first startup
     async with AsyncSessionLocal() as session:
@@ -105,6 +105,27 @@ _STATIC_DIR = Path(__file__).parent.parent / "static"
 async def serve_dashboard():
     return FileResponse(
         _STATIC_DIR / "dashboard.html",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+    )
+
+@app.get("/debug", include_in_schema=False)
+async def serve_debug():
+    return FileResponse(
+        _STATIC_DIR / "debug.html",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+    )
+
+@app.get("/data-quality", include_in_schema=False)
+async def serve_data_quality():
+    return FileResponse(
+        _STATIC_DIR / "data-quality.html",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+    )
+
+@app.get("/sync-history", include_in_schema=False)
+async def serve_sync_history():
+    return FileResponse(
+        _STATIC_DIR / "sync-history.html",
         headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
     )
 

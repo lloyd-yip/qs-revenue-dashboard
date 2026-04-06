@@ -42,9 +42,12 @@ from db.queries.lead_source import (
     get_lead_source_breakdown,
     get_qualification_breakdown,
 )
+from db.queries.data_quality import get_data_quality_issues
+from db.queries.debug_drilldown import get_drilldown_opps
 from db.queries.metrics_by_rep import get_by_rep, get_daily_activity, get_rep_closes, get_rep_opps
 from db.queries.metrics_summary import get_summary
 from db.queries.reps import get_reps
+from db.queries.sync_status import get_recent_sync_runs
 from db.queries.time_series import get_time_series
 from db.session import get_db
 
@@ -300,3 +303,105 @@ async def rep_rankings(
     start, end, date_by = params
     data = await get_rep_ranking_insights(db, start, end, date_by)
     return InsightsResponse(data=data, meta=_meta(start, end, date_by))
+
+
+
+# ── Follow-up call show rate by lead quality ─────────────────────────────────
+
+from db.queries.followup_quality import get_followup_show_rate_by_quality
+
+
+@router.get("/followup-by-quality")
+async def followup_by_quality(
+    rep_id: str | None = Query(None),
+    params: tuple = Depends(_date_params),
+    db: AsyncSession = Depends(get_db),
+):
+    """Follow-up (2nd) call show rate broken down by lead quality."""
+    start, end, date_by = params
+    data = await get_followup_show_rate_by_quality(db, start, end, date_by, rep_id)
+    return {"data": data, "meta": _meta(start, end, date_by).__dict__}
+
+
+# ── Debug drill-down ─────────────────────────────────────────────────────────
+
+
+@router.get("/debug")
+async def debug_drilldown(
+    metric: str = Query(..., description="Metric key, e.g. 'calls_booked_1st', 'shows_1st', 'units_closed'"),
+    rep_id: str | None = Query(None),
+    params: tuple = Depends(_date_params),
+    db: AsyncSession = Depends(get_db),
+):
+    """Debug drill-down — returns every opportunity behind a dashboard KPI number."""
+    start, end, date_by = params
+    data = await get_drilldown_opps(db, metric, start, end, date_by, rep_id)
+    return {"metric": metric, "count": len(data), "data": data, "meta": _meta(start, end, date_by).__dict__}
+
+
+# ── Data Quality Audit ────────────────────────────────────────────────────────
+
+@router.get("/data-quality")
+async def data_quality(
+    rep_id: str | None = Query(None),
+    start: date | None = Query(None),
+    end: date | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Data quality audit — non-excluded opps with GHL inconsistencies, optionally filtered by created date."""
+    return await get_data_quality_issues(db, rep_id, start, end)
+
+
+# ── Lookups (calendar names, pipeline stages) ─────────────────────────────────
+
+from db.queries.debug_drilldown import STAGE_NAMES as FALLBACK_STAGE_NAMES
+from sync.ghl_client import GHLClient
+
+# Simple in-memory cache — refreshed on first request and on manual trigger
+_lookup_cache: dict[str, dict] = {}
+
+
+@router.get("/lookups")
+async def get_lookups():
+    """Return calendar names and pipeline stage names.
+
+    Fetches dynamically from GHL API on first call, then caches.
+    Falls back to hardcoded map if the API call fails (e.g. PIT scope missing).
+    """
+    if _lookup_cache:
+        return _lookup_cache
+
+    ghl = GHLClient()
+
+    # Fetch calendars
+    calendars = await ghl.get_calendars()
+
+    # Fetch pipeline stages
+    stages = await ghl.get_pipeline_stages()
+    # Merge fallback stage names for any IDs not returned by API
+    merged_stages = {**FALLBACK_STAGE_NAMES, **stages}
+
+    _lookup_cache["calendars"] = calendars
+    _lookup_cache["stages"] = merged_stages
+
+    return _lookup_cache
+
+
+@router.post("/lookups/refresh")
+async def refresh_lookups():
+    """Force-refresh the calendar/stage lookup cache."""
+    _lookup_cache.clear()
+    return await get_lookups()
+
+
+# ── Sync History ──────────────────────────────────────────────────────────────
+
+@router.get("/sync-history")
+async def sync_history(
+    limit: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+):
+    """Recent sync runs — for the sync history page."""
+    data = await get_recent_sync_runs(db, limit)
+    return {"data": data}
+
