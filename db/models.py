@@ -38,8 +38,11 @@ class Opportunity(Base):
     opportunity_owner_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     opportunity_owner_name: Mapped[str | None] = mapped_column(String, nullable=True)
 
-    # Deal value (rep-entered estimate — directional only)
+    # Deal value fields
+    # monetary_value: raw GHL monetaryValue field
+    # projected_deal_size: rep-entered estimate (directional only) — stored separately
     monetary_value: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    projected_deal_size: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
 
     # Per-call status (from Opportunity custom fields — primary show/no-show signal)
     # Field IDs: Call 1 = V82ErbW24izA5aQUzRUv, Call 2 = WMj5zj7G8wBTtp3OqjKp
