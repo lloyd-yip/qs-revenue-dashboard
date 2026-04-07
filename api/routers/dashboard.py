@@ -313,7 +313,8 @@ async def rep_rankings(
 
 # ── Pipeline Intelligence ─────────────────────────────────────────────────────
 
-VALID_GROUP_BY = {"rep", "channel", "lead_quality", "intent", "indoctrination"}
+VALID_GROUP_BY = {"rep", "channel", "lead_quality", "intent", "indoctrination",
+                  "business_fit", "pain_goal", "industry", "current_revenue"}
 
 
 @router.get("/pipeline-intelligence")

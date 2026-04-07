@@ -33,6 +33,10 @@ GROUP_BY_MAP = {
     "lead_quality": (Opportunity.lead_quality, "Lead Quality"),
     "intent": (Opportunity.intent_to_transform, "Intent to Transform"),
     "indoctrination": (Opportunity.pre_call_indoctrination, "Pre-Call Indoctrination"),
+    "business_fit": (Opportunity.business_fit, "Business Fit"),
+    "pain_goal": (Opportunity.pain_goal_oriented, "Pain / Goal"),
+    "industry": (Opportunity.business_industry, "Industry"),
+    "current_revenue": (Opportunity.current_revenue, "Current Revenue"),
 }
 
 
