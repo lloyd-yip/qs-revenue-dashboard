@@ -7,9 +7,6 @@
 
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-  <!-- Flatpickr -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
-  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
   <!-- Tabulator -->
   <link href="https://unpkg.com/tabulator-tables@6.2.1/dist/css/tabulator_midnight.min.css" rel="stylesheet" />
   <script type="text/javascript" src="https://unpkg.com/tabulator-tables@6.2.1/dist/js/tabulator.min.js"></script>
@@ -72,10 +69,11 @@
     }
     .preset-btn:hover, .preset-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
-    #date-range-input {
+    .date-input {
       background: var(--surface2); border: 1px solid var(--border); color: var(--text);
-      padding: 6px 10px; border-radius: 6px; font-size: 13px; width: 200px; cursor: pointer;
+      padding: 6px 10px; border-radius: 6px; font-size: 13px; width: 130px; cursor: pointer;
     }
+    .date-sep { color: var(--text2); font-size: 12px; }
 
     #rep-select {
       background: var(--surface2); border: 1px solid var(--border); color: var(--text);
@@ -221,7 +219,9 @@
     <button class="preset-btn" onclick="applyPresetThisMonth()">This month</button>
     <button class="preset-btn" onclick="applyPresetAllTime()">All time</button>
   </div>
-  <input id="date-range-input" placeholder="Custom range..." readonly />
+  <input type="date" id="date-start" class="date-input" onchange="onDateInputChange()" />
+  <span class="date-sep">→</span>
+  <input type="date" id="date-end" class="date-input" onchange="onDateInputChange()" />
   <div class="filter-sep"></div>
   <select id="rep-select" onchange="onRepChange(this.value)">
     <option value="">All Team</option>
@@ -239,7 +239,7 @@
   <button class="tab-btn active" onclick="setTab('sales')">Sales Performance</button>
   <button class="tab-btn" onclick="setTab('channels')">Lead Quality by Channel</button>
   <button class="tab-btn" onclick="setTab('pipeline')">Pipeline Intelligence</button>
-  <button class="tab-btn" onclick="setTab('cost')">Cost Analysis</button>
+  <button class="tab-btn" onclick="setTab('cost')">Funnel Economics</button>
   <button class="tab-btn" onclick="setTab('compliance')">Compliance</button>
 </nav>
 
@@ -354,8 +354,39 @@
   </div>
 </div>
 
-<!-- TAB: Cost Analysis -->
+<!-- TAB: Funnel Economics -->
 <div id="tab-cost" class="tab-content">
+
+  <!-- Period Inputs Panel -->
+  <details id="funnel-inputs-details" style="margin-bottom:24px; background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:16px;">
+    <summary style="cursor:pointer; font-size:13px; font-weight:600; color:var(--text2); text-transform:uppercase; letter-spacing:0.4px; list-style:none; display:flex; align-items:center; gap:10px;">
+      Period Financial Inputs
+      <span id="funnel-inputs-badge" style="font-size:11px; font-weight:400; text-transform:none; letter-spacing:0; background:rgba(99,102,241,0.08); border:1px solid rgba(99,102,241,0.2); border-radius:4px; padding:2px 8px; color:var(--text2);">No data for this period</span>
+    </summary>
+    <div style="margin-top:16px; display:flex; flex-direction:column; gap:16px;">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <label style="font-size:12px; color:var(--text2); min-width:160px;">Total Marketing Spend</label>
+        <input id="fi-mktg-spend" type="number" min="0" step="100" placeholder="0"
+          style="background:var(--surface); border:1px solid var(--border); color:var(--text); padding:6px 10px; border-radius:6px; font-size:13px; width:160px;" />
+      </div>
+      <div>
+        <div style="font-size:12px; color:var(--text2); margin-bottom:8px;">Rep Compensation (base + bonus)</div>
+        <table style="border-collapse:collapse; width:100%; max-width:400px;">
+          <thead>
+            <tr>
+              <th style="text-align:left; font-size:11px; color:var(--text2); padding:4px 8px; border-bottom:1px solid var(--border);">Rep</th>
+              <th style="text-align:right; font-size:11px; color:var(--text2); padding:4px 8px; border-bottom:1px solid var(--border);">Total Comp ($)</th>
+            </tr>
+          </thead>
+          <tbody id="fi-comp-body"></tbody>
+        </table>
+      </div>
+      <div>
+        <button onclick="savePeriodInputs()" style="background:var(--accent); color:#fff; border:none; border-radius:6px; padding:7px 18px; font-size:13px; cursor:pointer; font-weight:600;">Save</button>
+        <span id="fi-save-status" style="margin-left:10px; font-size:12px; color:var(--text2);"></span>
+      </div>
+    </div>
+  </details>
 
   <!-- Revenue Metrics — macro business overview -->
   <div style="margin-bottom:28px;">
@@ -442,16 +473,20 @@
             <th class="num">Shows</th>
             <th class="num">Qual Shows</th>
             <th class="num">Closed</th>
-            <th class="num" style="color:var(--accent2);">Rep Cost</th>
+            <th class="num" style="color:var(--accent2);">Rep Comp</th>
+            <th class="num" style="color:var(--accent2);">Mktg Alloc</th>
+            <th class="num" style="color:var(--accent2);">Total Invested</th>
             <th class="num" style="color:var(--accent2);">Cost / Show</th>
             <th class="num" style="color:var(--accent2);">Cost / Qual Show</th>
             <th class="num" style="color:var(--accent2);">Cost / Close</th>
             <th class="num" style="color:var(--green);">Contract Value</th>
             <th class="num" style="color:var(--green);">Cash Collected</th>
+            <th class="num" style="color:var(--green);">Contract RORI</th>
+            <th class="num" style="color:var(--green);">Cash RORI</th>
           </tr>
         </thead>
         <tbody id="cost-rep-body">
-          <tr><td colspan="11" class="empty" style="text-align:center; padding:32px; color:var(--text2);">Loading rep data...</td></tr>
+          <tr><td colspan="15" class="empty" style="text-align:center; padding:32px; color:var(--text2);">Loading rep data...</td></tr>
         </tbody>
       </table>
     </div>
@@ -524,23 +559,21 @@ function applyPresetAllTime() {
 function setDateRange(start, end) {
   AppState.dateStart = start;
   AppState.dateEnd = end;
-  fp.setDate([start, end]);
+  document.getElementById('date-start').value = start;
+  document.getElementById('date-end').value = end;
   renderAll();
 }
 
-// ─── Flatpickr init ───────────────────────────────────────────────────────────
-const fp = flatpickr('#date-range-input', {
-  mode: 'range',
-  dateFormat: 'Y-m-d',
-  onChange(selectedDates) {
-    if (selectedDates.length === 2) {
-      AppState.dateStart = toISO(selectedDates[0]);
-      AppState.dateEnd   = toISO(selectedDates[1]);
-      document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
-      renderAll();
-    }
-  },
-});
+function onDateInputChange() {
+  const s = document.getElementById('date-start').value;
+  const e = document.getElementById('date-end').value;
+  if (s && e && s <= e) {
+    AppState.dateStart = s;
+    AppState.dateEnd = e;
+    document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+    renderAll();
+  }
+}
 
 // Default: last 30 days
 (function initDates() {
@@ -549,7 +582,8 @@ const fp = flatpickr('#date-range-input', {
   start.setDate(end.getDate() - 29);
   AppState.dateStart = toISO(start);
   AppState.dateEnd   = toISO(end);
-  fp.setDate([AppState.dateStart, AppState.dateEnd]);
+  document.getElementById('date-start').value = AppState.dateStart;
+  document.getElementById('date-end').value   = AppState.dateEnd;
 })();
 
 // ─── Filter controls ──────────────────────────────────────────────────────────
@@ -595,8 +629,8 @@ function debugUrl(metric, repId) {
   return url;
 }
 
-async function apiFetch(path) {
-  const res = await fetch(path);
+async function apiFetch(path, opts) {
+  const res = await fetch(path, opts);
   if (!res.ok) throw new Error(`API error ${res.status}: ${path}`);
   return res.json();
 }
@@ -1313,19 +1347,47 @@ async function renderPipelineIntelligence() {
 
 // ─── Tab 4: Cost Analysis ─────────────────────────────────────────────────────
 async function renderCostAnalysis() {
-  // Populate the activity columns (booked, shows, qual, closed) using existing data
-  // Financial columns (spend, cost per X) stay as — until data is connected
   const repParam = AppState.repId ? `&rep_id=${AppState.repId}` : '';
   try {
-    const [channels, byRep] = await Promise.all([
+    const [channels, byRep, inputs] = await Promise.all([
       apiFetch(`/api/dashboard/channels?${qs()}${repParam}`),
       apiFetch(`/api/dashboard/by-rep?${qs()}`),
+      apiFetch(`/api/dashboard/funnel-inputs?start=${AppState.dateStart}&end=${AppState.dateEnd}`),
     ]);
 
-    // Channel rows
-    const chRows = channels.data.map(d => {
-      const showRate = d.total_ops > 0 ? d.shows / d.total_ops : null;
-      return `<tr>
+    // ── Period inputs panel ──────────────────────────────────────────────
+    const fi = inputs.data;
+    const badge = document.getElementById('funnel-inputs-badge');
+    if (fi) {
+      badge.textContent = 'Data loaded ✓';
+      badge.style.background = 'rgba(34,197,94,0.08)';
+      badge.style.borderColor = 'rgba(34,197,94,0.3)';
+      badge.style.color = 'var(--green)';
+      document.getElementById('fi-mktg-spend').value = fi.marketing_spend ?? '';
+    } else {
+      badge.textContent = 'No data for this period';
+      badge.style.background = 'rgba(99,102,241,0.08)';
+      badge.style.borderColor = 'rgba(99,102,241,0.2)';
+      badge.style.color = 'var(--text2)';
+      document.getElementById('fi-mktg-spend').value = '';
+    }
+
+    // Populate comp input rows with current reps from by-rep data
+    const compMap = {};
+    if (fi) fi.rep_comps.forEach(rc => { compMap[rc.rep_id] = rc.total_comp; });
+    const compRows = byRep.data.map(r => `
+      <tr>
+        <td style="padding:4px 8px; font-size:12px;">${r.rep_name}</td>
+        <td style="padding:4px 8px; text-align:right;">
+          <input type="number" min="0" step="100" data-rep-id="${r.rep_id}" data-rep-name="${r.rep_name}"
+            class="fi-comp-input" value="${compMap[r.rep_id] ?? ''}" placeholder="0"
+            style="background:var(--surface); border:1px solid var(--border); color:var(--text); padding:4px 8px; border-radius:4px; font-size:12px; width:120px; text-align:right;" />
+        </td>
+      </tr>`).join('');
+    document.getElementById('fi-comp-body').innerHTML = compRows;
+
+    // ── Channel rows ─────────────────────────────────────────────────────
+    const chRows = channels.data.map(d => `<tr>
         <td>${d.channel}</td>
         <td class="num">${num(d.total_ops)}</td>
         <td class="num">${num(d.shows)}</td>
@@ -1336,28 +1398,94 @@ async function renderCostAnalysis() {
         <td class="num" style="color:var(--text2);">—</td>
         <td class="num" style="color:var(--text2);">—</td>
         <td class="num" style="color:var(--text2);">—</td>
-      </tr>`;
-    }).join('');
-    document.getElementById('cost-channel-body').innerHTML = chRows || '<tr><td colspan="11" class="empty">No data.</td></tr>';
+      </tr>`).join('');
+    document.getElementById('cost-channel-body').innerHTML = chRows || '<tr><td colspan="10" class="empty">No data.</td></tr>';
 
-    // Rep rows
-    const repRows = byRep.data.map(r => `<tr>
+    // ── Rep rows with RORI ───────────────────────────────────────────────
+    const mktgSpend = fi?.marketing_spend ?? null;
+    const totalShows = byRep.data.reduce((s, r) => s + (r.shows_1st || 0), 0);
+    const costPerShow = (mktgSpend !== null && totalShows > 0) ? mktgSpend / totalShows : null;
+
+    const repRows = byRep.data.map(r => {
+      const repComp = fi ? (compMap[r.rep_id] ?? null) : null;
+      const mktgAlloc = costPerShow !== null ? costPerShow * (r.shows_1st || 0) : null;
+      const totalInvested = (repComp !== null && mktgAlloc !== null) ? repComp + mktgAlloc : null;
+      const qualShows = (r.shows_1st && r.qualification_rate !== null) ? Math.round(r.shows_1st * r.qualification_rate) : 0;
+
+      const costPerShowRep  = totalInvested !== null && r.shows_1st > 0   ? totalInvested / r.shows_1st    : null;
+      const costPerQual     = totalInvested !== null && qualShows > 0      ? totalInvested / qualShows       : null;
+      const costPerClose    = totalInvested !== null && r.units_closed > 0 ? totalInvested / r.units_closed  : null;
+      const contractRori    = totalInvested !== null && totalInvested > 0 && r.contract_value > 0 ? r.contract_value / totalInvested : null;
+      const cashRori        = totalInvested !== null && totalInvested > 0 && r.cash_collected > 0 ? r.cash_collected / totalInvested : null;
+
+      const dash = `<span style="color:var(--text2);">—</span>`;
+      const roriStyle = v => v === null ? dash : `<span style="color:var(--green); font-weight:600;">${v.toFixed(2)}x</span>`;
+
+      return `<tr>
         <td>${r.rep_name}</td>
         <td class="num">${num(r.calls_booked_1st)}</td>
         <td class="num">${num(r.shows_1st)}</td>
-        <td class="num">${r.shows_1st && r.qualification_rate !== null ? num(Math.round(r.shows_1st * r.qualification_rate)) : '—'}</td>
+        <td class="num">${qualShows > 0 ? num(qualShows) : '—'}</td>
         <td class="num">${num(r.units_closed)}</td>
-        <td class="num" style="color:var(--text2);">—</td>
-        <td class="num" style="color:var(--text2);">—</td>
-        <td class="num" style="color:var(--text2);">—</td>
-        <td class="num" style="color:var(--text2);">—</td>
-        <td class="num" style="color:var(--text2);">—</td>
-        <td class="num" style="color:var(--text2);">—</td>
-      </tr>`).join('');
-    document.getElementById('cost-rep-body').innerHTML = repRows || '<tr><td colspan="11" class="empty">No data.</td></tr>';
+        <td class="num">${repComp !== null ? '$' + Math.round(repComp).toLocaleString() : dash}</td>
+        <td class="num">${mktgAlloc !== null ? '$' + Math.round(mktgAlloc).toLocaleString() : dash}</td>
+        <td class="num">${totalInvested !== null ? '$' + Math.round(totalInvested).toLocaleString() : dash}</td>
+        <td class="num">${costPerShowRep !== null ? '$' + Math.round(costPerShowRep).toLocaleString() : dash}</td>
+        <td class="num">${costPerQual !== null ? '$' + Math.round(costPerQual).toLocaleString() : dash}</td>
+        <td class="num">${costPerClose !== null ? '$' + Math.round(costPerClose).toLocaleString() : dash}</td>
+        <td class="num">${r.contract_value > 0 ? '$' + Math.round(r.contract_value).toLocaleString() : dash}</td>
+        <td class="num">${r.cash_collected > 0 ? '$' + Math.round(r.cash_collected).toLocaleString() : dash}</td>
+        <td class="num">${roriStyle(contractRori)}</td>
+        <td class="num">${roriStyle(cashRori)}</td>
+      </tr>`;
+    }).join('');
+    document.getElementById('cost-rep-body').innerHTML = repRows || '<tr><td colspan="15" class="empty">No data.</td></tr>';
+
   } catch(e) {
-    document.getElementById('cost-channel-body').innerHTML = `<tr><td colspan="11" class="empty">Failed to load. ${e.message}</td></tr>`;
-    document.getElementById('cost-rep-body').innerHTML = `<tr><td colspan="11" class="empty">Failed to load. ${e.message}</td></tr>`;
+    document.getElementById('cost-channel-body').innerHTML = `<tr><td colspan="10" class="empty">Failed to load. ${e.message}</td></tr>`;
+    document.getElementById('cost-rep-body').innerHTML = `<tr><td colspan="15" class="empty">Failed to load. ${e.message}</td></tr>`;
+  }
+}
+
+async function savePeriodInputs() {
+  const spend = parseFloat(document.getElementById('fi-mktg-spend').value);
+  const status = document.getElementById('fi-save-status');
+  status.textContent = 'Saving...';
+
+  try {
+    // Save marketing spend
+    if (!isNaN(spend)) {
+      await apiFetch('/api/dashboard/funnel-inputs/spend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ start: AppState.dateStart, end: AppState.dateEnd, amount: spend }),
+      });
+    }
+
+    // Save rep comps
+    const compInputs = document.querySelectorAll('.fi-comp-input');
+    const reps = [];
+    compInputs.forEach(el => {
+      const val = parseFloat(el.value);
+      if (!isNaN(val) && val >= 0) {
+        reps.push({ rep_id: el.dataset.repId, rep_name: el.dataset.repName, total_comp: val });
+      }
+    });
+    if (reps.length > 0) {
+      await apiFetch('/api/dashboard/funnel-inputs/comp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ start: AppState.dateStart, end: AppState.dateEnd, reps }),
+      });
+    }
+
+    status.textContent = 'Saved ✓';
+    status.style.color = 'var(--green)';
+    setTimeout(() => { status.textContent = ''; }, 3000);
+    await renderCostAnalysis();  // Refresh table with new data
+  } catch(e) {
+    status.textContent = `Error: ${e.message}`;
+    status.style.color = 'var(--red)';
   }
 }
 

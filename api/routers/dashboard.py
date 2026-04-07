@@ -18,6 +18,9 @@ from api.schemas.responses import (
     ChannelQualityResponse,
     ComplianceResponse,
     DailyActivityResponse,
+    FunnelInputsResponse,
+    SaveCompRequest,
+    SaveSpendRequest,
     InsightsResponse,
     LateViolationResponse,
     LeadSourceResponse,
@@ -50,6 +53,7 @@ from db.queries.metrics_summary import get_summary
 from db.queries.reps import get_reps
 from db.queries.sync_status import get_recent_sync_runs
 from db.queries.time_series import get_time_series
+from db.queries.funnel_economics import get_period_inputs, upsert_marketing_spend, upsert_rep_compensations
 from db.session import get_db
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
@@ -425,4 +429,37 @@ async def sync_history(
     """Recent sync runs — for the sync history page."""
     data = await get_recent_sync_runs(db, limit)
     return {"data": data}
+
+
+# ── Funnel Economics Inputs ───────────────────────────────────────────────────
+
+@router.get("/funnel-inputs", response_model=FunnelInputsResponse)
+async def funnel_inputs(
+    start: date = Query(...),
+    end: date = Query(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return saved marketing spend + rep comp for the exact period.
+
+    Returns data=null if nothing has been saved for this period yet.
+    """
+    data = await get_period_inputs(db, start, end)
+    if data is None:
+        return FunnelInputsResponse(data=None)
+    return FunnelInputsResponse(data=data)
+
+
+@router.post("/funnel-inputs/spend")
+async def save_spend(body: SaveSpendRequest, db: AsyncSession = Depends(get_db)):
+    """Save or overwrite total marketing spend for a period."""
+    await upsert_marketing_spend(db, body.start, body.end, body.amount)
+    return {"ok": True}
+
+
+@router.post("/funnel-inputs/comp")
+async def save_comp(body: SaveCompRequest, db: AsyncSession = Depends(get_db)):
+    """Save or overwrite rep compensation for a period."""
+    reps = [r.model_dump() for r in body.reps]
+    await upsert_rep_compensations(db, body.start, body.end, reps)
+    return {"ok": True}
 

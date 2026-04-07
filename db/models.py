@@ -3,6 +3,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     Boolean,
+    Date,
     DateTime,
     Integer,
     JSON,
@@ -192,3 +193,42 @@ class SourceNormalization(Base):
     raw_value: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
     canonical_channel: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class PeriodMarketingSpend(Base):
+    """Total marketing spend entered manually for a specific date range.
+
+    One row per period. Unique on (period_start, period_end) — re-saving the same
+    period overwrites the previous value.
+    """
+
+    __tablename__ = "period_marketing_spend"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    period_start: Mapped[datetime] = mapped_column(Date, nullable=False)
+    period_end: Mapped[datetime] = mapped_column(Date, nullable=False)
+    amount: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class RepCompensation(Base):
+    """Total compensation (base + bonus) per rep per date range, entered manually.
+
+    Unique on (rep_id, period_start, period_end) — re-saving overwrites.
+    """
+
+    __tablename__ = "rep_compensation"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    rep_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    rep_name: Mapped[str] = mapped_column(String, nullable=False)
+    period_start: Mapped[datetime] = mapped_column(Date, nullable=False)
+    period_end: Mapped[datetime] = mapped_column(Date, nullable=False)
+    total_comp: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )

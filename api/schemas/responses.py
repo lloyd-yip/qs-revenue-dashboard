@@ -270,6 +270,35 @@ class DailyActivityResponse(BaseModel):
     data: list[DailyActivityRow]
 
 
+# --- Funnel Economics inputs ---
+
+class RepCompInput(BaseModel):
+    rep_id: str
+    rep_name: str
+    total_comp: float
+
+
+class FunnelInputsData(BaseModel):
+    marketing_spend: float | None
+    rep_comps: list[RepCompInput]
+
+
+class FunnelInputsResponse(BaseModel):
+    data: FunnelInputsData | None  # None = no data saved for this period
+
+
+class SaveSpendRequest(BaseModel):
+    start: date
+    end: date
+    amount: float
+
+
+class SaveCompRequest(BaseModel):
+    start: date
+    end: date
+    reps: list[RepCompInput]
+
+
 # --- Tier 2: Insight response models ---
 
 class InsightObject(BaseModel):
