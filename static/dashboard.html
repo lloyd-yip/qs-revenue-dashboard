@@ -201,13 +201,9 @@
     }
 
     /* ── Metric tooltips ──────────────────────────────────────────── */
-    th[data-tip], .kpi-label[data-tip] { position: relative; cursor: help; }
-    [data-tip]::after {
-      content: attr(data-tip);
-      position: absolute;
-      bottom: calc(100% + 7px);
-      left: 50%;
-      transform: translateX(-50%);
+    th[data-tip], .kpi-label[data-tip] { cursor: help; }
+    #metric-tooltip {
+      position: fixed;
       background: #13131f;
       color: #e2e8f0;
       border: 1px solid rgba(255,255,255,0.13);
@@ -217,21 +213,17 @@
       font-weight: 400;
       white-space: pre-line;
       max-width: 270px;
-      width: max-content;
-      opacity: 0;
       pointer-events: none;
-      z-index: 9999;
+      z-index: 99999;
       line-height: 1.65;
-      text-transform: none;
-      letter-spacing: 0;
-      transition: opacity 0.12s ease;
       box-shadow: 0 6px 24px rgba(0,0,0,0.55);
       text-align: left;
+      display: none;
     }
-    [data-tip]:hover::after { opacity: 1; }
   </style>
 </head>
 <body>
+<div id="metric-tooltip"></div>
 
 <header>
   <div class="header-left">
@@ -778,11 +770,34 @@ const METRIC_TIPS = {
   'Avg Hours Late':              'Average hours between appointment time and when the outcome was finally logged.\nFormula: AVG(resolved_at − appointment_time), late resolutions only',
 };
 
+const _ttDiv = document.getElementById('metric-tooltip');
+function _showTip(e) {
+  const tip = e.currentTarget.getAttribute('data-tip');
+  if (!tip) return;
+  _ttDiv.textContent = tip;
+  _ttDiv.style.display = 'block';
+  _positionTip(e);
+}
+function _positionTip(e) {
+  const GAP = 10, W = 270;
+  let x = e.clientX - W / 2;
+  let y = e.clientY - _ttDiv.offsetHeight - GAP;
+  if (x < 8) x = 8;
+  if (x + W > window.innerWidth - 8) x = window.innerWidth - W - 8;
+  if (y < 8) y = e.clientY + GAP + 16;
+  _ttDiv.style.left = x + 'px';
+  _ttDiv.style.top  = y + 'px';
+}
+function _hideTip() { _ttDiv.style.display = 'none'; }
+
 function injectTooltips() {
   document.querySelectorAll('th, .kpi-label').forEach(el => {
     const key = el.textContent.trim();
     if (METRIC_TIPS[key] && !el.getAttribute('data-tip')) {
       el.setAttribute('data-tip', METRIC_TIPS[key]);
+      el.addEventListener('mouseenter', _showTip);
+      el.addEventListener('mousemove',  _positionTip);
+      el.addEventListener('mouseleave', _hideTip);
     }
   });
 }
