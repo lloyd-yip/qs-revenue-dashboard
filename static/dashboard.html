@@ -199,6 +199,36 @@
       .charts-row { grid-template-columns: 1fr; }
       .kpi-row { grid-template-columns: repeat(2, 1fr); }
     }
+
+    /* ── Metric tooltips ──────────────────────────────────────────── */
+    th[data-tip], .kpi-label[data-tip] { position: relative; cursor: help; }
+    [data-tip]::after {
+      content: attr(data-tip);
+      position: absolute;
+      bottom: calc(100% + 7px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: #13131f;
+      color: #e2e8f0;
+      border: 1px solid rgba(255,255,255,0.13);
+      border-radius: 7px;
+      padding: 9px 13px;
+      font-size: 11.5px;
+      font-weight: 400;
+      white-space: pre-line;
+      max-width: 270px;
+      width: max-content;
+      opacity: 0;
+      pointer-events: none;
+      z-index: 9999;
+      line-height: 1.65;
+      text-transform: none;
+      letter-spacing: 0;
+      transition: opacity 0.12s ease;
+      box-shadow: 0 6px 24px rgba(0,0,0,0.55);
+      text-align: left;
+    }
+    [data-tip]:hover::after { opacity: 1; }
   </style>
 </head>
 <body>
@@ -672,6 +702,89 @@ async function renderTab(tab) {
   else if (tab === 'pipeline') await renderPipelineIntelligence();
   else if (tab === 'cost') await renderCostAnalysis();
   else if (tab === 'compliance') await renderCompliance();
+  injectTooltips();
+}
+
+// ─── Metric Tooltips ──────────────────────────────────────────────────────────
+// Central dictionary: column header / KPI label text → definition + formula.
+// injectTooltips() runs after every tab render and stamps data-tip on matching elements.
+const METRIC_TIPS = {
+  // Volume
+  '1st Calls Booked':       'Opportunities with a 1st call date in the selected period.\nFormula: COUNT(call1_date in range, not excluded)',
+  '2nd Calls Booked':       'Opportunities with a 2nd call date in the selected period.\nFormula: COUNT(call2_date in range, not excluded)',
+  'C1 Booked':              'Opportunities with a 1st call date in the selected period.\nFormula: COUNT(call1_date in range, not excluded)',
+  'C2 Booked':              'Opportunities with a 2nd call date in the selected period.\nFormula: COUNT(call2_date in range, not excluded)',
+  'Calls Booked':           'Opportunities with a call appointment date in the selected period.\nFormula: COUNT(call_date in range, not excluded)',
+  'Booked':                 'Opportunities with a 1st call date in the selected period.\nFormula: COUNT(call1_date in range, not excluded)',
+  // Shows
+  '1st Call Shows':         'Calls where the prospect showed up and the rep logged the outcome.\nFormula: COUNT(status = Showed AND outcome logged)',
+  '2nd Call Shows':         'Follow-up calls where the prospect attended.\nFormula: COUNT(call2_status = Showed OR stage = 2nd Call Done)',
+  'Showed':                 'Calls where the prospect showed up and the rep logged the outcome.\nFormula: COUNT(status = Showed AND outcome logged)',
+  'Shows':                  'Appointments where the prospect attended, outcome logged by rep.\nFormula: COUNT(call_status = Showed)',
+  'Total Shows':            'All shows across 1st and 2nd calls combined — the close rate denominator.\nFormula: COUNT(showed 1st OR showed 2nd)',
+  // Rates
+  'Show Rate':              '% of resolved appointments where the prospect attended. Excludes pending outcomes.\nFormula: Showed ÷ (Showed + No Show + Cancelled)',
+  '2nd Call Show Rate':     '% of resolved 2nd-call appointments where the prospect attended.\nFormula: Showed ÷ (Showed + No Show + Cancelled) for 2nd calls',
+  'C1 Show%':               '% of resolved 1st-call appointments where the prospect attended.\nFormula: Showed ÷ (Showed + No Show + Cancelled)',
+  'C2 Show%':               '% of resolved 2nd-call appointments where the prospect attended.\nFormula: Showed ÷ (Showed + No Show + Cancelled) for 2nd calls',
+  'Qual Rate':              '% of 1st-call shows rated as qualified (Great, Ok, or Barely Passable).\nFormula: Qual Shows ÷ 1st Call Shows',
+  'Qual%':                  '% of 1st-call shows rated as qualified (Great, Ok, or Barely Passable).\nFormula: Qual Shows ÷ 1st Call Shows',
+  'DQ Rate':                '% of 1st-call shows that were disqualified by the rep.\nFormula: DQ Count ÷ 1st Call Shows',
+  'Close Rate':             '% of total shows (1st + 2nd calls combined) that closed won.\nFormula: Units Closed ÷ Total Shows',
+  'Close%':                 '% of total shows (1st + 2nd calls combined) that closed won.\nFormula: Units Closed ÷ Total Shows',
+  // Qualification
+  'Qual Shows':             '1st-call shows rated Great, Ok, or Barely Passable by the rep.\nFormula: COUNT(showed AND lead_quality IN [Great, Ok, Barely Passable])',
+  'Qual Calls':             '1st-call shows rated Great, Ok, or Barely Passable by the rep.\nFormula: COUNT(showed AND lead_quality IN [Great, Ok, Barely Passable])',
+  'Units Closed':           'Deals in the Deal Won pipeline stage within the selected period.\nFormula: COUNT(stage = Deal Won)',
+  'Closed':                 'Deals in the Deal Won pipeline stage within the selected period.\nFormula: COUNT(stage = Deal Won)',
+  // Deal value
+  'Contract Value':         'Sum of GHL monetary value for closed-won deals in the period.\nFormula: SUM(monetary_value WHERE stage = Deal Won)',
+  'Cash Collected':         'Rep-entered upfront cash collected across closed-won deals.\nFormula: SUM(cash_collected WHERE stage = Deal Won)',
+  'Proj. Contract Value':   'Sum of rep-entered projected deal sizes. Directional estimate — not accounting-validated.\nFormula: SUM(projected_deal_size)',
+  'Avg Cycle':              'Average days from 1st call date to close date, for won deals where both dates exist.\nFormula: AVG(close_date − call1_date) in days, won deals only',
+  // Lead quality breakdown
+  'Total Opps':             'Total opportunities with a 1st call in the selected period for this segment.\nFormula: COUNT(call1_date in period AND segment = this)',
+  'Great':                  'Shows rated Great — highest quality lead tier by the rep.\nSource: Lead Quality dropdown on the GHL opportunity',
+  'Ok':                     'Shows rated Ok — second quality tier by the rep.\nSource: Lead Quality dropdown on the GHL opportunity',
+  'Barely Pass.':           'Shows rated Barely Passable — lowest passing quality tier.\nSource: Lead Quality dropdown on the GHL opportunity',
+  'Bad':                    'Shows rated Bad / DQ by the rep.\nSource: Lead Quality dropdown on the GHL opportunity',
+  'Missing Data':           'Shows where the rep never filled in the Lead Quality field.\nFormula: COUNT(showed AND lead_quality IS NULL)',
+  // Funnel Economics — cost
+  'Cost / Call Booked':     'Total marketing spend divided by total calls booked in the period.\nFormula: Total Mktg Spend ÷ Calls Booked',
+  'Cost / Show':            'Total invested divided by 1st-call shows. Rep table includes comp; team/channel uses mktg only.\nFormula: Total Invested ÷ Shows (rep) OR Mktg Spend ÷ Shows (team)',
+  'Cost / Qual Show':       'Total invested in this rep divided by their qualified shows.\nFormula: Total Invested ÷ Qual Shows',
+  'Cost / Close':           'Total invested in this rep divided by units closed. All-in cost per client acquired.\nFormula: Total Invested ÷ Units Closed',
+  'Cost / Acquisition':     'Full-funnel cost per client: total marketing + all rep comp, divided by units closed.\nFormula: (Total Mktg Spend + Total Rep Comp) ÷ Units Closed',
+  'Channel Spend':          'Manually entered marketing spend for this channel in the period.\nSource: Period Financial Inputs panel on Funnel Economics tab',
+  'Rep Comp':               'Manually entered total compensation (base + bonus) for this rep in the period.\nSource: Period Financial Inputs panel on Funnel Economics tab',
+  'Mktg Alloc':             "This rep's share of total marketing spend, proportional to their share of team shows.\nFormula: (Total Mktg Spend ÷ Team Total Shows) × Rep's Shows",
+  'Total Invested':         "All-in cost attributed to this rep: comp plus their allocated share of marketing spend.\nFormula: Rep Comp + Mktg Alloc",
+  'Contract RORI':          'Contract value returned per $1 invested in this rep (comp + marketing allocation).\nFormula: Contract Value ÷ (Rep Comp + Mktg Alloc)',
+  'Cash RORI':              'Cash collected per $1 invested in this rep (comp + marketing allocation).\nFormula: Cash Collected ÷ (Rep Comp + Mktg Alloc)',
+  // Funnel Economics — Revenue Metrics tiles
+  'Avg Contract Value':          'Average contract value per closed-won deal in the period.\nFormula: Sum Contract Value ÷ Units Closed',
+  'Avg Cash Collected Upfront':  'Average upfront cash collected per closed-won deal.\nFormula: Sum Cash Collected ÷ Units Closed',
+  'Avg % Cash Upfront':          'Average % of contract value collected upfront per deal.\nFormula: Avg Cash Collected ÷ Avg Contract Value',
+  // Compliance
+  'Not Logged':                  'Appointments that passed without the rep logging a result (Showed / No Show / Cancelled).\nFormula: COUNT(appointment passed AND status still Confirmed or blank)',
+  'Call Outcome Not Logged':     'Calls where the rep never logged the result within 12 hours of the appointment.\nFormula: COUNT(call passed + 12h grace AND status = Confirmed or blank)',
+  'Non-Compliant Opps':          'Opps still in "Upcoming 1st Call Booked" after the appointment date — stage never moved.\nFormula: COUNT(stage = Upcoming Booked AND call1_date passed)',
+  'No Post-Call Note':           'Showed calls with no rep note found within 12 hours of the appointment.\nFormula: COUNT(showed AND post_call_note_word_count = 0)',
+  'Note Lacks Fidelity':         'Showed calls where the rep wrote a note but it was under 50 words.\nFormula: COUNT(showed AND 0 < note_word_count < 50)',
+  'Qual Fields Empty':           'Showed calls where the Lead Quality field was never filled in.\nFormula: COUNT(showed AND lead_quality IS NULL)',
+  'Times Flagged':               'How many times this rep had a call outcome flagged as not logged on time.\nSource: compliance_history table',
+  'Resolved Late':               'Flagged outcomes eventually logged, but after the 12-hour deadline.\nFormula: COUNT(outcome resolved AND resolution > 12h after appointment)',
+  'Late Rate':                   '% of flagged outcomes that were resolved late.\nFormula: Resolved Late ÷ Times Flagged',
+  'Avg Hours Late':              'Average hours between appointment time and when the outcome was finally logged.\nFormula: AVG(resolved_at − appointment_time), late resolutions only',
+};
+
+function injectTooltips() {
+  document.querySelectorAll('th, .kpi-label').forEach(el => {
+    const key = el.textContent.trim();
+    if (METRIC_TIPS[key] && !el.getAttribute('data-tip')) {
+      el.setAttribute('data-tip', METRIC_TIPS[key]);
+    }
+  });
 }
 
 // ─── Tab 1: Sales Performance ─────────────────────────────────────────────────
