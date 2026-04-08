@@ -6,7 +6,7 @@ from sqlalchemy import and_, case, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Opportunity
-from db.queries.common import NOTE_MIN_WORDS, rep_non_compliance_expr, showed_1st_call_expr
+from db.queries.common import NOTE_MIN_WORDS, rep_non_compliance_expr, sales_rep_filter, showed_1st_call_expr
 
 GRACE_HOURS = 12  # hours after appointment before outcome_unfilled is flagged
 
@@ -99,7 +99,7 @@ async def get_compliance_by_rep(
             func.count(case((Opportunity.outcome_unfilled.is_(True), 1))).label("outcome_unfilled"),
             func.count(case((non_compliance, 1))).label("non_compliance"),
         )
-        .where(bf)
+        .where(and_(bf, sales_rep_filter()))
         .group_by(Opportunity.opportunity_owner_name)
         .order_by(func.count(case((non_compliance, 1))).desc())
     )
@@ -223,7 +223,10 @@ async def get_rep_late_rates(
                 ))
             ).label("avg_hours_late"),
         )
-        .where(Opportunity.outcome_unfilled_first_flagged_at.isnot(None))
+        .where(and_(
+            Opportunity.outcome_unfilled_first_flagged_at.isnot(None),
+            sales_rep_filter(),
+        ))
         .group_by(Opportunity.opportunity_owner_name)
         .order_by(func.count(
             case((Opportunity.outcome_unfilled_first_flagged_at.isnot(None), 1))

@@ -16,11 +16,10 @@ from api.schemas.responses import (
     ByRepResponse,
     ChannelClosesResponse,
     ChannelQualityResponse,
+    ClosedDealRow,
     ComplianceResponse,
     DailyActivityResponse,
     FunnelInputsResponse,
-    SaveCompRequest,
-    SaveSpendRequest,
     InsightsResponse,
     LateViolationResponse,
     LeadSourceResponse,
@@ -29,6 +28,10 @@ from api.schemas.responses import (
     RepLateResponse,
     RepOppsResponse,
     RepsResponse,
+    SaveCompRequest,
+    SaveSLWAWeeklyInputRequest,
+    SaveSpendRequest,
+    SLWADashboardResponse,
     SummaryResponse,
     TimeSeriesResponse,
 )
@@ -47,13 +50,14 @@ from db.queries.lead_source import (
 )
 from db.queries.data_quality import get_data_quality_issues
 from db.queries.debug_drilldown import get_drilldown_opps
+from db.queries.funnel_economics import get_period_inputs, upsert_marketing_spend, upsert_rep_compensations
 from db.queries.metrics_by_rep import get_by_rep, get_daily_activity, get_rep_closes, get_rep_opps
-from db.queries.pipeline_intelligence import get_pipeline_intelligence
 from db.queries.metrics_summary import get_summary
+from db.queries.pipeline_intelligence import get_pipeline_intelligence
 from db.queries.reps import get_reps
+from db.queries.slwa import get_slwa_closes, get_slwa_weekly_dashboard, upsert_slwa_weekly_input
 from db.queries.sync_status import get_recent_sync_runs
 from db.queries.time_series import get_time_series
-from db.queries.funnel_economics import get_period_inputs, upsert_marketing_spend, upsert_rep_compensations
 from db.session import get_db
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
@@ -167,6 +171,52 @@ async def channel_closes(
     start, end, date_by = params
     data = await get_channel_closes(db, channel, start, end, date_by)
     return ChannelClosesResponse(data=data)
+
+
+@router.get("/slwa/weekly", response_model=SLWADashboardResponse)
+async def slwa_weekly(
+    scope: str = Query("overall", description="overall | slack | whatsapp | sms"),
+    rep_id: str | None = Query(None),
+    params: tuple = Depends(_date_params),
+    db: AsyncSession = Depends(get_db),
+):
+    """Slack / WhatsApp / SMS weekly dashboard data."""
+    start, end, date_by = params
+    data = await get_slwa_weekly_dashboard(db, scope, start, end, rep_id)
+    return SLWADashboardResponse(data=data, meta=_meta(start, end, date_by))
+
+
+@router.get("/slwa/closes", response_model=ChannelClosesResponse)
+async def slwa_closes(
+    scope: str = Query("overall", description="overall | slack | whatsapp | sms"),
+    rep_id: str | None = Query(None),
+    params: tuple = Depends(_date_params),
+    db: AsyncSession = Depends(get_db),
+):
+    """Closed deals for a Slack / WhatsApp / SMS scope."""
+    start, end, date_by = params
+    data = await get_slwa_closes(db, scope, start, end, rep_id)
+    return ChannelClosesResponse(data=[ClosedDealRow(**row) for row in data])
+
+
+@router.post("/slwa/manual-entry")
+async def save_slwa_manual_entry(
+    body: SaveSLWAWeeklyInputRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Save or overwrite manual weekly Slack / WhatsApp / SMS dashboard inputs."""
+    await upsert_slwa_weekly_input(
+        db,
+        channel_key=body.channel_key,
+        section=body.section,
+        week_start=body.week_start,
+        message_sent=body.message_sent,
+        links_sent=body.links_sent,
+        changes_to_funnel=(body.changes_to_funnel.strip() if body.changes_to_funnel and body.changes_to_funnel.strip() else None),
+        copy=(body.copy_text.strip() if body.copy_text and body.copy_text.strip() else None),
+        groups=(body.groups.strip() if body.groups and body.groups.strip() else None),
+    )
+    return {"ok": True}
 
 
 @router.get("/closes", response_model=ChannelClosesResponse)
@@ -463,4 +513,3 @@ async def save_comp(body: SaveCompRequest, db: AsyncSession = Depends(get_db)):
     reps = [r.model_dump() for r in body.reps]
     await upsert_rep_compensations(db, body.start, body.end, reps)
     return {"ok": True}
-

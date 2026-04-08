@@ -92,6 +92,13 @@ def _find_first_followup_appointment(appointments: list[dict]) -> dict | None:
     return min(candidates, key=lambda a: a.get("startTime") or "")
 
 
+def _appointment_booking_date(appt: dict | None) -> datetime | None:
+    """Return the booking timestamp for a matched calendar appointment when present."""
+    if not appt:
+        return None
+    return parse_ghl_datetime(appt.get("createdAt") or appt.get("dateAdded"))
+
+
 async def _build_opportunity_row(
     opp: dict,
     normalization_map: dict[str, str],
@@ -142,10 +149,13 @@ async def _build_opportunity_row(
     # new follow-up is booked, so it tracks the LATEST follow-up, not the first.
     call2_date: datetime | None = None
     call2_status: str | None = None
+    call1_booking_date: datetime | None = None
     contact_id = opp.get("contactId")
     all_appointments: list[dict] = []
     if contact_id:
         all_appointments = await ghl_client.get_contact_appointments(contact_id)
+        call1_appt = _find_appointment_for_date(all_appointments, call1_date) if call1_date else None
+        call1_booking_date = _appointment_booking_date(call1_appt)
         followup_appt = _find_first_followup_appointment(all_appointments)
         if followup_appt:
             call2_date = parse_ghl_datetime(followup_appt.get("startTime"))
@@ -208,6 +218,7 @@ async def _build_opportunity_row(
         "call2_appointment_status": call2_status,
         "call1_appointment_date": call1_date,
         "call2_appointment_date": call2_date,
+        "call1_booking_date": call1_booking_date,
         "lead_quality": custom.get("lead_quality"),
         "financial_qual": custom.get("financial_qual"),
         "intent_to_transform": custom.get("intent_to_transform"),

@@ -1,9 +1,9 @@
 """Pydantic response models for all API endpoints."""
 
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class MetaMixin(BaseModel):
@@ -152,6 +152,7 @@ class TimeSeriesResponse(BaseModel):
 class RepItem(BaseModel):
     rep_id: str | None
     rep_name: str
+    category: str = "other"
 
 
 class RepsResponse(BaseModel):
@@ -297,6 +298,104 @@ class SaveCompRequest(BaseModel):
     start: date
     end: date
     reps: list[RepCompInput]
+
+
+# --- SLWA weekly dashboards ---
+
+class SLWASummary(BaseModel):
+    booked: int
+    meeting_date_passed: int
+    showed: int
+    show_rate: float | None
+    qualified_show: int
+    cancelled: int
+    no_show: int
+    dq_count: int
+    units_closed: int
+    great_count: int
+    ok_count: int
+    barely_passable_count: int
+    bad_dq_count: int
+    message_sent: float | None = None
+    links_sent: float | None = None
+
+
+class SLWAWeeklyRow(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    week_start: str
+    booked: int
+    meeting_date_passed: int
+    showed: int
+    cancelled: int
+    no_show: int
+    show_rate: float | None
+    qualified_show: int
+    dq_count: int
+    units_closed: int
+    great_count: int
+    ok_count: int
+    barely_passable_count: int
+    bad_dq_count: int
+    message_sent: float | None = None
+    links_sent: float | None = None
+    changes_to_funnel: str | None = None
+    copy_text: str | None = Field(default=None, alias="copy", serialization_alias="copy")
+    groups: str | None = None
+
+
+class SLWASectionData(BaseModel):
+    key: str
+    label: str
+    summary: SLWASummary
+    weeks: list[SLWAWeeklyRow]
+
+
+class SLWARepTotalRow(BaseModel):
+    rep_id: str | None
+    rep_name: str
+    booked: int
+    showed: int
+    qualified_show: int
+    units_closed: int
+
+
+class SLWAChannelTotalRow(BaseModel):
+    scope: str
+    label: str
+    booked: int
+    meeting_date_passed: int
+    showed: int
+    qualified_show: int
+    units_closed: int
+    show_rate: float | None
+
+
+class SLWADashboardData(BaseModel):
+    scope: str
+    scope_label: str
+    summary: SLWASummary
+    sections: list[SLWASectionData]
+    rep_totals: list[SLWARepTotalRow]
+    channel_totals: list[SLWAChannelTotalRow]
+
+
+class SLWADashboardResponse(BaseModel):
+    data: SLWADashboardData
+    meta: MetaMixin
+
+
+class SaveSLWAWeeklyInputRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    channel_key: Literal["overall", "slack", "whatsapp", "sms"]
+    section: Literal["all", "ghl", "calendly"]
+    week_start: date
+    message_sent: float | None = None
+    links_sent: float | None = None
+    changes_to_funnel: str | None = None
+    copy_text: str | None = Field(default=None, alias="copy", serialization_alias="copy")
+    groups: str | None = None
 
 
 # --- Tier 2: Insight response models ---

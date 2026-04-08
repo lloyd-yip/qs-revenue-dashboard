@@ -77,8 +77,10 @@
 
     #rep-select {
       background: var(--surface2); border: 1px solid var(--border); color: var(--text);
-      padding: 6px 10px; border-radius: 6px; font-size: 13px; cursor: pointer;
+      padding: 6px 10px; border-radius: 6px; font-size: 13px; cursor: pointer; min-width: 180px;
     }
+    #rep-select optgroup { font-weight: 700; font-size: 12px; color: var(--text2); padding: 6px 0 2px; }
+    #rep-select option { font-weight: 400; font-size: 13px; color: var(--text); padding: 4px 8px; }
 
     .toggle-group { display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
     .toggle-btn {
@@ -246,7 +248,8 @@
   <input type="date" id="date-end" class="date-input" onchange="onDateInputChange()" />
   <div class="filter-sep"></div>
   <select id="rep-select" onchange="onRepChange(this.value)">
-    <option value="">All Team</option>
+    <option value="">All Sales Team</option>
+    <option value="__all__">All Team</option>
   </select>
   <div class="filter-sep"></div>
   <label>Granularity</label>
@@ -547,6 +550,7 @@ const AppState = {
   repView: 'table',
   weekOffset: 0,  // 0 = this week, -1 = last week, etc.
 };
+const UrlState = new URL(window.location.href).searchParams;
 
 // Chart instances — held so we can destroy/recreate on re-render
 const Charts = {};
@@ -557,6 +561,39 @@ const GHL_BASE = 'https://app.gohighlevel.com/v2/location/G7ZOWCq78JrzUjlLMCxt/o
 // ─── Date helpers ─────────────────────────────────────────────────────────────
 function toISO(d) {
   return d.toISOString().split('T')[0];
+}
+
+function applyUrlState() {
+  const start = UrlState.get('start');
+  const end = UrlState.get('end');
+  const dateBy = UrlState.get('date_by');
+  const repId = UrlState.get('rep_id');
+  const granularity = UrlState.get('granularity');
+
+  if (start && end && start <= end) {
+    AppState.dateStart = start;
+    AppState.dateEnd = end;
+  }
+  if (dateBy === 'appointment' || dateBy === 'created') {
+    AppState.dateBy = dateBy;
+  }
+  if (repId !== null) {
+    AppState.repId = repId;
+  }
+  if (['day', 'week', 'month'].includes(granularity || '')) {
+    AppState.granularity = granularity;
+  }
+}
+
+function syncUrlState() {
+  const search = new URLSearchParams({
+    start: AppState.dateStart,
+    end: AppState.dateEnd,
+    date_by: AppState.dateBy,
+    granularity: AppState.granularity,
+  });
+  if (AppState.repId) search.set('rep_id', AppState.repId);
+  window.history.replaceState({}, '', `/?${search.toString()}`);
 }
 
 function applyPreset(days) {
@@ -587,6 +624,7 @@ function setDateRange(start, end) {
   AppState.dateEnd = end;
   document.getElementById('date-start').value = start;
   document.getElementById('date-end').value = end;
+  syncUrlState();
   renderAll();
 }
 
@@ -597,6 +635,7 @@ function onDateInputChange() {
     AppState.dateStart = s;
     AppState.dateEnd = e;
     document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+    syncUrlState();
     renderAll();
   }
 }
@@ -608,6 +647,7 @@ function onDateInputChange() {
   start.setDate(end.getDate() - 29);
   AppState.dateStart = toISO(start);
   AppState.dateEnd   = toISO(end);
+  applyUrlState();
   document.getElementById('date-start').value = AppState.dateStart;
   document.getElementById('date-end').value   = AppState.dateEnd;
 })();
@@ -615,6 +655,7 @@ function onDateInputChange() {
 // ─── Filter controls ──────────────────────────────────────────────────────────
 function onRepChange(val) {
   AppState.repId = val;
+  syncUrlState();
   renderAll();
 }
 
@@ -623,6 +664,7 @@ function setGranularity(val) {
   document.querySelectorAll('#granularity-toggle .toggle-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.val === val);
   });
+  syncUrlState();
   renderAll();
 }
 
@@ -652,6 +694,12 @@ function debugUrl(metric, repId) {
   let url = `/debug?metric=${metric}&start=${AppState.dateStart}&end=${AppState.dateEnd}&date_by=${AppState.dateBy}`;
   if (repId) url += `&rep_id=${encodeURIComponent(repId)}`;
   else if (AppState.repId) url += `&rep_id=${encodeURIComponent(AppState.repId)}`;
+  return url;
+}
+
+function channelDetailUrl(scope) {
+  let url = `/channels/slwa?scope=${encodeURIComponent(scope)}&start=${AppState.dateStart}&end=${AppState.dateEnd}&date_by=${AppState.dateBy}&granularity=${encodeURIComponent(AppState.granularity)}`;
+  if (AppState.repId) url += `&rep_id=${encodeURIComponent(AppState.repId)}`;
   return url;
 }
 
@@ -1240,13 +1288,20 @@ function renderChannelTable(data) {
   }
   const rows = data.map(d => {
     const showRate = d.total_ops > 0 ? d.shows / d.total_ops : null;
+    const isSlwa = d.channel === 'Slack / WhatsApp / SMS';
+    const channelCell = isSlwa
+      ? `<a class="closes-link" href="${channelDetailUrl('overall')}" title="Open Slack / WhatsApp / SMS detail">${d.channel} ↗</a>`
+      : d.channel;
+    const closesCell = d.units_closed > 0
+      ? `<span class="closes-link" onclick="showClosesModal('${d.channel.replace(/'/g, "\\'")}'); event.stopPropagation();">↗ ${num(d.units_closed)}</span>`
+      : num(d.units_closed);
     return `
-      <tr class="clickable-row" onclick="showClosesModal('${d.channel.replace(/'/g, "\\'")}')">
-        <td>${d.channel} <span style="font-size:11px; color:var(--text2);">↗</span></td>
+      <tr>
+        <td>${channelCell}</td>
         <td class="num">${num(d.total_ops)}</td>
         <td class="num">${num(d.shows)}</td>
         <td class="num ${rateClass(showRate)}">${pct(showRate)}</td>
-        <td class="num">${num(d.units_closed)}</td>
+        <td class="num">${closesCell}</td>
         <td class="num" style="color:var(--green);">${d.contract_value ? money(d.contract_value) : '—'}</td>
         <td class="num" style="color:var(--green);">${d.cash_collected ? money(d.cash_collected) : '—'}</td>
         <td class="num ${rateClass(d.qual_rate)}">${pct(d.qual_rate)}</td>
@@ -1873,17 +1928,40 @@ async function init() {
     }
   } catch { document.getElementById('last-synced').innerHTML = '<span class="sync-dot red"></span>Health check failed'; }
 
-  // Load rep dropdown
+  // Load rep dropdown — grouped by category
   try {
     const { data } = await apiFetch('/api/dashboard/reps');
     const sel = document.getElementById('rep-select');
+    const groups = { active: [], inactive: [], other: [] };
     data.forEach(r => {
-      const opt = document.createElement('option');
-      opt.value = r.rep_id || '';
-      opt.textContent = r.rep_name;
-      sel.appendChild(opt);
+      const cat = r.category || 'other';
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(r);
     });
+    const groupLabels = {
+      active: '✅ Active Sales Reps',
+      inactive: '⏸ Inactive Sales Reps',
+      other: '👥 Other',
+    };
+    for (const cat of ['active', 'inactive', 'other']) {
+      if (!groups[cat] || groups[cat].length === 0) continue;
+      const optgroup = document.createElement('optgroup');
+      optgroup.label = groupLabels[cat] || cat;
+      groups[cat].forEach(r => {
+        const opt = document.createElement('option');
+        opt.value = r.rep_id || '';
+        opt.textContent = r.rep_name;
+        optgroup.appendChild(opt);
+      });
+      sel.appendChild(optgroup);
+    }
+    sel.value = AppState.repId;
   } catch { /* rep dropdown stays at "All Team" only */ }
+
+  document.querySelectorAll('#granularity-toggle .toggle-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.val === AppState.granularity);
+  });
+  syncUrlState();
 
   // Initial render
   await renderAll();

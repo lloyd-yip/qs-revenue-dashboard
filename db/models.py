@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     Boolean,
@@ -10,6 +10,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -57,6 +58,9 @@ class Opportunity(Base):
     # Call 1 initial: We5c2Oiz8kC3FgjOO2XD | Call 1 rescheduled: bFDWu3koncdxn26h6nAm | Call 2: oRRLUFWNYEeYSDVqV3DK
     call1_appointment_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     call2_appointment_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    # Booking-time timestamp for the first call, derived from the matched calendar appointment.
+    # Used by the SLWA weekly dashboards to mirror workbook cohorting by "Date of Booking".
+    call1_booking_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
 
 
     # Qualification fields (dropdowns on Opportunity)
@@ -228,6 +232,33 @@ class RepCompensation(Base):
     period_start: Mapped[datetime] = mapped_column(Date, nullable=False)
     period_end: Mapped[datetime] = mapped_column(Date, nullable=False)
     total_comp: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class SLWAWeeklyInput(Base):
+    """Manual weekly dashboard inputs for Slack / WhatsApp / SMS channel pages.
+
+    One row per (channel_key, section, week_start). Numeric and text fields are nullable
+    so rows can be partially filled and updated incrementally from the dashboard UI.
+    """
+
+    __tablename__ = "slwa_weekly_inputs"
+    __table_args__ = (
+        UniqueConstraint("channel_key", "section", "week_start"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    channel_key: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    section: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    week_start: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    message_sent: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    links_sent: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    changes_to_funnel: Mapped[str | None] = mapped_column(Text, nullable=True)
+    copy: Mapped[str | None] = mapped_column(Text, nullable=True)
+    groups: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False

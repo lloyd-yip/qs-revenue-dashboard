@@ -129,6 +129,13 @@ async def serve_sync_history():
         headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
     )
 
+@app.get("/channels/slwa", include_in_schema=False)
+async def serve_slwa_dashboard():
+    return FileResponse(
+        _STATIC_DIR / "slwa-dashboard.html",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+    )
+
 
 # Health check is exempt from auth — Railway uses it without credentials
 @app.get("/api/health", response_model=HealthResponse, tags=["health"])

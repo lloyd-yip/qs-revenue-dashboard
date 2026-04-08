@@ -10,6 +10,7 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Opportunity
+from db.queries.common import ALL_TEAM_SENTINEL, sales_rep_filter
 from db.queries.debug_drilldown import (
     _DRILLDOWN_COLUMNS,
     _detect_anomalies,
@@ -29,8 +30,12 @@ async def get_data_quality_issues(
     Returns {issues: [...], summary: {anomaly_id: count}, total: int}.
     """
     filters = [Opportunity.is_excluded.is_(False)]
-    if rep_id:
+    if rep_id == ALL_TEAM_SENTINEL:
+        pass  # no rep filter — show everything
+    elif rep_id:
         filters.append(Opportunity.opportunity_owner_id == rep_id)
+    else:
+        filters.append(sales_rep_filter())
     if start:
         filters.append(func.date(Opportunity.created_at_ghl) >= start)
     if end:

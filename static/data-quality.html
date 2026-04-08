@@ -208,7 +208,8 @@
   <input id="date-range-input" placeholder="Custom range..." readonly />
   <div class="filter-sep"></div>
   <select id="rep-filter" onchange="loadData()">
-    <option value="">All Reps</option>
+    <option value="">All Sales Team</option>
+    <option value="__all__">All Team</option>
   </select>
 </div>
 
@@ -574,22 +575,7 @@ async function loadData() {
 
     document.title = `Data Quality (${allRows.length} issues) — QS Analytics`;
 
-    // Extract unique reps for filter dropdown (preserve current selection)
-    const currentRep = document.getElementById('rep-filter').value;
-    const reps = [...new Set(allRows.map(r => r.rep_name).filter(Boolean))].sort();
-    const repSelect = document.getElementById('rep-filter');
-    const existingOptions = repSelect.querySelectorAll('option:not(:first-child)');
-    if (existingOptions.length === 0) {
-      for (const name of reps) {
-        const repRows = allRows.filter(r => r.rep_name === name);
-        const repId = repRows.length > 0 ? repRows[0].rep_id : '';
-        const opt = document.createElement('option');
-        opt.value = repId;
-        opt.textContent = `${name} (${repRows.length})`;
-        repSelect.appendChild(opt);
-      }
-      if (currentRep) repSelect.value = currentRep;
-    }
+    // Rep dropdown is pre-loaded in init() via /api/dashboard/reps
 
     activeAnomalyFilter = null;
     renderAnomalyChips(json.summary);
@@ -622,6 +608,40 @@ async function init() {
     if (lookupRes.ok) lookupData = await lookupRes.json();
   } catch (e) {
     console.warn('Failed to load lookups:', e);
+  }
+
+  // Load rep dropdown — grouped by category
+  try {
+    const repRes = await fetch('/api/dashboard/reps');
+    if (repRes.ok) {
+      const { data } = await repRes.json();
+      const sel = document.getElementById('rep-filter');
+      const groups = { active: [], inactive: [], other: [] };
+      data.forEach(r => {
+        const cat = r.category || 'other';
+        if (!groups[cat]) groups[cat] = [];
+        groups[cat].push(r);
+      });
+      const groupLabels = {
+        active: '✅ Active Sales Reps',
+        inactive: '⏸ Inactive Sales Reps',
+        other: '👥 Other',
+      };
+      for (const cat of ['active', 'inactive', 'other']) {
+        if (!groups[cat] || groups[cat].length === 0) continue;
+        const optgroup = document.createElement('optgroup');
+        optgroup.label = groupLabels[cat] || cat;
+        groups[cat].forEach(r => {
+          const opt = document.createElement('option');
+          opt.value = r.rep_id || '';
+          opt.textContent = r.rep_name;
+          optgroup.appendChild(opt);
+        });
+        sel.appendChild(optgroup);
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to load reps:', e);
   }
 
   await loadData();

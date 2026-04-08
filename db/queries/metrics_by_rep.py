@@ -7,12 +7,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Opportunity
 from db.queries.common import (
+    ALL_TEAM_SENTINEL,
     QUALIFIED_LEAD_QUALITY,
     base_filter,
     bookable_1st_call_expr,
     bookable_2nd_call_expr,
     has_1st_call,
     has_2nd_call,
+    sales_rep_filter,
     showed_1st_call_expr,
     showed_2nd_call_expr,
 )
@@ -285,8 +287,12 @@ async def get_daily_activity(
         func.date(Opportunity.call1_appointment_date) >= start_date,
         func.date(Opportunity.call1_appointment_date) <= end_date,
     ]
-    if rep_id:
+    if rep_id == ALL_TEAM_SENTINEL:
+        pass  # no rep filter — show everything
+    elif rep_id:
         conditions.append(Opportunity.opportunity_owner_id == rep_id)
+    else:
+        conditions.append(sales_rep_filter())
 
     result = await session.execute(
         select(

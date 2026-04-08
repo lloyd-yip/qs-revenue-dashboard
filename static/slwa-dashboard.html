@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SLWA Weekly Dashboard</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #22263a;
+      --border: #2e3347;
+      --accent: #6366f1;
+      --accent2: #818cf8;
+      --text: #e2e8f0;
+      --text2: #94a3b8;
+      --green: #22c55e;
+      --red: #ef4444;
+      --yellow: #f59e0b;
+      --radius: 10px;
+      --font: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+
+    body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; min-height: 100vh; }
+    header {
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      padding: 18px 24px; border-bottom: 1px solid var(--border); background: var(--surface);
+    }
+    .header-left { display: flex; flex-direction: column; gap: 6px; }
+    .back-link { color: var(--accent2); text-decoration: none; font-size: 13px; }
+    .back-link:hover { text-decoration: underline; }
+    h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.3px; }
+    .subtitle { color: var(--text2); font-size: 12px; display: flex; gap: 14px; flex-wrap: wrap; }
+    .badge {
+      background: rgba(99,102,241,0.12); border: 1px solid rgba(99,102,241,0.28);
+      color: var(--accent2); border-radius: 999px; padding: 7px 12px; font-size: 12px; font-weight: 600;
+    }
+
+    .tabs {
+      display: flex; gap: 0; padding: 0 24px;
+      background: var(--surface); border-bottom: 1px solid var(--border);
+    }
+    .tab-btn {
+      background: none; border: none; color: var(--text2); padding: 12px 18px;
+      cursor: pointer; font-size: 13px; font-weight: 500; border-bottom: 2px solid transparent;
+      transition: all 0.15s;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active { color: var(--accent2); border-bottom-color: var(--accent); }
+
+    main { padding: 24px; }
+    .note-bar {
+      margin-bottom: 18px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 12px 16px; color: var(--text2); font-size: 12px;
+    }
+    .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
+    .kpi-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 16px; display: flex; flex-direction: column; gap: 4px;
+    }
+    .kpi-card .label { font-size: 11px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; }
+    .kpi-card .value { font-size: 26px; font-weight: 700; letter-spacing: -0.4px; }
+    .kpi-card .sub { font-size: 11px; color: var(--text2); }
+    .kpi-card.clickable { cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+    .kpi-card.clickable:hover { border-color: var(--accent); background: rgba(99,102,241,0.06); }
+
+    .panel {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      overflow: hidden; margin-bottom: 20px;
+    }
+    .panel-header {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 14px 16px; border-bottom: 1px solid var(--border);
+    }
+    .panel-title { font-size: 13px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: 0.4px; }
+    .panel-subtitle { color: var(--text2); font-size: 12px; }
+    .panel-body { padding: 0; overflow-x: auto; }
+
+    table { width: 100%; border-collapse: collapse; min-width: 900px; }
+    th { background: var(--surface2); color: var(--text2); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; padding: 10px 12px; text-align: left; vertical-align: bottom; }
+    td { padding: 10px 12px; border-top: 1px solid var(--border); font-size: 13px; vertical-align: top; }
+    tr:hover td { background: var(--surface2); }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .rate-good { color: var(--green); font-weight: 600; }
+    .rate-warn { color: var(--yellow); font-weight: 600; }
+    .rate-bad { color: var(--red); font-weight: 600; }
+
+    .grid-two { display: grid; grid-template-columns: 1.4fr 1fr; gap: 20px; margin-bottom: 20px; }
+    .empty, .loading {
+      color: var(--text2); font-size: 13px; text-align: center; padding: 36px;
+    }
+
+    input.manual-input, textarea.manual-input {
+      width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border);
+      border-radius: 6px; padding: 7px 8px; font-size: 12px; font-family: var(--font);
+    }
+    textarea.manual-input { min-height: 62px; resize: vertical; }
+    input.manual-input:focus, textarea.manual-input:focus { outline: none; border-color: var(--accent); }
+    .save-btn {
+      background: var(--accent); border: none; color: white; padding: 7px 10px;
+      border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600;
+    }
+    .save-btn:disabled { opacity: 0.55; cursor: default; }
+    .save-status { color: var(--text2); font-size: 11px; margin-top: 6px; min-height: 16px; }
+
+    #closes-modal {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+      z-index: 1000; align-items: center; justify-content: center;
+    }
+    .modal-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      width: 720px; max-width: 96vw; max-height: 82vh; display: flex; flex-direction: column;
+    }
+    .modal-header {
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      padding: 16px 18px; border-bottom: 1px solid var(--border);
+    }
+    .modal-body { overflow-y: auto; }
+    .close-btn {
+      background: none; border: none; color: var(--text2); font-size: 20px; cursor: pointer; line-height: 1;
+    }
+
+    @media (max-width: 960px) {
+      .grid-two { grid-template-columns: 1fr; }
+      header { flex-direction: column; align-items: flex-start; }
+    }
+
+    /* Merged weekly comparison table */
+    .merged-table .week-date-cell {
+      vertical-align: middle; font-weight: 600; white-space: nowrap;
+      border-right: 2px solid var(--border);
+    }
+    .merged-table .source-label {
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.4px; color: var(--accent2); white-space: nowrap;
+      min-width: 70px;
+    }
+    /* Top border between date groups */
+    .merged-table tbody tr:not(.group-secondary) td { border-top: 2px solid var(--border); }
+    .merged-table tbody tr.group-secondary td { border-top: 1px solid rgba(255,255,255,0.04); }
+
+    /* Filters bar */
+    .filters {
+      display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
+      padding: 14px 24px; background: var(--surface); border-bottom: 1px solid var(--border);
+    }
+    .filters label { font-size: 12px; color: var(--text2); margin-right: 4px; }
+    .preset-btns { display: flex; gap: 4px; }
+    .preset-btn {
+      background: var(--surface2); border: 1px solid var(--border); color: var(--text2);
+      padding: 5px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; transition: all 0.15s;
+    }
+    .preset-btn:hover, .preset-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .date-input {
+      background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+      padding: 6px 10px; border-radius: 6px; font-size: 13px; width: 130px; cursor: pointer;
+    }
+    .date-sep { color: var(--text2); font-size: 12px; }
+    .filter-sep { width: 1px; height: 28px; background: var(--border); margin: 0 4px; }
+    #rep-select {
+      background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+      padding: 6px 10px; border-radius: 6px; font-size: 13px; cursor: pointer; min-width: 180px;
+    }
+    #rep-select optgroup { font-weight: 700; font-size: 12px; color: var(--text2); padding: 6px 0 2px; }
+    #rep-select option { font-weight: 400; font-size: 13px; color: var(--text); padding: 4px 8px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-left">
+      <a id="back-link" class="back-link" href="/">← Back to Dashboard</a>
+      <h1>Slack / WhatsApp / SMS</h1>
+      <div class="subtitle" id="subtitle"></div>
+    </div>
+    <div class="badge">Weekly Cohort View</div>
+  </header>
+
+  <div class="filters">
+    <div class="preset-btns">
+      <button class="preset-btn" onclick="applyPreset(7)">Last 7d</button>
+      <button class="preset-btn active" onclick="applyPreset(30)">Last 30d</button>
+      <button class="preset-btn" onclick="applyPreset(90)">Last 90d</button>
+      <button class="preset-btn" onclick="applyPresetThisMonth()">This month</button>
+      <button class="preset-btn" onclick="applyPresetAllTime()">All time</button>
+    </div>
+    <input type="date" id="date-start" class="date-input" onchange="onDateInputChange()" />
+    <span class="date-sep">→</span>
+    <input type="date" id="date-end" class="date-input" onchange="onDateInputChange()" />
+    <div class="filter-sep"></div>
+    <select id="rep-select" onchange="onRepChange(this.value)">
+      <option value="">All Sales Team</option>
+      <option value="__all__">All Team</option>
+    </select>
+  </div>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-scope="overall" onclick="setScope('overall')">Overall</button>
+    <button class="tab-btn" data-scope="slack" onclick="setScope('slack')">Slack</button>
+    <button class="tab-btn" data-scope="whatsapp" onclick="setScope('whatsapp')">WhatsApp</button>
+    <button class="tab-btn" data-scope="sms" onclick="setScope('sms')">SMS</button>
+  </div>
+
+  <main>
+    <div class="note-bar">
+      Weekly rows are bucketed by first-call booking date. Outcome metrics use appointments that have passed within the selected range cutoff.
+    </div>
+
+    <div id="summary-cards" class="kpi-row"><div class="loading">Loading…</div></div>
+
+    <div id="overall-channel-panel"></div>
+
+    <div class="grid-two">
+      <div id="rep-panel"></div>
+      <div id="scope-summary-panel"></div>
+    </div>
+
+    <div id="sections-wrap"><div class="loading">Loading weekly sections…</div></div>
+  </main>
+
+  <div id="closes-modal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="closes-title" style="font-size:14px; font-weight:600;"></h3>
+        <button class="close-btn" onclick="closeClosesModal()">×</button>
+      </div>
+      <div id="closes-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <script>
+    const today = new Date();
+    const startDefault = new Date(today);
+    startDefault.setDate(today.getDate() - 29);
+
+    const url = new URL(window.location.href);
+    const params = url.searchParams;
+
+    const AppState = {
+      scope: 'overall',
+      start: params.get('start') || toISO(startDefault),
+      end: params.get('end') || toISO(today),
+      dateBy: params.get('date_by') || 'appointment',
+      granularity: params.get('granularity') || 'week',
+      repId: params.get('rep_id') || '',
+      cache: {},
+    };
+
+    // Manual fields rendered at the END of the table (excludes message_sent —
+    // that one is rendered as a fixed early column right after Week Start).
+    const TRAILING_MANUAL_FIELDS = {
+      overall: [],
+      slack: [],
+      whatsapp: ['changes_to_funnel', 'copy', 'groups'],
+      sms: ['links_sent'],
+    };
+    const MANUAL_FIELD_LABELS = {
+      message_sent: 'Message Sent',
+      links_sent: '# of Links Sent',
+      changes_to_funnel: 'Changes To Funnel',
+      copy: 'Copy',
+      groups: 'Groups',
+    };
+    const NUMERIC_MANUAL_FIELDS = new Set(['message_sent', 'links_sent']);
+
+    function toISO(d) {
+      return d.toISOString().slice(0, 10);
+    }
+
+    // ── Date / filter controls ─────────────────────────────────────
+    function syncUrl() {
+      const search = new URLSearchParams({
+        start: AppState.start,
+        end: AppState.end,
+        date_by: AppState.dateBy,
+        granularity: AppState.granularity,
+        scope: AppState.scope,
+      });
+      if (AppState.repId) search.set('rep_id', AppState.repId);
+      window.history.replaceState({}, '', `/channels/slwa?${search.toString()}`);
+    }
+
+    function setDateRange(start, end) {
+      AppState.start = start;
+      AppState.end = end;
+      document.getElementById('date-start').value = start;
+      document.getElementById('date-end').value = end;
+      AppState.cache = {};
+      syncUrl();
+      renderSubtitle();
+      renderScope();
+    }
+
+    function applyPreset(days) {
+      const end = new Date();
+      const start = new Date();
+      start.setDate(end.getDate() - days + 1);
+      setDateRange(toISO(start), toISO(end));
+      document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+      event.target.classList.add('active');
+    }
+
+    function applyPresetThisMonth() {
+      const now = new Date();
+      const start = new Date(now.getFullYear(), now.getMonth(), 1);
+      setDateRange(toISO(start), toISO(now));
+      document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+      event.target.classList.add('active');
+    }
+
+    function applyPresetAllTime() {
+      setDateRange('2020-01-01', toISO(new Date()));
+      document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+      event.target.classList.add('active');
+    }
+
+    function onDateInputChange() {
+      const s = document.getElementById('date-start').value;
+      const e = document.getElementById('date-end').value;
+      if (s && e && s <= e) {
+        document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+        setDateRange(s, e);
+      }
+    }
+
+    function onRepChange(val) {
+      AppState.repId = val;
+      AppState.cache = {};
+      syncUrl();
+      renderSubtitle();
+      renderScope();
+    }
+
+    function apiFetch(path, options = {}) {
+      return fetch(path, options).then(async res => {
+        if (!res.ok) throw new Error(`API error ${res.status}`);
+        return res.json();
+      });
+    }
+
+    function qs() {
+      const search = new URLSearchParams({
+        start: AppState.start,
+        end: AppState.end,
+        date_by: AppState.dateBy,
+      });
+      if (AppState.repId) search.set('rep_id', AppState.repId);
+      return search.toString();
+    }
+
+    function pct(v) {
+      if (v === null || v === undefined) return '–';
+      return `${(v * 100).toFixed(1)}%`;
+    }
+
+    function num(v) {
+      if (v === null || v === undefined || v === '') return '–';
+      return Number(v).toLocaleString();
+    }
+
+    function money(v) {
+      if (v === null || v === undefined) return '–';
+      return '$' + Math.round(v).toLocaleString();
+    }
+
+    function rateClass(v) {
+      if (v === null || v === undefined) return '';
+      if (v >= 0.6) return 'rate-good';
+      if (v >= 0.4) return 'rate-warn';
+      return 'rate-bad';
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function rowKey(scope, section, weekStart) {
+      return `${scope}-${section}-${weekStart}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+    }
+
+    function manualFieldsForScope(scope) {
+      return TRAILING_MANUAL_FIELDS[scope] || [];
+    }
+
+    function buildBackLink() {
+      const search = new URLSearchParams({
+        start: AppState.start,
+        end: AppState.end,
+        date_by: AppState.dateBy,
+        granularity: AppState.granularity,
+      });
+      if (AppState.repId) search.set('rep_id', AppState.repId);
+      return `/?${search.toString()}`;
+    }
+
+    function buildScopeLink(scope) {
+      const search = new URLSearchParams({
+        start: AppState.start,
+        end: AppState.end,
+        date_by: AppState.dateBy,
+        granularity: AppState.granularity,
+      });
+      if (AppState.repId) search.set('rep_id', AppState.repId);
+      search.set('scope', scope);
+      return `/channels/slwa?${search.toString()}`;
+    }
+
+    function renderSubtitle() {
+      document.getElementById('back-link').href = buildBackLink();
+      const repLabel = AppState.repId ? `Rep filter: ${AppState.repId}` : 'Rep filter: All Sales Team';
+      document.getElementById('subtitle').innerHTML = `
+        <span>Range: ${escapeHtml(AppState.start)} to ${escapeHtml(AppState.end)}</span>
+        <span>${escapeHtml(repLabel)}</span>
+        <span>Scope: ${escapeHtml(AppState.scope)}</span>
+      `;
+    }
+
+    async function setScope(scope) {
+      AppState.scope = scope;
+      AppState.cache = {};
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.scope === scope));
+      syncUrl();
+      renderSubtitle();
+      await renderScope();
+    }
+
+    async function loadScopeData(scope) {
+      if (AppState.cache[scope]) return AppState.cache[scope];
+      const data = await apiFetch(`/api/dashboard/slwa/weekly?scope=${encodeURIComponent(scope)}&${qs()}`);
+      AppState.cache[scope] = data.data;
+      return data.data;
+    }
+
+    function renderSummaryCards(data) {
+      const d = data.summary;
+      document.getElementById('summary-cards').innerHTML = `
+        <div class="kpi-card"><div class="label">Booked Calls</div><div class="value">${num(d.booked)}</div><div class="sub">Weekly cohorts in range</div></div>
+        <div class="kpi-card"><div class="label">Meeting Date Passed</div><div class="value">${num(d.meeting_date_passed)}</div><div class="sub">Appointments past cutoff</div></div>
+        <div class="kpi-card"><div class="label">Shows</div><div class="value">${num(d.showed)}</div><div class="sub">Cancelled: ${num(d.cancelled)} · No Show: ${num(d.no_show)}</div></div>
+        <div class="kpi-card"><div class="label">Show Rate</div><div class="value ${rateClass(d.show_rate)}">${pct(d.show_rate)}</div><div class="sub">Showed ÷ Meeting date passed</div></div>
+        <div class="kpi-card"><div class="label">Qualified Show</div><div class="value">${num(d.qualified_show)}</div><div class="sub">Great / Ok / Barely Passable</div></div>
+        <div class="kpi-card clickable" onclick="showClosesModal()"><div class="label">Units Closed</div><div class="value">${num(d.units_closed)}</div><div class="sub">Click to view closes</div></div>
+        <div class="kpi-card"><div class="label">Great / Ok / Barely</div><div class="value">${num(d.great_count + d.ok_count + d.barely_passable_count)}</div><div class="sub">${num(d.great_count)} / ${num(d.ok_count)} / ${num(d.barely_passable_count)}</div></div>
+        <div class="kpi-card"><div class="label">Bad / DQ</div><div class="value">${num(d.bad_dq_count)}</div><div class="sub">DQ stage count: ${num(d.dq_count)}</div></div>
+        <div class="kpi-card"><div class="label">Message Sent</div><div class="value">${num(d.message_sent)}</div><div class="sub">Manual weekly input total</div></div>
+        <div class="kpi-card"><div class="label">Links Sent</div><div class="value">${num(d.links_sent)}</div><div class="sub">Manual weekly input total</div></div>
+      `;
+    }
+
+    function renderOverallChannelPanel(data) {
+      if (AppState.scope !== 'overall') {
+        document.getElementById('overall-channel-panel').innerHTML = '';
+        return;
+      }
+      const rows = data.channel_totals.map(row => `
+        <tr>
+          <td><a class="back-link" href="${buildScopeLink(row.scope)}">${escapeHtml(row.label)}</a></td>
+          <td class="num">${num(row.booked)}</td>
+          <td class="num">${num(row.meeting_date_passed)}</td>
+          <td class="num">${num(row.showed)}</td>
+          <td class="num ${rateClass(row.show_rate)}">${pct(row.show_rate)}</td>
+          <td class="num">${num(row.qualified_show)}</td>
+          <td class="num">${num(row.units_closed)}</td>
+        </tr>
+      `).join('');
+      document.getElementById('overall-channel-panel').innerHTML = `
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title">Channel Summary</div>
+            <div class="panel-subtitle">Top-level rollup across Slack, WhatsApp, and SMS</div>
+          </div>
+          <div class="panel-body">
+            <table>
+              <thead>
+                <tr>
+                  <th>Channel</th>
+                  <th class="num">Booked</th>
+                  <th class="num">Meeting Passed</th>
+                  <th class="num">Shows</th>
+                  <th class="num">Show Rate</th>
+                  <th class="num">Qualified</th>
+                  <th class="num">Closed</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderRepPanel(data) {
+      const rows = data.rep_totals.map(row => `
+        <tr>
+          <td>${escapeHtml(row.rep_name)}</td>
+          <td class="num">${num(row.booked)}</td>
+          <td class="num">${num(row.showed)}</td>
+          <td class="num">${num(row.qualified_show)}</td>
+          <td class="num">${num(row.units_closed)}</td>
+        </tr>
+      `).join('');
+      document.getElementById('rep-panel').innerHTML = `
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title">Rep Totals</div>
+            <div class="panel-subtitle">Selected scope across the chosen date range</div>
+          </div>
+          <div class="panel-body">
+            ${rows ? `
+              <table>
+                <thead><tr><th>Rep</th><th class="num">Booked</th><th class="num">Shows</th><th class="num">Qualified</th><th class="num">Closed</th></tr></thead>
+                <tbody>${rows}</tbody>
+              </table>
+            ` : '<div class="empty">No rep totals for this scope.</div>'}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderScopeSummaryPanel(data) {
+      const s = data.summary;
+      document.getElementById('scope-summary-panel').innerHTML = `
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title">Scope Snapshot</div>
+            <div class="panel-subtitle">${escapeHtml(data.scope_label)} tab</div>
+          </div>
+          <div class="panel-body">
+            <table style="min-width:0;">
+              <tbody>
+                <tr><th>Booked</th><td class="num">${num(s.booked)}</td></tr>
+                <tr><th>Meeting Passed</th><td class="num">${num(s.meeting_date_passed)}</td></tr>
+                <tr><th>Shows</th><td class="num">${num(s.showed)}</td></tr>
+                <tr><th>Show Rate</th><td class="num ${rateClass(s.show_rate)}">${pct(s.show_rate)}</td></tr>
+                <tr><th>Qualified</th><td class="num">${num(s.qualified_show)}</td></tr>
+                <tr><th>DQ Stage</th><td class="num">${num(s.dq_count)}</td></tr>
+                <tr><th>Closed</th><td class="num">${num(s.units_closed)}</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    function formatManualValue(field, value) {
+      if (value === null || value === undefined || value === '') return '–';
+      return NUMERIC_MANUAL_FIELDS.has(field) ? num(value) : escapeHtml(value);
+    }
+
+    function renderManualCell(field, row, key) {
+      const value = row[field] ?? '';
+      if (field === 'changes_to_funnel' || field === 'copy' || field === 'groups') {
+        return `<td><textarea class="manual-input" data-row-key="${key}" data-field="${field}">${escapeHtml(value)}</textarea></td>`;
+      }
+      return `<td><input type="number" step="any" class="manual-input" data-row-key="${key}" data-field="${field}" value="${escapeHtml(value)}" /></td>`;
+    }
+
+    /**
+     * Build a single data-row <tr> for one section/week.
+     * If isFirst is true the date cell uses rowspan=2, otherwise it's omitted.
+     */
+    function _buildDataRow(scope, sectionKey, sectionLabel, row, manualFields, isFirst, totalSections) {
+      const key = rowKey(scope, sectionKey, row.week_start);
+      const saveCell = `<td>
+            <button class="save-btn" onclick="saveWeeklyInput('${scope}', '${sectionKey}', '${row.week_start}', '${key}')">Save</button>
+            <div class="save-status" id="status-${key}"></div>
+          </td>`;
+      const manualColumns = manualFields.map(field => renderManualCell(field, row, key)).join('');
+
+      // Message Sent — editable input
+      const msgVal = row.message_sent ?? '';
+      const msgCell = `<td><input type="number" step="any" class="manual-input" data-row-key="${key}" data-field="message_sent" value="${escapeHtml(msgVal)}" /></td>`;
+
+      // Booking Conversion = Booked / Message Sent
+      const bookingConv = (row.message_sent && Number(row.message_sent) > 0)
+        ? (row.booked / Number(row.message_sent)) : null;
+      const convClass = bookingConv !== null ? rateClass(bookingConv) : '';
+      const convCell = `<td class="num ${convClass}">${bookingConv !== null ? pct(bookingConv) : '–'}</td>`;
+
+      const dateCell = isFirst
+        ? `<td class="week-date-cell" rowspan="${totalSections}">${escapeHtml(row.week_start)}</td>`
+        : '';
+
+      const borderClass = !isFirst ? ' group-secondary' : '';
+
+      return `
+        <tr id="row-${key}" class="${borderClass}">
+          ${dateCell}
+          <td class="source-label">${escapeHtml(sectionLabel)}</td>
+          ${msgCell}
+          ${convCell}
+          <td class="num">${num(row.booked)}</td>
+          <td class="num">${num(row.meeting_date_passed)}</td>
+          <td class="num">${num(row.showed)}</td>
+          <td class="num ${rateClass(row.show_rate)}">${pct(row.show_rate)}</td>
+          <td class="num">${num(row.qualified_show)}</td>
+          <td class="num">${num(row.cancelled)}</td>
+          <td class="num">${num(row.no_show)}</td>
+          <td class="num">${num(row.dq_count)}</td>
+          <td class="num">${num(row.units_closed)}</td>
+          <td class="num">${num(row.great_count)}</td>
+          <td class="num">${num(row.ok_count)}</td>
+          <td class="num">${num(row.barely_passable_count)}</td>
+          <td class="num">${num(row.bad_dq_count)}</td>
+          ${manualColumns}
+          ${saveCell}
+        </tr>`;
+    }
+
+    /**
+     * Build a single empty-placeholder <tr> for a section that has no row
+     * for a given week. Uses a colspan to fill the data area.
+     */
+    function _buildEmptyRow(scope, sectionKey, sectionLabel, weekStart, manualFields, isFirst, totalSections, totalCols) {
+      const dateCell = isFirst
+        ? `<td class="week-date-cell" rowspan="${totalSections}">${escapeHtml(weekStart)}</td>`
+        : '';
+      const borderClass = !isFirst ? ' group-secondary' : '';
+      return `
+        <tr class="${borderClass}">
+          ${dateCell}
+          <td class="source-label">${escapeHtml(sectionLabel)}</td>
+          <td colspan="${totalCols}" style="text-align:center; color:var(--text2); font-size:12px;">—</td>
+        </tr>`;
+    }
+
+    /**
+     * Render a single merged table with GHL + Calendly rows grouped by date.
+     */
+    function renderMergedTable(sections, scope) {
+      if (!sections.length) return '<div class="empty">No sections for this scope.</div>';
+
+      const manualFields = manualFieldsForScope(AppState.scope);
+
+      // Collect all unique week dates across sections, sorted
+      const allWeeks = new Set();
+      sections.forEach(s => s.weeks.forEach(w => allWeeks.add(w.week_start)));
+      const sortedWeeks = [...allWeeks].sort();
+
+      // Build a lookup: sectionKey → weekStart → row
+      const lookup = {};
+      sections.forEach(s => {
+        lookup[s.key] = {};
+        s.weeks.forEach(w => { lookup[s.key][w.week_start] = w; });
+      });
+
+      // Number of data columns (everything after Source, before Save)
+      // message_sent + booking_conv + 14 core + trailing manual fields
+      const dataCols = 2 + 14 + manualFields.length + 1; // +1 for Save
+
+      const bodyRows = sortedWeeks.map(weekStart => {
+        return sections.map((section, idx) => {
+          const row = lookup[section.key]?.[weekStart];
+          if (row) {
+            return _buildDataRow(scope, section.key, section.label, row, manualFields, idx === 0, sections.length);
+          }
+          return _buildEmptyRow(scope, section.key, section.label, weekStart, manualFields, idx === 0, sections.length, dataCols);
+        }).join('');
+      }).join('');
+
+      // Summary line
+      const totalBooked = sections.reduce((s, sec) => s + sec.summary.booked, 0);
+      const totalShowed = sections.reduce((s, sec) => s + sec.summary.showed, 0);
+      const totalClosed = sections.reduce((s, sec) => s + sec.summary.units_closed, 0);
+
+      const manualHeaders = manualFields.map(field => {
+        const className = NUMERIC_MANUAL_FIELDS.has(field) ? ' class="num"' : '';
+        return `<th${className}>${MANUAL_FIELD_LABELS[field] || field}</th>`;
+      }).join('');
+
+      return `
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <div class="panel-title">Weekly Comparison Table</div>
+              <div class="panel-subtitle">GHL vs Calendly — grouped by booking week</div>
+            </div>
+            <div class="panel-subtitle">Booked ${num(totalBooked)} · Shows ${num(totalShowed)} · Closed ${num(totalClosed)}</div>
+          </div>
+          <div class="panel-body">
+            <table class="merged-table">
+              <thead>
+                <tr>
+                  <th>Week</th>
+                  <th>Source</th>
+                  <th class="num">Msg Sent</th>
+                  <th class="num">Book Conv.</th>
+                  <th class="num">Booked</th>
+                  <th class="num">Meeting Passed</th>
+                  <th class="num">Shows</th>
+                  <th class="num">Show Rate</th>
+                  <th class="num">Qualified</th>
+                  <th class="num">Cancelled</th>
+                  <th class="num">No Show</th>
+                  <th class="num">DQ</th>
+                  <th class="num">Closed</th>
+                  <th class="num">Great</th>
+                  <th class="num">Ok</th>
+                  <th class="num">Barely</th>
+                  <th class="num">Bad / DQ</th>
+                  ${manualHeaders}
+                  <th>Save</th>
+                </tr>
+              </thead>
+              <tbody>${bodyRows}</tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderSections(data) {
+      // If there's only one section, render the old single-section table
+      if (data.sections.length <= 1) {
+        const section = data.sections[0];
+        if (!section || !section.weeks.length) {
+          document.getElementById('sections-wrap').innerHTML = '<div class="empty">No SLWA sections for this scope.</div>';
+          return;
+        }
+        // Fall through to merged — works fine with 1 section too
+      }
+      document.getElementById('sections-wrap').innerHTML = renderMergedTable(data.sections, data.scope);
+    }
+
+    async function saveWeeklyInput(scope, section, weekStart, key) {
+      const statusEl = document.getElementById(`status-${key}`);
+      const inputs = Array.from(document.querySelectorAll(`[data-row-key="${key}"]`));
+      const payload = {
+        channel_key: scope,
+        section,
+        week_start: weekStart,
+        message_sent: null,
+        links_sent: null,
+        changes_to_funnel: null,
+        copy: null,
+        groups: null,
+      };
+
+      inputs.forEach(input => {
+        const field = input.dataset.field;
+        const raw = input.value.trim();
+        if (field === 'message_sent' || field === 'links_sent') {
+          payload[field] = raw === '' ? null : Number(raw);
+        } else {
+          payload[field] = raw === '' ? null : raw;
+        }
+      });
+
+      if ((payload.message_sent !== null && Number.isNaN(payload.message_sent)) || (payload.links_sent !== null && Number.isNaN(payload.links_sent))) {
+        statusEl.textContent = 'Numeric fields must be valid numbers.';
+        statusEl.style.color = 'var(--red)';
+        return;
+      }
+
+      statusEl.textContent = 'Saving…';
+      statusEl.style.color = 'var(--text2)';
+
+      try {
+        await apiFetch('/api/dashboard/slwa/manual-entry', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        delete AppState.cache[scope];
+        statusEl.textContent = 'Saved';
+        statusEl.style.color = 'var(--green)';
+        await renderScope();
+      } catch (err) {
+        statusEl.textContent = `Save failed: ${err.message}`;
+        statusEl.style.color = 'var(--red)';
+      }
+    }
+
+    async function showClosesModal() {
+      document.getElementById('closes-title').textContent = `Closed Deals — ${AppState.scope}`;
+      document.getElementById('closes-body').innerHTML = '<div class="loading">Loading…</div>';
+      document.getElementById('closes-modal').style.display = 'flex';
+
+      try {
+        const data = await apiFetch(`/api/dashboard/slwa/closes?scope=${encodeURIComponent(AppState.scope)}&${qs()}`);
+        if (!data.data.length) {
+          document.getElementById('closes-body').innerHTML = '<div class="empty">No closed deals for this scope in the selected range.</div>';
+          return;
+        }
+        const rows = data.data.map(row => `
+          <tr>
+            <td>${escapeHtml(row.name)}</td>
+            <td>${escapeHtml(row.rep)}</td>
+            <td>${escapeHtml(row.close_date)}</td>
+            <td class="num">${row.value === null ? '–' : money(row.value)}</td>
+          </tr>
+        `).join('');
+        document.getElementById('closes-body').innerHTML = `
+          <table>
+            <thead><tr><th>Opportunity</th><th>Closer</th><th>Close Date</th><th class="num">Deal Value</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        `;
+      } catch (err) {
+        document.getElementById('closes-body').innerHTML = `<div class="empty">Failed to load closes. ${escapeHtml(err.message)}</div>`;
+      }
+    }
+
+    function closeClosesModal() {
+      document.getElementById('closes-modal').style.display = 'none';
+    }
+
+    document.getElementById('closes-modal').addEventListener('click', (event) => {
+      if (event.target.id === 'closes-modal') closeClosesModal();
+    });
+
+    async function renderScope() {
+      document.getElementById('sections-wrap').innerHTML = '<div class="loading">Loading weekly sections…</div>';
+      const data = await loadScopeData(AppState.scope);
+      renderSummaryCards(data);
+      renderOverallChannelPanel(data);
+      renderRepPanel(data);
+      renderScopeSummaryPanel(data);
+      renderSections(data);
+    }
+
+    async function init() {
+      const scopeFromUrl = params.get('scope');
+      if (scopeFromUrl && ['overall', 'slack', 'whatsapp', 'sms'].includes(scopeFromUrl)) {
+        AppState.scope = scopeFromUrl;
+      }
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.scope === AppState.scope));
+
+      // Populate date inputs
+      document.getElementById('date-start').value = AppState.start;
+      document.getElementById('date-end').value = AppState.end;
+
+      // Load reps for dropdown
+      try {
+        const repsData = await apiFetch('/api/dashboard/reps');
+        const select = document.getElementById('rep-select');
+        const salesGroup = document.createElement('optgroup');
+        salesGroup.label = 'Sales Reps';
+        const otherGroup = document.createElement('optgroup');
+        otherGroup.label = 'Other';
+        (repsData.data || []).forEach(rep => {
+          const opt = document.createElement('option');
+          opt.value = rep.rep_id || '';
+          opt.textContent = rep.rep_name;
+          if (rep.category === 'sales') salesGroup.appendChild(opt);
+          else otherGroup.appendChild(opt);
+        });
+        if (salesGroup.children.length) select.appendChild(salesGroup);
+        if (otherGroup.children.length) select.appendChild(otherGroup);
+        if (AppState.repId) select.value = AppState.repId;
+      } catch (e) { /* reps optional */ }
+
+      renderSubtitle();
+      try {
+        await renderScope();
+      } catch (err) {
+        document.getElementById('summary-cards').innerHTML = `<div class="empty">Failed to load SLWA dashboard. ${escapeHtml(err.message)}</div>`;
+        document.getElementById('sections-wrap').innerHTML = '';
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>
