@@ -305,10 +305,12 @@ def extract_custom_fields(opportunity: dict) -> dict:
 
     GHL returns custom fields as a list of objects. Field value keys vary by type:
       - String/dropdown fields: {"id": "...", "fieldValueString": "...", "type": "string"}
+      - Multi-select fields:    {"id": "...", "fieldValueArray": [...], "type": "MULTIPLE_OPTIONS"}
       - Date fields:            {"id": "...", "fieldValueDate": <ms_epoch_int>, "type": "date"}
 
     Returns a flat dict keyed by our internal field names. Date fields are returned
     as ISO 8601 strings so parse_ghl_datetime() in the normalizer can handle them.
+    Multi-select fields are joined as comma-separated strings.
     """
     result: dict = {}
     raw_fields = opportunity.get("customFields") or []
@@ -317,12 +319,17 @@ def extract_custom_fields(opportunity: dict) -> dict:
         field_id = field.get("id", "")
         key = FIELD_ID_TO_KEY.get(field_id)
         if key:
-            value = (
-                field.get("fieldValueString")
-                or field.get("fieldValue")
-                or field.get("value")
-                or None
-            )
+            # Handle MULTIPLE_OPTIONS (multi-select) fields — values come as an array
+            arr = field.get("fieldValueArray")
+            if arr and isinstance(arr, list):
+                value = ", ".join(str(v) for v in arr if v) or None
+            else:
+                value = (
+                    field.get("fieldValueString")
+                    or field.get("fieldValue")
+                    or field.get("value")
+                    or None
+                )
             if value is None and field.get("fieldValueDate"):
                 value = datetime.fromtimestamp(field["fieldValueDate"] / 1000, tz=timezone.utc).isoformat()
             result[key] = value
