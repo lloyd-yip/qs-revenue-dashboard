@@ -148,3 +148,72 @@ async def get_pipeline_intelligence(
         })
 
     return {"dimension_label": dimension_label, "rows": rows}
+
+
+async def get_segment_closes(
+    session: AsyncSession,
+    group_by: str,
+    segment: str,
+    start: date,
+    end: date,
+    date_by: str,
+    rep_id: str | None = None,
+) -> list[dict]:
+    """Won deals for a specific PI segment — for the closed opp drill-down modal.
+
+    Returns rich opp details: qual fields, financial, call dates.
+    """
+    from sync.ghl_client import DEAL_WON_STAGE_ID
+
+    if group_by not in GROUP_BY_MAP:
+        group_by = "rep"
+
+    group_col, _ = GROUP_BY_MAP[group_by]
+    bf = base_filter(start, end, date_by, rep_id)
+
+    null_labels = {"(Not Set)", "Unknown", "Unassigned"}
+    seg_filter = group_col.is_(None) if segment in null_labels else group_col == segment
+
+    result = await session.execute(
+        select(
+            Opportunity.opportunity_name,
+            Opportunity.opportunity_owner_name,
+            Opportunity.canonical_channel,
+            Opportunity.lead_quality,
+            Opportunity.business_industry,
+            Opportunity.business_fit,
+            Opportunity.intent_to_transform,
+            Opportunity.pre_call_indoctrination,
+            Opportunity.monetary_value,
+            Opportunity.cash_collected,
+            Opportunity.close_date,
+            Opportunity.call1_appointment_date,
+            Opportunity.call2_appointment_date,
+            Opportunity.ghl_opportunity_id,
+        )
+        .where(and_(bf, seg_filter, Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID))
+        .order_by(Opportunity.close_date.desc().nullslast())
+    )
+
+    def _fmt(dt):
+        return dt.strftime("%b %d, %Y") if dt else "—"
+
+    return [
+        {
+            "name": r.opportunity_name or "—",
+            "rep": r.opportunity_owner_name or "Unassigned",
+            "channel": r.canonical_channel or "Unknown",
+            "lead_quality": r.lead_quality or "—",
+            "industry": r.business_industry or "—",
+            "business_fit": r.business_fit or "—",
+            "intent": r.intent_to_transform or "—",
+            "indoctrination": r.pre_call_indoctrination or "—",
+            "contract_value": float(r.monetary_value) if r.monetary_value else None,
+            "cash_collected": float(r.cash_collected) if r.cash_collected else None,
+            "close_date": _fmt(r.close_date),
+            "call1_date": _fmt(r.call1_appointment_date),
+            "call2_date": _fmt(r.call2_appointment_date),
+            "ghl_id": r.ghl_opportunity_id,
+        }
+        for r in result.all()
+    ]

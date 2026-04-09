@@ -266,6 +266,7 @@
   <button class="tab-btn" onclick="setTab('pipeline')">Pipeline Intelligence</button>
   <button class="tab-btn" onclick="setTab('cost')">Funnel Economics</button>
   <button class="tab-btn" onclick="setTab('compliance')">Compliance</button>
+  <button class="tab-btn" onclick="setTab('dead')">Dead Deals</button>
 </nav>
 
 <!-- TAB: Sales Performance -->
@@ -538,6 +539,52 @@
   </div>
 </div>
 
+<div id="tab-dead" class="tab-content">
+  <div class="kpi-row" id="dead-kpis" style="margin-bottom:20px;"></div>
+  <div class="charts-row" style="margin-bottom:20px; gap:20px;">
+    <div class="chart-box" style="flex:1; min-width:260px;">
+      <h3 style="margin-bottom:12px;">DQ Reasons</h3>
+      <div id="dead-dq-reasons"><div class="loading">Loading...</div></div>
+    </div>
+    <div class="chart-box" style="flex:1; min-width:260px;">
+      <h3 style="margin-bottom:12px;">Lost Reasons</h3>
+      <div id="dead-lost-reasons"><div class="loading">Loading...</div></div>
+    </div>
+  </div>
+  <div class="charts-row" style="margin-bottom:20px; gap:20px;">
+    <div class="chart-box" style="flex:1; min-width:260px;">
+      <h3 style="margin-bottom:12px;">By Rep</h3>
+      <div id="dead-by-rep"></div>
+    </div>
+    <div class="chart-box" style="flex:1; min-width:260px;">
+      <h3 style="margin-bottom:12px;">By Channel</h3>
+      <div id="dead-by-channel"></div>
+    </div>
+  </div>
+  <div class="chart-box">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+      <h3>All Dead Deals</h3>
+      <div style="display:flex; gap:8px;">
+        <button class="toggle-btn active" id="dead-filter-all" onclick="filterDeadList('all')">All</button>
+        <button class="toggle-btn" id="dead-filter-dq" onclick="filterDeadList('DQ')">DQ Only</button>
+        <button class="toggle-btn" id="dead-filter-lost" onclick="filterDeadList('Lost')">Lost Only</button>
+      </div>
+    </div>
+    <div id="dead-opp-list" style="overflow-x:auto;"></div>
+  </div>
+</div>
+
+<!-- PI closed deals drill-down modal (wider — shows full opp details) -->
+<div id="pi-closes-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:1000; align-items:center; justify-content:center;" onclick="if(event.target===this)closePiClosesModal()">
+  <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); width:1000px; max-width:96vw; max-height:88vh; display:flex; flex-direction:column;">
+    <div style="display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid var(--border);">
+      <h3 id="pi-closes-modal-title" style="font-size:14px; font-weight:600;"></h3>
+      <button onclick="closePiClosesModal()" style="background:none; border:none; color:var(--text2); font-size:20px; cursor:pointer; line-height:1;">×</button>
+    </div>
+    <div id="pi-closes-modal-body" style="overflow-y:auto; padding:0;"></div>
+  </div>
+</div>
+
 <script>
 // ─── App State ────────────────────────────────────────────────────────────────
 const AppState = {
@@ -746,6 +793,7 @@ async function renderTab(tab) {
   else if (tab === 'pipeline') await renderPipelineIntelligence();
   else if (tab === 'cost') await renderCostAnalysis();
   else if (tab === 'compliance') await renderCompliance();
+  else if (tab === 'dead') await renderDeadDeals();
   injectTooltips();
 }
 
@@ -1487,17 +1535,28 @@ async function renderPipelineIntelligence() {
       return;
     }
 
+    // Post-call dimensions: industry/quality/intent/etc. are only recorded after a call shows,
+    // so C1 Show% is always 100% for these — meaningless. Hide it.
+    const POST_CALL_DIMS = new Set(['lead_quality','intent','indoctrination','business_fit','pain_goal','industry','current_revenue']);
+    const showC1Rate = !POST_CALL_DIMS.has(groupBy);
+
     const tableRows = rows.map(r => {
       const cycleTxt = r.avg_cycle_days !== null ? `${r.avg_cycle_days}d` : '<span style="color:var(--text2);">—</span>';
+      const c1ShowCell = showC1Rate
+        ? `<td class="num ${rateClass(r.show_rate_1st)}">${pct(r.show_rate_1st)}</td>`
+        : `<td class="num" style="color:var(--text2);" title="Not applicable — this field is only recorded post-show, so show rate is always 100%">—</td>`;
+      const closedCell = r.units_closed > 0
+        ? `<td class="num"><span class="closes-link" onclick="showPiClosesModal('${groupBy}','${r.segment.replace(/'/g,"\\'")}');event.stopPropagation();">↗ ${num(r.units_closed)}</span></td>`
+        : `<td class="num">${num(r.units_closed)}</td>`;
       return `<tr>
         <td style="font-weight:500;">${r.segment}</td>
         <td class="num">${num(r.calls_booked_1st)}</td>
-        <td class="num ${rateClass(r.show_rate_1st)}">${pct(r.show_rate_1st)}</td>
+        ${c1ShowCell}
         <td class="num ${rateClass(r.qual_rate)}">${pct(r.qual_rate)}</td>
         <td class="num">${num(r.calls_booked_2nd)}</td>
         <td class="num ${rateClass(r.show_rate_2nd)}">${pct(r.show_rate_2nd)}</td>
         <td class="num ${rateClass(r.close_rate)}">${pct(r.close_rate)}</td>
-        <td class="num">${num(r.units_closed)}</td>
+        ${closedCell}
         <td class="num" style="color:var(--text2);">${cycleTxt}</td>
         <td class="num" style="color:var(--green);">${r.contract_value ? money(r.contract_value) : '—'}</td>
         <td class="num" style="color:var(--green);">${r.cash_collected ? money(r.cash_collected) : '—'}</td>
@@ -1968,6 +2027,180 @@ async function init() {
 }
 
 init();
+
+// ─── Tab 6: Dead Deals ────────────────────────────────────────────────────────
+let _deadData = null; // cache for filter toggles
+
+async function renderDeadDeals() {
+  const repParam = AppState.repId ? `&rep_id=${AppState.repId}` : '';
+  try {
+    const res = await apiFetch(`/api/dashboard/dead-deals?${qs()}${repParam}`);
+    _deadData = res.data;
+    renderDeadKPIs(_deadData.summary);
+    renderReasonsList('dead-dq-reasons', _deadData.dq_reasons, _deadData.summary.dq_count);
+    renderReasonsList('dead-lost-reasons', _deadData.lost_reasons, _deadData.summary.lost_count);
+    renderDeadByRep(_deadData.by_rep);
+    renderDeadByChannel(_deadData.by_channel);
+    renderDeadOppList(_deadData.opp_list, 'all');
+  } catch(e) {
+    document.getElementById('dead-kpis').innerHTML = `<div class="empty">Failed to load. ${e.message}</div>`;
+  }
+}
+
+function renderDeadKPIs(s) {
+  document.getElementById('dead-kpis').innerHTML = `
+    <div class="kpi-card"><div class="kpi-label">Total Dead</div><div class="kpi-value">${num(s.total_dead)}</div><div class="kpi-sub">DQ + Lost</div></div>
+    <div class="kpi-card"><div class="kpi-label">DQ'd</div><div class="kpi-value">${num(s.dq_count)}</div><div class="kpi-sub">Disqualified after call</div></div>
+    <div class="kpi-card"><div class="kpi-label">Lost</div><div class="kpi-value">${num(s.lost_count)}</div><div class="kpi-sub">Reached close, didn't win</div></div>
+    <div class="kpi-card"><div class="kpi-label">Revenue Lost</div><div class="kpi-value" style="color:var(--red);">${money(s.revenue_lost)}</div><div class="kpi-sub">Deal value of Lost opps</div></div>
+    <div class="kpi-card"><div class="kpi-label">DQ Rate</div><div class="kpi-value ${rateClass(s.dq_rate, true)}">${pct(s.dq_rate)}</div><div class="kpi-sub">DQs ÷ C1 shows</div></div>
+    <div class="kpi-card"><div class="kpi-label">Lost Rate</div><div class="kpi-value ${rateClass(s.lost_rate, true)}">${pct(s.lost_rate)}</div><div class="kpi-sub">Lost ÷ C2 shows</div></div>
+  `;
+}
+
+function renderReasonsList(elId, reasons, total) {
+  const el = document.getElementById(elId);
+  if (!reasons || !reasons.length) {
+    el.innerHTML = '<div class="empty" style="padding:16px;">No data for this period.</div>';
+    return;
+  }
+  const rows = reasons.map(r => {
+    const barW = total > 0 ? Math.round((r.count / total) * 100) : 0;
+    return `<div style="margin-bottom:10px;">
+      <div style="display:flex; justify-content:space-between; margin-bottom:3px;">
+        <span style="font-size:13px; color:var(--text);">${r.reason}</span>
+        <span style="font-size:13px; font-weight:600;">${num(r.count)} <span style="color:var(--text2); font-weight:400;">(${pct(r.pct)})</span></span>
+      </div>
+      <div style="height:6px; background:var(--surface2); border-radius:3px;">
+        <div style="height:6px; width:${barW}%; background:var(--red); border-radius:3px; opacity:0.75;"></div>
+      </div>
+    </div>`;
+  }).join('');
+  el.innerHTML = rows;
+}
+
+function renderDeadByRep(byRep) {
+  const el = document.getElementById('dead-by-rep');
+  if (!byRep || !byRep.length) { el.innerHTML = '<div class="empty">No data.</div>'; return; }
+  const rows = byRep.map(r => `<tr>
+    <td style="font-weight:500;">${r.rep}</td>
+    <td class="num">${num(r.dq_count)}</td>
+    <td class="num">${num(r.lost_count)}</td>
+    <td class="num" style="font-weight:600;">${num(r.total_dead)}</td>
+    <td class="num" style="color:var(--red);">${r.revenue_lost > 0 ? money(r.revenue_lost) : '—'}</td>
+  </tr>`).join('');
+  el.innerHTML = `<table><thead><tr>
+    <th>Rep</th><th class="num">DQ</th><th class="num">Lost</th><th class="num">Total</th><th class="num">Rev Lost</th>
+  </tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function renderDeadByChannel(byChannel) {
+  const el = document.getElementById('dead-by-channel');
+  if (!byChannel || !byChannel.length) { el.innerHTML = '<div class="empty">No data.</div>'; return; }
+  const rows = byChannel.map(r => `<tr>
+    <td style="font-weight:500;">${r.channel}</td>
+    <td class="num">${num(r.dq_count)}</td>
+    <td class="num">${num(r.lost_count)}</td>
+    <td class="num" style="font-weight:600;">${num(r.total_dead)}</td>
+    <td class="num" style="color:var(--red);">${r.revenue_lost > 0 ? money(r.revenue_lost) : '—'}</td>
+  </tr>`).join('');
+  el.innerHTML = `<table><thead><tr>
+    <th>Channel</th><th class="num">DQ</th><th class="num">Lost</th><th class="num">Total</th><th class="num">Rev Lost</th>
+  </tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function filterDeadList(type) {
+  ['all','dq','lost'].forEach(k => document.getElementById(`dead-filter-${k}`)?.classList.remove('active'));
+  document.getElementById(`dead-filter-${type.toLowerCase()}`)?.classList.add('active');
+  if (!_deadData) return;
+  const filtered = type === 'all' ? _deadData.opp_list : _deadData.opp_list.filter(o => o.type === type);
+  renderDeadOppList(filtered, type);
+}
+
+function renderDeadOppList(opps, type) {
+  const el = document.getElementById('dead-opp-list');
+  if (!opps || !opps.length) {
+    el.innerHTML = '<div class="empty" style="padding:20px;">No dead deals for this period.</div>';
+    return;
+  }
+  const rows = opps.map(o => {
+    const typeBadge = o.type === 'DQ'
+      ? `<span style="background:rgba(239,68,68,0.12);color:#f87171;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600;">DQ</span>`
+      : `<span style="background:rgba(251,146,60,0.12);color:#fb923c;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600;">LOST</span>`;
+    return `<tr>
+      <td style="font-weight:500;">${o.name}</td>
+      <td>${o.rep}</td>
+      <td>${o.channel}</td>
+      <td>${o.industry}</td>
+      <td>${typeBadge}</td>
+      <td>${o.reason}</td>
+      <td class="num">${o.value !== null ? money(o.value) : '—'}</td>
+      <td>${o.date}</td>
+    </tr>`;
+  }).join('');
+  el.innerHTML = `<table style="min-width:900px;">
+    <thead><tr>
+      <th>Opportunity</th><th>Rep</th><th>Channel</th><th>Industry</th>
+      <th>Type</th><th>Reason</th><th class="num">Deal Value</th><th>Date</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+// ─── PI Segment Closes Modal ──────────────────────────────────────────────────
+async function showPiClosesModal(groupBy, segment) {
+  const modal = document.getElementById('pi-closes-modal');
+  const body = document.getElementById('pi-closes-modal-body');
+  const title = document.getElementById('pi-closes-modal-title');
+  title.textContent = `Closed Deals — ${segment}`;
+  body.innerHTML = '<div class="loading" style="padding:24px;">Loading...</div>';
+  modal.style.display = 'flex';
+
+  try {
+    const repParam = AppState.repId ? `&rep_id=${AppState.repId}` : '';
+    const enc = encodeURIComponent(segment);
+    const res = await apiFetch(
+      `/api/dashboard/pipeline-intelligence/closes?group_by=${groupBy}&segment=${enc}&${qs()}${repParam}`
+    );
+    if (!res.data.length) {
+      body.innerHTML = '<div class="empty" style="padding:24px;">No closed deals for this segment in the selected period.</div>';
+      return;
+    }
+    const rows = res.data.map(d => `<tr>
+      <td style="font-weight:500;">${d.name}</td>
+      <td>${d.rep}</td>
+      <td>${d.channel}</td>
+      <td>${d.close_date}</td>
+      <td>${d.call1_date}</td>
+      <td>${d.call2_date}</td>
+      <td><span style="font-size:11px; background:rgba(99,102,241,0.1); padding:2px 6px; border-radius:4px;">${d.lead_quality}</span></td>
+      <td>${d.industry}</td>
+      <td>${d.business_fit}</td>
+      <td>${d.intent}</td>
+      <td class="num" style="color:var(--green);">${d.contract_value !== null ? money(d.contract_value) : '—'}</td>
+      <td class="num" style="color:var(--green);">${d.cash_collected !== null ? money(d.cash_collected) : '—'}</td>
+    </tr>`).join('');
+    body.innerHTML = `
+      <div style="overflow-x:auto; padding:0;">
+        <table style="min-width:1100px;">
+          <thead><tr>
+            <th>Opportunity</th><th>Rep</th><th>Channel</th>
+            <th>Close Date</th><th>C1 Date</th><th>C2 Date</th>
+            <th>Lead Quality</th><th>Industry</th><th>Business Fit</th><th>Intent</th>
+            <th class="num" style="color:var(--green);">Contract Value</th>
+            <th class="num" style="color:var(--green);">Cash Collected</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+  } catch(e) {
+    body.innerHTML = `<div class="empty" style="padding:24px;">Failed to load. ${e.message}</div>`;
+  }
+}
+
+function closePiClosesModal() {
+  document.getElementById('pi-closes-modal').style.display = 'none';
+}
 </script>
 </body>
 </html>

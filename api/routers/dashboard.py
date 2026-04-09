@@ -53,7 +53,8 @@ from db.queries.debug_drilldown import get_drilldown_opps
 from db.queries.funnel_economics import get_period_inputs, upsert_marketing_spend, upsert_rep_compensations
 from db.queries.metrics_by_rep import get_by_rep, get_daily_activity, get_rep_closes, get_rep_opps
 from db.queries.metrics_summary import get_summary
-from db.queries.pipeline_intelligence import get_pipeline_intelligence
+from db.queries.pipeline_intelligence import get_pipeline_intelligence, get_segment_closes
+from db.queries.dead_deals import get_dead_deals_data
 from db.queries.reps import get_reps
 from db.queries.slwa import get_slwa_closes, get_slwa_weekly_dashboard, upsert_slwa_weekly_input
 from db.queries.sync_status import get_recent_sync_runs
@@ -365,6 +366,34 @@ async def rep_rankings(
 
 VALID_GROUP_BY = {"rep", "channel", "lead_quality", "intent", "indoctrination",
                   "business_fit", "pain_goal", "industry", "current_revenue"}
+
+
+@router.get("/pipeline-intelligence/closes")
+async def pi_segment_closes(
+    group_by: str = Query("rep", description="Same values as /pipeline-intelligence"),
+    segment: str = Query(..., description="Segment value to drill into (e.g. 'Consulting & Advisory')"),
+    rep_id: str | None = Query(None),
+    params: tuple = Depends(_date_params),
+    db: AsyncSession = Depends(get_db),
+):
+    """Won deal details for a specific Pipeline Intelligence segment."""
+    start, end, date_by = params
+    if group_by not in VALID_GROUP_BY:
+        group_by = "rep"
+    data = await get_segment_closes(db, group_by, segment, start, end, date_by, rep_id)
+    return {"segment": segment, "dimension": group_by, "count": len(data), "data": data}
+
+
+@router.get("/dead-deals")
+async def dead_deals(
+    rep_id: str | None = Query(None),
+    params: tuple = Depends(_date_params),
+    db: AsyncSession = Depends(get_db),
+):
+    """Dead Deals tab — DQ'd and Lost opportunities with reasons, by-rep, by-channel breakdowns."""
+    start, end, date_by = params
+    data = await get_dead_deals_data(db, start, end, date_by, rep_id)
+    return {"data": data, "meta": _meta(start, end, date_by).__dict__}
 
 
 @router.get("/pipeline-intelligence")

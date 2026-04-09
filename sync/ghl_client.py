@@ -43,6 +43,7 @@ DISQUALIFIED_STAGE_ID = "62448525-88ab-4e82-b414-b6880e69e2de"
 # 1st Call No-Show / Cancelled stage IDs
 NO_SHOW_STAGE_ID = "1201d3c3-166e-4c01-90b5-7f02e02a77c4"
 CANCELLED_STAGE_ID = "b9624f39-9697-418c-864b-bd28c1db6182"
+DEAL_LOST_STAGE_ID = "80cba97d-2f60-4485-8953-4b9569b1ddc1"
 
 # Follow Up calendar IDs — used to identify the first follow-up (2nd call) appointment.
 # Only appointments in these calendars are considered when deriving call2 date/status.
