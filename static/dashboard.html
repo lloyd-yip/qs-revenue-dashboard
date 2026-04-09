@@ -2050,11 +2050,9 @@ async function renderDeadDeals() {
 function renderDeadKPIs(s) {
   document.getElementById('dead-kpis').innerHTML = `
     <div class="kpi-card"><div class="kpi-label">Total Dead</div><div class="kpi-value">${num(s.total_dead)}</div><div class="kpi-sub">DQ + Lost</div></div>
-    <div class="kpi-card"><div class="kpi-label">DQ'd</div><div class="kpi-value">${num(s.dq_count)}</div><div class="kpi-sub">Disqualified after call</div></div>
+    <div class="kpi-card"><div class="kpi-label">DQ'd</div><div class="kpi-value">${num(s.dq_count)}</div><div class="kpi-sub">Disqualified (stage or quality)</div></div>
     <div class="kpi-card"><div class="kpi-label">Lost</div><div class="kpi-value">${num(s.lost_count)}</div><div class="kpi-sub">Reached close, didn't win</div></div>
-    <div class="kpi-card"><div class="kpi-label">Revenue Lost</div><div class="kpi-value" style="color:var(--red);">${money(s.revenue_lost)}</div><div class="kpi-sub">Deal value of Lost opps</div></div>
     <div class="kpi-card"><div class="kpi-label">DQ Rate</div><div class="kpi-value ${rateClass(s.dq_rate, true)}">${pct(s.dq_rate)}</div><div class="kpi-sub">DQs ÷ C1 shows</div></div>
-    <div class="kpi-card"><div class="kpi-label">Lost Rate</div><div class="kpi-value ${rateClass(s.lost_rate, true)}">${pct(s.lost_rate)}</div><div class="kpi-sub">Lost ÷ C2 shows</div></div>
   `;
 }
 
@@ -2087,10 +2085,9 @@ function renderDeadByRep(byRep) {
     <td class="num">${num(r.dq_count)}</td>
     <td class="num">${num(r.lost_count)}</td>
     <td class="num" style="font-weight:600;">${num(r.total_dead)}</td>
-    <td class="num" style="color:var(--red);">${r.revenue_lost > 0 ? money(r.revenue_lost) : '—'}</td>
   </tr>`).join('');
   el.innerHTML = `<table><thead><tr>
-    <th>Rep</th><th class="num">DQ</th><th class="num">Lost</th><th class="num">Total</th><th class="num">Rev Lost</th>
+    <th>Rep</th><th class="num">DQ</th><th class="num">Lost</th><th class="num">Total</th>
   </tr></thead><tbody>${rows}</tbody></table>`;
 }
 
@@ -2102,10 +2099,9 @@ function renderDeadByChannel(byChannel) {
     <td class="num">${num(r.dq_count)}</td>
     <td class="num">${num(r.lost_count)}</td>
     <td class="num" style="font-weight:600;">${num(r.total_dead)}</td>
-    <td class="num" style="color:var(--red);">${r.revenue_lost > 0 ? money(r.revenue_lost) : '—'}</td>
   </tr>`).join('');
   el.innerHTML = `<table><thead><tr>
-    <th>Channel</th><th class="num">DQ</th><th class="num">Lost</th><th class="num">Total</th><th class="num">Rev Lost</th>
+    <th>Channel</th><th class="num">DQ</th><th class="num">Lost</th><th class="num">Total</th>
   </tr></thead><tbody>${rows}</tbody></table>`;
 }
 

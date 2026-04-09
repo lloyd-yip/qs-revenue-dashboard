@@ -11,11 +11,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Opportunity
 from db.queries.common import base_filter, has_1st_call, has_2nd_call, showed_1st_call_expr, showed_2nd_call_expr
-from sync.ghl_client import DEAL_LOST_STAGE_ID
+from sync.ghl_client import DEAL_LOST_STAGE_ID, DISQUALIFIED_STAGE_ID
 
 
 def _is_dq():
-    return Opportunity.lead_quality == "DQ"
+    # Reps disqualify via pipeline stage — lead_quality='DQ' is never set in practice
+    return or_(
+        Opportunity.lead_quality == "DQ",
+        Opportunity.pipeline_stage_id == DISQUALIFIED_STAGE_ID,
+    )
 
 
 def _is_lost():
@@ -52,9 +56,6 @@ async def get_dead_deals_data(
         select(
             func.count(case((_is_dq(), 1))).label("dq_count"),
             func.count(case((_is_lost(), 1))).label("lost_count"),
-            func.coalesce(
-                func.sum(case((_is_lost(), Opportunity.monetary_value))), 0
-            ).label("revenue_lost"),
             func.count(case((and_(is_1st, showed_1st), 1))).label("total_c1_shows"),
             func.count(case((and_(is_2nd, showed_2nd), 1))).label("total_c2_shows"),
         ).where(bf)
@@ -65,9 +66,7 @@ async def get_dead_deals_data(
         "dq_count": s.dq_count,
         "lost_count": s.lost_count,
         "total_dead": s.dq_count + s.lost_count,
-        "revenue_lost": float(s.revenue_lost),
         "dq_rate": _safe_rate(s.dq_count, s.total_c1_shows),
-        "lost_rate": _safe_rate(s.lost_count, s.total_c2_shows),
     }
 
     # ── DQ Reasons ────────────────────────────────────────────────────────────
@@ -108,9 +107,6 @@ async def get_dead_deals_data(
             func.coalesce(Opportunity.opportunity_owner_name, "Unassigned").label("rep"),
             func.count(case((_is_dq(), 1))).label("dq_count"),
             func.count(case((_is_lost(), 1))).label("lost_count"),
-            func.coalesce(
-                func.sum(case((_is_lost(), Opportunity.monetary_value))), 0
-            ).label("revenue_lost"),
         )
         .where(and_(bf, _is_dead()))
         .group_by(Opportunity.opportunity_owner_name)
@@ -122,7 +118,6 @@ async def get_dead_deals_data(
             "dq_count": r.dq_count,
             "lost_count": r.lost_count,
             "total_dead": r.dq_count + r.lost_count,
-            "revenue_lost": float(r.revenue_lost),
         }
         for r in by_rep_res.all()
     ]
@@ -133,9 +128,6 @@ async def get_dead_deals_data(
             func.coalesce(Opportunity.canonical_channel, "Unknown").label("channel"),
             func.count(case((_is_dq(), 1))).label("dq_count"),
             func.count(case((_is_lost(), 1))).label("lost_count"),
-            func.coalesce(
-                func.sum(case((_is_lost(), Opportunity.monetary_value))), 0
-            ).label("revenue_lost"),
         )
         .where(and_(bf, _is_dead()))
         .group_by(Opportunity.canonical_channel)
@@ -147,7 +139,6 @@ async def get_dead_deals_data(
             "dq_count": r.dq_count,
             "lost_count": r.lost_count,
             "total_dead": r.dq_count + r.lost_count,
-            "revenue_lost": float(r.revenue_lost),
         }
         for r in by_channel_res.all()
     ]
