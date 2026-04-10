@@ -66,7 +66,7 @@ async def get_lead_source_breakdown(
             ).label("cash_collected_sum"),
             # Qual/DQ per channel (1st call shows only)
             func.count(
-                case((and_(is_1st, showed_1st, ~Opportunity.outcome_unfilled), 1))
+                case((and_(is_1st, showed_1st), 1))
             ).label("shows_1st"),
             func.count(
                 case((

@@ -74,7 +74,7 @@ async def get_pipeline_intelligence(
             func.coalesce(group_col, "(Not Set)").label("segment"),
             # C1 metrics
             func.count(case((is_1st, 1))).label("calls_booked_1st"),
-            func.count(case((and_(is_1st, showed_1st, ~Opportunity.outcome_unfilled), 1))).label("shows_1st"),
+            func.count(case((and_(is_1st, showed_1st), 1))).label("shows_1st"),
             func.count(case((and_(is_1st, bookable_1st_call_expr()), 1))).label("bookable_1st"),
             # Qualification
             func.count(

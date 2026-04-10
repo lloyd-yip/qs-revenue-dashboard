@@ -38,9 +38,9 @@ async def get_summary(
         select(
             # Calls booked (1st call) — opps with a 1st call date in scope
             func.count(case((is_1st, 1))).label("calls_booked_1st"),
-            # Shows (1st call) — showed + had 1st call + no compliance failure
+            # Shows (1st call) — showed + had 1st call
             func.count(
-                case((and_(is_1st, showed_1st, ~Opportunity.outcome_unfilled), 1))
+                case((and_(is_1st, showed_1st), 1))
             ).label("shows_1st"),
             # Bookable 1st calls (show rate denominator: Showed + No Show + Cancelled)
             func.count(

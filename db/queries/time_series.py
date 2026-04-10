@@ -44,7 +44,7 @@ async def get_time_series(
             period_expr.label("period"),
             func.count(case((is_1st, 1))).label("calls_booked"),
             func.count(
-                case((and_(is_1st, showed_1st, ~Opportunity.rep_compliance_failure), 1))
+                case((and_(is_1st, showed_1st), 1))
             ).label("shows"),
             func.count(
                 case((and_(is_1st, bookable_1st_call_expr()), 1))
