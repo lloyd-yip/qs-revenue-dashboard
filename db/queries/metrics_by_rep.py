@@ -160,6 +160,11 @@ async def get_by_rep(
                     1,
                 ))
             ).label("dq_count"),
+            func.count(case((and_(is_1st, showed_1st, Opportunity.lead_quality == "Great"), 1))).label("lq_great"),
+            func.count(case((and_(is_1st, showed_1st, Opportunity.lead_quality == "Ok"), 1))).label("lq_ok"),
+            func.count(case((and_(is_1st, showed_1st, Opportunity.lead_quality == "Barely Passable"), 1))).label("lq_barely"),
+            func.count(case((and_(is_1st, showed_1st, Opportunity.lead_quality == "Bad"), 1))).label("lq_bad"),
+            func.count(case((and_(is_1st, showed_1st, Opportunity.lead_quality.is_(None)), 1))).label("lq_missing"),
             func.count(
                 case((Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID, 1))
             ).label("units_closed"),
@@ -258,6 +263,11 @@ async def get_by_rep(
             "compliance_failures": row.compliance_failures,
             "outcome_not_logged_count": row.outcome_not_logged_count,
             "avg_cycle_days": round(float(row.avg_cycle_days), 1) if row.avg_cycle_days is not None else None,
+            "lq_great": row.lq_great,
+            "lq_ok": row.lq_ok,
+            "lq_barely": row.lq_barely,
+            "lq_bad": row.lq_bad,
+            "lq_missing": row.lq_missing,
         }
         for row in result.all()
     ]

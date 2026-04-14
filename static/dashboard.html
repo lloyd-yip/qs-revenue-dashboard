@@ -1250,6 +1250,11 @@ function renderRepBreakdown(reps) {
       <td class="num" style="color:var(--green);">${r.contract_value ? money(r.contract_value) : '—'}</td>
       <td class="num" style="color:var(--green);">${r.cash_collected ? money(r.cash_collected) : '—'}</td>
       <td class="num ${r.outcome_not_logged_count > 0 ? 'rate-warn' : ''}">${notLoggedCell}</td>
+      <td class="num" style="color:#22c55e;">${num(r.lq_great)}</td>
+      <td class="num" style="color:#84cc16;">${num(r.lq_ok)}</td>
+      <td class="num" style="color:var(--yellow);">${num(r.lq_barely)}</td>
+      <td class="num" style="color:var(--red);">${num(r.lq_bad)}</td>
+      <td class="num" style="color:var(--text2);">${num(r.lq_missing)}</td>
     </tr>`;
   }).join('');
   document.getElementById('rep-table-view').innerHTML = `
@@ -1266,6 +1271,11 @@ function renderRepBreakdown(reps) {
         <th class="num" style="color:var(--green);" title="Coming soon — awaiting financial data">Contract Value</th>
         <th class="num" style="color:var(--green);" title="Coming soon — awaiting financial data">Cash Collected</th>
         <th class="num">Not Logged</th>
+        <th class="num" style="color:#22c55e;">Great</th>
+        <th class="num" style="color:#84cc16;">Ok</th>
+        <th class="num" style="color:var(--yellow);">Barely Pass.</th>
+        <th class="num" style="color:var(--red);">Bad</th>
+        <th class="num" style="color:var(--text2);">Missing</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
