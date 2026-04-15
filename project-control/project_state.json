@@ -1,59 +1,60 @@
 {
   "project_name": "QS Revenue Dashboard",
-  "description": "Internal sales performance dashboard — call volume, show rates, qualification, lead source attribution, compliance tracking",
+  "description": "Internal sales performance dashboard — call volume, show rates, qualification, lead source attribution, compliance tracking, funnel economics",
   "business_entity": "quantum_scaling",
-  "last_updated": "2026-03-27T22:00:00Z",
+  "last_updated": "2026-04-15T00:00:00Z",
   "current_state": {
     "phase_name": "Phase 1 - Live & Iterating",
     "status": "live"
   },
   "project_overview": {
-    "what": "The QS Revenue Dashboard pulls sales data from GoHighLevel (CRM) and turns it into a real-time performance dashboard. It tracks call volume, show rates, close rates, lead source attribution, rep-level performance, and compliance for Quantum Scaling's sales team.",
+    "what": "The QS Revenue Dashboard pulls sales data from GoHighLevel (CRM) and turns it into a real-time performance dashboard. It tracks call volume, show rates, close rates, lead source attribution, rep-level performance, compliance, and funnel economics (RORI per rep once financial data is entered).",
     "why": "Lloyd needs to see exactly how each sales rep is performing, which lead sources are producing revenue, and where the pipeline is leaking — without manually pulling GHL reports. This is the operational nervous system for the sales org.",
     "end_state": "A comprehensive revenue intelligence platform with real-time KPIs, financial integration (Xero for actual revenue vs pipeline), automated anomaly detection, and API endpoints that feed the OpenClaw agent layer for cross-app synthesis.",
-    "current_summary": "Dashboard is fully live and in daily use. Shows key sales metrics at a glance — call volume, show rates, close rates, and lead source performance. Each rep's numbers are clickable to see the specific deals behind them. Compliance tracking flags reps who aren't logging outcomes or notes. Sales data syncs automatically from GoHighLevel every 15 minutes, and the backend is ready for other tools to pull data from it."
+    "current_summary": "Dashboard is live and in daily use across 5 tabs: Sales Performance, Lead Quality by Channel, Pipeline Intelligence, Funnel Economics, and Compliance. Funnel Economics tab has RORI infrastructure built — waiting on accounting data (marketing spend + rep comp) to go live. Show rate calculation was corrected this session. Tooltips on all KPI labels. Rep breakdown now shows lead quality distribution per rep."
   },
-  "resume_here": "Dashboard is live and usable. Phase 1 feature work is largely complete. Next priority is Phase 2 (Xero/WAP financial integration) or additional Phase 1 polish items (WoW deltas on 7-day table, export features). Railway deploy workflow: push to `railway` remote via `git push railway $(git subtree split --prefix=qs-dashboard HEAD):main --force` — do NOT rely on `origin` push for qs-dashboard deploys.",
+  "resume_here": "Dashboard is live. Show rate numerator bug was fixed (compliance flags no longer gate show counts). Funnel Economics tab is built but needs financial inputs to show numbers — need marketing spend + rep comp from accounting. Next priority: collect accounting data (Xero + WAP) and enter into dashboard. Railway deploy: `git push qs-dashboard $(git subtree split --prefix=qs-dashboard HEAD):main --force`.",
   "current_phase": {
     "name": "Phase 1 - Live & Iterating",
-    "goal": "Full internal dashboard for Lloyd to monitor sales team performance: call volume per rep, show rates, qualification breakdowns, lead source attribution, compliance tracking",
+    "goal": "Full internal dashboard for Lloyd to monitor sales team performance: call volume per rep, show rates, qualification breakdowns, lead source attribution, compliance tracking, funnel economics with RORI",
     "current_focus": [
-      "Phase 1 feature complete — dashboard live and in daily use",
-      "Minor UX additions as needed (week navigation on 7-day table just shipped)"
+      "Collecting accounting data (Xero + WAP) to populate Funnel Economics financial inputs",
+      "Show rate accuracy improvements shipped — monitoring for correctness"
     ],
     "immediate_next_steps": [
-      "Confirm week navigation working correctly after latest deploy",
-      "Remove diagnostic v3 marker from dashboard header (cosmetic cleanup)",
-      "Evaluate readiness for Phase 2 (Xero financial integration)"
+      "Pull marketing spend per period from Xero / bookkeeper — enter into Funnel Economics panel",
+      "Pull per-rep compensation (base + commission) per period — enter into Funnel Economics panel",
+      "Pull actual contract values + cash collected per deal from WAP — these populate Contract RORI and Cash RORI",
+      "Update Hermes cron show rate alert query to use new IN ('Showed','No Show','Cancelled') denominator formula"
     ],
     "known_issues": [
+      {
+        "title": "Funnel Economics RORI columns all show — until marketing spend + rep comp are entered",
+        "severity": "medium",
+        "status": "open",
+        "resolution": "Enter period data via the collapsible Period Financial Inputs panel on the Funnel Economics tab. Data needed: total marketing spend per period, per-rep total comp per period."
+      },
       {
         "title": "Railway deploy requires manual subtree push — origin push does NOT redeploy qs-dashboard",
         "severity": "low",
         "status": "understood",
-        "resolution": "qs-dashboard service watches `qs-revenue-dashboard` repo (separate from monorepo). Deploy cmd: git push railway $(git subtree split --prefix=qs-dashboard HEAD):main --force"
-      },
-      {
-        "title": "Diagnostic v3 marker visible in dashboard header",
-        "severity": "low",
-        "status": "open",
-        "resolution": "Remove `<span style='...'>v3</span>` from header in dashboard.html and redeploy"
+        "resolution": "Deploy cmd: git push qs-dashboard $(git subtree split --prefix=qs-dashboard HEAD):main --force"
       }
     ]
   },
   "next_phase": {
     "name": "Phase 2 - Financial Integration",
-    "goal": "Connect Xero and WAP for payment processing and cash collection visibility alongside sales performance",
+    "goal": "Connect Xero and WAP for automated payment processing and cash collection visibility — replace manual financial inputs in Funnel Economics with live pulled data",
     "key_features": [
-      "Xero API integration for revenue/payment data",
-      "WAP integration for cash collection tracking",
-      "Combined view: sales pipeline → payment → cash collected"
+      "Xero API integration — pull total marketing spend and rep comp automatically per period",
+      "WAP integration — pull actual contract values and cash collected per deal",
+      "Funnel Economics financial inputs auto-populated instead of manually entered"
     ],
     "tools_and_apis": [
       "Xero API",
       "WAP API"
     ],
-    "prerequisites": "Phase 1 confirmed stable in daily use. KPI definitions validated by Lloyd against real team data.",
+    "prerequisites": "Accounting data manually validated first (Phase 1 manual entry). Confirm Xero field mappings match expected format.",
     "deferred_items": []
   },
   "future_phases": [
@@ -66,20 +67,32 @@
   ],
   "recent_milestones": [
     {
+      "description": "Show rate numerator bug fixed across all 5 query files — compliance flags (outcome_unfilled, rep_compliance_failure) no longer gate the show count. showed_1st_call_expr() is now the sole show signal, correctly counting stage-based shows where rep moved stage without updating appointment status field.",
+      "date": "2026-04-15"
+    },
+    {
+      "description": "Lead quality distribution columns added to Rep Breakdown table — Great / Ok / Barely Pass. / Bad / Missing counts visible per rep on Sales Performance tab",
+      "date": "2026-04-15"
+    },
+    {
+      "description": "Pipeline Intelligence segment-by expanded with 4 new dimensions: Business Fit, Pain/Goal, Industry, Current Revenue — all sourced from existing GHL custom fields",
+      "date": "2026-04-15"
+    },
+    {
+      "description": "Hover tooltips on every KPI label and column header across all 5 tabs — shows definition and formula on hover using fixed-position JS tooltip (bypasses overflow:hidden clipping)",
+      "date": "2026-04-15"
+    },
+    {
+      "description": "Funnel Economics tab built — RORI per rep (Contract RORI + Cash RORI), period financial inputs panel (marketing spend + per-rep comp), cost-per-show/qual/close columns. New DB tables: period_marketing_spend, rep_compensation. All columns show — until data entered.",
+      "date": "2026-04-10"
+    },
+    {
+      "description": "Date picker split into two independent From/To fields — removed flatpickr dependency",
+      "date": "2026-04-10"
+    },
+    {
       "description": "Weekly activity view now lets you browse previous weeks — see day-by-day bookings, shows, and qualifications for any week",
       "date": "2026-03-26"
-    },
-    {
-      "description": "Fixed production deployment process so dashboard updates go live reliably",
-      "date": "2026-03-26"
-    },
-    {
-      "description": "\"Not Logged\" column is now clickable — shows exactly which deals each rep hasn't updated with an outcome",
-      "date": "2026-03-25"
-    },
-    {
-      "description": "Added a day-by-day activity breakdown showing bookings, shows, and qualifications for the current week",
-      "date": "2026-03-25"
     },
     {
       "description": "Rep performance numbers are now clickable — see the specific deals behind each rep's bookings, shows, and closes, with direct links to GoHighLevel",
@@ -90,41 +103,38 @@
       "date": "2026-03-24"
     },
     {
-      "description": "Dashboard backend is now ready for other tools to pull sales data and insights from it via API",
-      "date": "2026-03-25"
-    },
-    {
       "description": "Dashboard launched — key metrics, show rate trends, sales funnel visualization, and per-rep performance table all visible at a glance",
       "date": "2026-03-24"
     },
     {
       "description": "First complete data sync from GoHighLevel — pulled in 3,243 deals with zero errors",
       "date": "2026-03-22"
-    },
-    {
-      "description": "Backend went live — sales data now syncs automatically from GoHighLevel every 15 minutes",
-      "date": "2026-03-19"
     }
   ],
   "decision_log": [
     {
-      "decision": "qs-dashboard lives in monorepo (compete-iq) locally but deploys from standalone qs-revenue-dashboard GitHub repo",
-      "reasoning": "Railway service was originally created from the standalone repo. Easiest to maintain this — use git subtree push to keep qs-revenue-dashboard in sync with monorepo changes.",
+      "decision": "Show count numerator uses showed_1st_call_expr() alone — no compliance flag filter",
+      "reasoning": "compliance flags (outcome_unfilled, rep_compliance_failure) must never gate metric counts. A rep moving to the 'Call 1 Done' stage counts as a show regardless of whether appointment status field was also updated. Compliance flags are for separate compliance tab only.",
       "phase": "Phase 1"
     },
     {
-      "decision": "Compliance sync runs every 15 minutes via APScheduler",
-      "reasoning": "Lloyd wanted near-real-time visibility into outcome-not-logged violations so reps can be corrected same-day. 15 min cadence is fast enough without hammering GHL API.",
+      "decision": "RORI defined as Contract Value ÷ (Rep Comp + Mktg Alloc) for Contract RORI, Cash Collected ÷ (Rep Comp + Mktg Alloc) for Cash RORI",
+      "reasoning": "Marketing allocation per rep = (Total Mktg Spend ÷ Team Total Shows) × Rep Shows. This proportionally assigns shared marketing cost based on each rep's share of team volume.",
       "phase": "Phase 1"
     },
     {
-      "decision": "Split compliance into outcome_unfilled (no show/no-show logged) vs note compliance (note missing or low word count)",
-      "reasoning": "These are different failure modes requiring different coaching responses. Outcome unfilled = rep forgot to log. Note noncompliant = rep logged but didn't document.",
+      "decision": "Funnel Economics financial inputs are manually entered (not auto-pulled from Xero yet)",
+      "reasoning": "Xero/WAP API integration is Phase 2. Phase 1 validates the metric logic and UI with manual entry first. Once accounting data is confirmed correct, Phase 2 automates the feed.",
       "phase": "Phase 1"
     },
     {
-      "decision": "Opportunity Owner = rep attribution",
-      "reasoning": "GHL assigns opportunity owner to the rep who created/owns the deal. This is the most reliable attribution signal.",
+      "decision": "qs-dashboard lives in monorepo locally but deploys from standalone qs-revenue-dashboard GitHub repo",
+      "reasoning": "Railway service was originally created from the standalone repo. Easiest to maintain — use git subtree push to keep qs-revenue-dashboard in sync with monorepo changes.",
+      "phase": "Phase 1"
+    },
+    {
+      "decision": "Sync runs hourly (incremental) with daily Fireflies appointment resolver at 7pm EST",
+      "reasoning": "Hourly incremental keeps data at most ~1.5h stale. Fireflies resolver auto-flips appointment statuses after business hours when all transcripts are ready. Weekly full sync on Sundays catches anything missed.",
       "phase": "Phase 1"
     },
     {
@@ -133,16 +143,21 @@
       "phase": "Phase 1"
     },
     {
-      "decision": "call1_appointment_date / call2_appointment_date on Opportunity (not Contact)",
-      "reasoning": "Avoids N+1 fetch to get appointment dates. Custom fields on Opportunity allow single-query access.",
-      "phase": "Phase 1"
-    },
-    {
       "decision": "Bearer token auth on all API endpoints",
       "reasoning": "Simple, sufficient for internal tool. Upgrade to JWT/API key scoping when cross-app orchestration needs differentiated access.",
       "phase": "Phase 1"
     }
   ],
+  "accounting_data_needed": {
+    "note": "Required to activate Funnel Economics RORI columns. Collect from accounting call.",
+    "items": [
+      "Total marketing spend per period (from Xero/bookkeeper)",
+      "Per-rep total compensation per period (base + commission + bonuses)",
+      "Actual signed contract value per closed deal (should be in GHL monetary_value — verify reps are filling it in)",
+      "Cash collected per closed deal (from WAP/Stripe refund reports)",
+      "Optional: refunds/chargebacks per period to adjust effective cash collected"
+    ]
+  },
   "completed_phases": [],
   "links": {
     "repo": "https://github.com/lloyd-yip/qs-revenue-dashboard",
