@@ -14,6 +14,7 @@ from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from config import settings
 from db.models import Appointment, Opportunity, SourceNormalization, SyncRun
 from db.session import AsyncSessionLocal
 from sync.ghl_client import (
@@ -23,6 +24,10 @@ from sync.ghl_client import (
     extract_custom_fields,
 )
 from sync.ghl_client import SHOWED_STAGE_IDS
+
+# Pipeline IDs — used to loop over both pipelines in run_sync
+SALES_PIPELINE_ID  = "zbI8YxmB9qhk1h4cInnq"
+UPSELL_PIPELINE_ID = "NjidsHukHHUpYtTcQefX"
 from sync.normalizer import (
     compute_compliance_failure,
     compute_outcome_unfilled,
@@ -104,8 +109,14 @@ async def _build_opportunity_row(
     normalization_map: dict[str, str],
     ghl_client: GHLClient,
     user_map: dict[str, str] | None = None,
+    pipeline_id: str | None = None,
+    is_upsell: bool = False,
 ) -> dict:
-    """Transform a raw GHL opportunity payload into a dict ready for DB upsert."""
+    """Transform a raw GHL opportunity payload into a dict ready for DB upsert.
+
+    is_upsell=True skips the expensive per-contact API calls (appointments, contact
+    dateAdded, notes) since the upsell pipeline has no call1/call2 dates to resolve.
+    """
     custom = extract_custom_fields(opp)
     attrs = extract_attributions(opp)
 
@@ -152,7 +163,9 @@ async def _build_opportunity_row(
     call1_booking_date: datetime | None = None
     contact_id = opp.get("contactId")
     all_appointments: list[dict] = []
-    if contact_id:
+
+    if contact_id and not is_upsell:
+        # Upsell pipeline has no 1st/2nd call appointments — skip these expensive calls.
         all_appointments = await ghl_client.get_contact_appointments(contact_id)
         call1_appt = _find_appointment_for_date(all_appointments, call1_date) if call1_date else None
         call1_booking_date = _appointment_booking_date(call1_appt)
@@ -164,7 +177,7 @@ async def _build_opportunity_row(
     # contact_created_at: fetch from GHL contact record (dateAdded).
     # Only fetched if not already stored — incremental syncs avoid re-fetching.
     contact_created_at: datetime | None = None
-    if contact_id:
+    if contact_id and not is_upsell:
         contact = await ghl_client.get_contact(contact_id)
         if contact:
             contact_created_at = parse_ghl_datetime(contact.get("dateAdded"))
@@ -187,13 +200,14 @@ async def _build_opportunity_row(
         call1_appointment_status=call1_status,
     )
 
-    # Post-call note word count — only for showed opps with a past appointment
+    # Post-call note word count — only for showed opps with a past appointment.
+    # Skipped for upsell pipeline (no call1 appointments to evaluate).
     showed_1st = (
         call1_status == "Showed"
         or (stage_id is not None and stage_id in SHOWED_STAGE_IDS)
     )
     post_call_note_word_count: int | None = None
-    if showed_1st and call1_date and opp.get("contactId"):
+    if not is_upsell and showed_1st and call1_date and opp.get("contactId"):
         now_utc = datetime.now(timezone.utc)
         if now_utc > call1_date + timedelta(hours=12):
             notes = await ghl_client.get_contact_notes(opp["contactId"])
@@ -207,6 +221,7 @@ async def _build_opportunity_row(
         "ghl_opportunity_id": opp["id"],
         "ghl_contact_id": opp.get("contactId"),
         "opportunity_name": opportunity_name,
+        "pipeline_id": pipeline_id,
         "pipeline_stage_id": stage_id,
         "pipeline_stage_name": stage_name,
         "is_excluded": is_excluded_stage(stage_id, stage_name),
@@ -288,98 +303,113 @@ async def run_sync(sync_type: str = "incremental") -> dict:
     user_map = await ghl_client.get_users()
     logger.info("Loaded %d users for rep name resolution", len(user_map))
 
+    # Loop over both pipelines — sales first, then upsell.
+    pipeline_configs = [
+        {"pipeline_id": SALES_PIPELINE_ID,  "is_upsell": False},
+        {"pipeline_id": UPSELL_PIPELINE_ID, "is_upsell": True},
+    ]
+
     async with AsyncSessionLocal() as session:
-        async for raw_opp in ghl_client.stream_opportunities(updated_after=updated_after):
-            opp_id = raw_opp.get("id", "unknown")
-            try:
-                row = await _build_opportunity_row(raw_opp, normalization_map, ghl_client, user_map)
+        for pipeline_cfg in pipeline_configs:
+            pid       = pipeline_cfg["pipeline_id"]
+            is_upsell = pipeline_cfg["is_upsell"]
+            logger.info("Syncing pipeline %s (is_upsell=%s)", pid, is_upsell)
 
-                # Pull appointments out before DB insert — not a DB column
-                all_appointments = row.pop("_all_appointments", [])
-                contact_id_for_appts = row.get("ghl_contact_id")
-
-                # PostgreSQL upsert — idempotent on ghl_opportunity_id.
-                # Exclude compliance history columns — they are managed by the
-                # conditional UPDATE below, not overwritten on every sync.
-                history_cols = {"outcome_unfilled_first_flagged_at", "outcome_unfilled_resolved_at"}
-                stmt = (
-                    pg_insert(Opportunity)
-                    .values(**row)
-                    .on_conflict_do_update(
-                        index_elements=["ghl_opportunity_id"],
-                        set_={k: v for k, v in row.items() if k not in {"ghl_opportunity_id"} | history_cols},
+            async for raw_opp in ghl_client.stream_opportunities(updated_after=updated_after, pipeline_id=pid):
+                opp_id = raw_opp.get("id", "unknown")
+                try:
+                    row = await _build_opportunity_row(
+                        raw_opp, normalization_map, ghl_client, user_map,
+                        pipeline_id=pid, is_upsell=is_upsell,
                     )
-                )
-                await session.execute(stmt)
 
-                # Upsert all appointments for this contact into the appointments table
-                if contact_id_for_appts and all_appointments:
-                    for appt in all_appointments:
-                        appt_id = appt.get("id")
-                        if not appt_id:
-                            continue
-                        cal_id = appt.get("calendarId")
-                        appt_type = "call_2" if cal_id in FOLLOW_UP_CALENDAR_IDS else "call_1"
-                        appt_row = {
-                            "ghl_contact_id": contact_id_for_appts,
-                            "ghl_appointment_id": appt_id,
-                            "calendar_id": cal_id,
-                            "appointment_type": appt_type,
-                            "appointment_date": parse_ghl_datetime(appt.get("startTime")),
-                            "appointment_status": _normalize_appt_status(appt.get("appointmentStatus") or ""),
-                        }
-                        appt_stmt = (
-                            pg_insert(Appointment)
-                            .values(**appt_row)
-                            .on_conflict_do_update(
-                                index_elements=["ghl_appointment_id"],
-                                set_={k: v for k, v in appt_row.items() if k != "ghl_appointment_id"},
-                            )
+                    # Pull appointments out before DB insert — not a DB column
+                    all_appointments = row.pop("_all_appointments", [])
+                    contact_id_for_appts = row.get("ghl_contact_id")
+
+                    # PostgreSQL upsert — idempotent on ghl_opportunity_id.
+                    # Exclude compliance history columns — they are managed by the
+                    # conditional UPDATE below, not overwritten on every sync.
+                    history_cols = {"outcome_unfilled_first_flagged_at", "outcome_unfilled_resolved_at"}
+                    stmt = (
+                        pg_insert(Opportunity)
+                        .values(**row)
+                        .on_conflict_do_update(
+                            index_elements=["ghl_opportunity_id"],
+                            set_={k: v for k, v in row.items() if k not in {"ghl_opportunity_id"} | history_cols},
                         )
-                        await session.execute(appt_stmt)
+                    )
+                    await session.execute(stmt)
 
-                # Compliance history: track when outcome_unfilled was first set and when resolved.
-                # - first_flagged_at: set once when outcome_unfilled first becomes TRUE
-                # - resolved_at: set once when outcome_unfilled transitions TRUE → FALSE
-                # Both use CASE logic so they are never overwritten after being set.
-                await session.execute(
-                    text("""
-                        UPDATE opportunities SET
-                            outcome_unfilled_first_flagged_at = CASE
-                                WHEN outcome_unfilled = TRUE AND outcome_unfilled_first_flagged_at IS NULL
-                                THEN :now
-                                ELSE outcome_unfilled_first_flagged_at
-                            END,
-                            outcome_unfilled_resolved_at = CASE
-                                WHEN outcome_unfilled = FALSE
-                                     AND outcome_unfilled_resolved_at IS NULL
-                                     AND outcome_unfilled_first_flagged_at IS NOT NULL
-                                THEN :now
-                                ELSE outcome_unfilled_resolved_at
-                            END
-                        WHERE ghl_opportunity_id = :ghl_id
-                    """),
-                    {"now": started_at, "ghl_id": row["ghl_opportunity_id"]},
-                )
+                    # Upsert all appointments for this contact into the appointments table
+                    if contact_id_for_appts and all_appointments:
+                        for appt in all_appointments:
+                            appt_id = appt.get("id")
+                            if not appt_id:
+                                continue
+                            cal_id = appt.get("calendarId")
+                            appt_type = "call_2" if cal_id in FOLLOW_UP_CALENDAR_IDS else "call_1"
+                            appt_row = {
+                                "ghl_contact_id": contact_id_for_appts,
+                                "ghl_appointment_id": appt_id,
+                                "calendar_id": cal_id,
+                                "appointment_type": appt_type,
+                                "appointment_date": parse_ghl_datetime(appt.get("startTime")),
+                                "appointment_status": _normalize_appt_status(appt.get("appointmentStatus") or ""),
+                            }
+                            appt_stmt = (
+                                pg_insert(Appointment)
+                                .values(**appt_row)
+                                .on_conflict_do_update(
+                                    index_elements=["ghl_appointment_id"],
+                                    set_={k: v for k, v in appt_row.items() if k != "ghl_appointment_id"},
+                                )
+                            )
+                            await session.execute(appt_stmt)
 
-                synced_count += 1
+                    # Compliance history: track when outcome_unfilled was first set and when resolved.
+                    # - first_flagged_at: set once when outcome_unfilled first becomes TRUE
+                    # - resolved_at: set once when outcome_unfilled transitions TRUE → FALSE
+                    # Both use CASE logic so they are never overwritten after being set.
+                    await session.execute(
+                        text("""
+                            UPDATE opportunities SET
+                                outcome_unfilled_first_flagged_at = CASE
+                                    WHEN outcome_unfilled = TRUE AND outcome_unfilled_first_flagged_at IS NULL
+                                    THEN :now
+                                    ELSE outcome_unfilled_first_flagged_at
+                                END,
+                                outcome_unfilled_resolved_at = CASE
+                                    WHEN outcome_unfilled = FALSE
+                                         AND outcome_unfilled_resolved_at IS NULL
+                                         AND outcome_unfilled_first_flagged_at IS NOT NULL
+                                    THEN :now
+                                    ELSE outcome_unfilled_resolved_at
+                                END
+                            WHERE ghl_opportunity_id = :ghl_id
+                        """),
+                        {"now": started_at, "ghl_id": row["ghl_opportunity_id"]},
+                    )
 
-                # Commit in batches of 50 to balance memory and safety
-                if synced_count % 50 == 0:
-                    await session.commit()
-                    logger.info("Committed batch — %d opportunities synced so far", synced_count)
+                    synced_count += 1
 
-            except Exception as exc:
-                error_count += 1
-                error_detail = {"opportunity_id": opp_id, "error": str(exc)}
-                error_details.append(error_detail)
-                logger.error("Failed to sync opportunity %s: %s", opp_id, exc)
-                # Continue — never halt the sync for one bad record
+                    # Commit in batches of 50 to balance memory and safety
+                    if synced_count % 50 == 0:
+                        await session.commit()
+                        logger.info("Committed batch — %d opportunities synced so far", synced_count)
 
-        # Final commit for remaining records
-        await session.commit()
+                except Exception as exc:
+                    error_count += 1
+                    error_detail = {"opportunity_id": opp_id, "error": str(exc)}
+                    error_details.append(error_detail)
+                    logger.error("Failed to sync opportunity %s: %s", opp_id, exc)
+                    # Continue — never halt the sync for one bad record
 
-        # Update sync_run record
+            # Commit remaining records for this pipeline before moving to the next
+            await session.commit()
+            logger.info("Pipeline %s done — %d total synced so far", pid, synced_count)
+
+        # Update sync_run record — runs once after all pipelines complete
         completed_at = datetime.now(timezone.utc)
         status = "completed" if error_count == 0 else "completed"  # still completed — errors are logged
         if synced_count == 0 and error_count > 0:

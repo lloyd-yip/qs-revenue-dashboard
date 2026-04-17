@@ -219,16 +219,19 @@ class GHLClient:
     async def stream_opportunities(
         self,
         updated_after: datetime | None = None,
+        pipeline_id: str | None = None,
     ) -> AsyncGenerator[dict, None]:
         """Async generator that yields raw GHL opportunity dicts one at a time.
 
         Args:
             updated_after: If set, only fetch opportunities updated after this timestamp.
                            If None, fetches all opportunities (full sync).
+            pipeline_id:   Override the default pipeline ID. Uses the configured
+                           ghl_pipeline_id from settings when not provided.
         """
         params: dict = {
             "location_id": self._location_id,
-            "pipeline_id": self._pipeline_id,
+            "pipeline_id": pipeline_id or self._pipeline_id,
             "limit": settings.ghl_page_size,
         }
         if updated_after:

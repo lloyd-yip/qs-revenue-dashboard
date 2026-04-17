@@ -267,6 +267,7 @@
   <button class="tab-btn" onclick="setTab('cost')">Funnel Economics</button>
   <button class="tab-btn" onclick="setTab('compliance')">Compliance</button>
   <button class="tab-btn" onclick="setTab('dead')">Dead Deals</button>
+  <button class="tab-btn" onclick="setTab('upsells')">Upsells</button>
 </nav>
 
 <!-- TAB: Sales Performance -->
@@ -574,6 +575,31 @@
   </div>
 </div>
 
+<!-- Upsells Tab — Client Delivery Revenue Pipeline -->
+<div id="tab-upsells" class="tab-content">
+  <div class="kpi-row" id="upsells-kpis" style="margin-bottom:20px;"></div>
+  <div class="chart-box" style="margin-bottom:20px;">
+    <h3 style="margin-bottom:12px;">Per-Rep Breakdown</h3>
+    <div style="overflow-x:auto;">
+      <table id="upsells-rep-table" style="min-width:820px;">
+        <thead><tr>
+          <th>Rep</th>
+          <th class="num">Total Opps</th>
+          <th class="num">Outreach Sent</th>
+          <th class="num">Call Sched.</th>
+          <th class="num">Outreach→Call</th>
+          <th class="num">Won</th>
+          <th class="num">Lost</th>
+          <th class="num">Win Rate</th>
+          <th class="num">Avg Deal</th>
+          <th class="num">Revenue</th>
+        </tr></thead>
+        <tbody id="upsells-rep-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
 <!-- PI closed deals drill-down modal (wider — shows full opp details) -->
 <div id="pi-closes-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:1000; align-items:center; justify-content:center;" onclick="if(event.target===this)closePiClosesModal()">
   <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); width:1000px; max-width:96vw; max-height:88vh; display:flex; flex-direction:column;">
@@ -794,6 +820,7 @@ async function renderTab(tab) {
   else if (tab === 'cost') await renderCostAnalysis();
   else if (tab === 'compliance') await renderCompliance();
   else if (tab === 'dead') await renderDeadDeals();
+  else if (tab === 'upsells') await renderUpsells();
   injectTooltips();
 }
 
@@ -2206,6 +2233,71 @@ async function showPiClosesModal(groupBy, segment) {
 
 function closePiClosesModal() {
   document.getElementById('pi-closes-modal').style.display = 'none';
+}
+
+// ─── Upsells Tab ──────────────────────────────────────────────────────────────
+async function renderUpsells() {
+  document.getElementById('upsells-kpis').innerHTML = '<div class="loading">Loading...</div>';
+  document.getElementById('upsells-rep-tbody').innerHTML = '';
+
+  try {
+    const res = await apiFetch(
+      `/api/dashboard/upsells?start=${AppState.dateStart}&end=${AppState.dateEnd}`
+    );
+    const s = res.data.summary;
+    const byRep = res.data.by_rep;
+
+    renderUpsellKPIs(s);
+    renderUpsellRepTable(byRep);
+  } catch(e) {
+    document.getElementById('upsells-kpis').innerHTML =
+      `<div class="empty">Failed to load upsell data. ${e.message}</div>`;
+  }
+}
+
+function renderUpsellKPIs(s) {
+  const pct = v => v != null ? (v * 100).toFixed(1) + '%' : '—';
+  const n   = v => v != null ? v : '—';
+
+  const kpis = [
+    { label: 'Total Opps',       value: n(s.total_opps),            tip: 'All opps created in the upsell pipeline within the selected period.' },
+    { label: 'Outreach Sent',    value: n(s.reached_outreach),       tip: 'Opps that reached the Outreach Sent stage or beyond.\nFormula: stage IN [Outreach Sent, Call Scheduled, Closed Won, Closed Lost, Deal Value]' },
+    { label: 'Calls Scheduled',  value: n(s.reached_call_scheduled), tip: 'Opps that progressed to Call Scheduled or beyond.\nFormula: stage IN [Call Scheduled, Closed Won, Closed Lost, Deal Value]' },
+    { label: 'Outreach → Call',  value: pct(s.outreach_to_call_rate),tip: 'Conversion from Outreach Sent to Call Scheduled.\nFormula: Calls Scheduled ÷ Outreach Sent' },
+    { label: 'Closed Won',       value: n(s.closed_won),             tip: 'Opps currently in the Closed Won stage.' },
+    { label: 'Closed Lost',      value: n(s.closed_lost),            tip: 'Opps currently in the Closed Lost stage.' },
+    { label: 'Win Rate',         value: pct(s.win_rate),             tip: 'Closed Won ÷ (Closed Won + Closed Lost)' },
+    { label: 'Avg Deal Value',   value: s.avg_deal_value ? money(s.avg_deal_value) : '—', tip: 'Average monetary value of Closed Won deals.' },
+    { label: 'Total Revenue',    value: s.total_revenue ? money(s.total_revenue) : '—',   tip: 'Sum of monetary value across all Closed Won deals in the period.' },
+  ];
+
+  document.getElementById('upsells-kpis').innerHTML = kpis.map(k => `
+    <div class="kpi-card">
+      <div class="kpi-label">${k.label}</div>
+      <div class="kpi-value">${k.value}</div>
+    </div>`).join('');
+}
+
+function renderUpsellRepTable(rows) {
+  const pct  = v => v != null ? (v * 100).toFixed(1) + '%' : '—';
+  const tbody = document.getElementById('upsells-rep-tbody');
+  if (!rows || !rows.length) {
+    tbody.innerHTML = '<tr><td colspan="10" class="empty" style="text-align:center;padding:20px;">No upsell data for this period.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(r => `
+    <tr>
+      <td>${r.rep_name}</td>
+      <td class="num">${r.total_opps}</td>
+      <td class="num">${r.reached_outreach}</td>
+      <td class="num">${r.reached_call_scheduled}</td>
+      <td class="num">${pct(r.outreach_to_call_rate)}</td>
+      <td class="num" style="color:var(--green);">${r.closed_won}</td>
+      <td class="num" style="color:var(--red);">${r.closed_lost}</td>
+      <td class="num">${pct(r.win_rate)}</td>
+      <td class="num">${r.avg_deal_value ? money(r.avg_deal_value) : '—'}</td>
+      <td class="num" style="color:var(--green);">${r.total_revenue ? money(r.total_revenue) : '—'}</td>
+    </tr>`).join('');
 }
 </script>
 </body>

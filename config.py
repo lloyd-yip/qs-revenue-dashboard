@@ -33,6 +33,18 @@ class Settings(BaseSettings):
 settings = Settings()
 
 
+# ── Pipeline IDs ──────────────────────────────────────────────────────────────
+SALES_PIPELINE_ID  = "zbI8YxmB9qhk1h4cInnq"
+UPSELL_PIPELINE_ID = "NjidsHukHHUpYtTcQefX"
+
+# Upsell stage IDs — Client Delivery Revenue Pipeline
+UPSELL_STAGE_OUTREACH_SENT  = "e08df229-3462-4b6c-aa5a-7a16d6b18773"
+UPSELL_STAGE_CALL_SCHEDULED = "859efac7-0f23-4d7e-8b53-032e95b69c58"
+UPSELL_STAGE_CLOSED_WON     = "eafe20aa-00cd-445e-9f3b-95a21ed6f41a"
+UPSELL_STAGE_CLOSED_LOST    = "8dc4ee8c-4150-4060-9503-61d0a9fbe37d"
+UPSELL_STAGE_DEAL_VALUE     = "9a387dab-44d3-4e4e-a541-6b856b84fc93"
+
+
 # ── Rep Roster ────────────────────────────────────────────────────────────────
 # Categories:
 #   active     — currently taking sales calls

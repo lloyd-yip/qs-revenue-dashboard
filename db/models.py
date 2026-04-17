@@ -32,6 +32,7 @@ class Opportunity(Base):
     # Pipeline stage
     pipeline_stage_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     pipeline_stage_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    pipeline_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
 
     # Exclusion flag — TRUE for Duplicates and Temp Ryan stages
     is_excluded: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)

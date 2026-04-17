@@ -51,6 +51,7 @@ from db.queries.lead_source import (
 from db.queries.data_quality import get_data_quality_issues
 from db.queries.debug_drilldown import get_drilldown_opps
 from db.queries.funnel_economics import get_period_inputs, upsert_marketing_spend, upsert_rep_compensations
+from db.queries.upsell_metrics import get_upsell_summary, get_upsell_by_rep
 from db.queries.metrics_by_rep import get_by_rep, get_daily_activity, get_rep_closes, get_rep_opps
 from db.queries.metrics_summary import get_summary
 from db.queries.pipeline_intelligence import get_pipeline_intelligence, get_segment_closes
@@ -542,3 +543,27 @@ async def save_comp(body: SaveCompRequest, db: AsyncSession = Depends(get_db)):
     reps = [r.model_dump() for r in body.reps]
     await upsert_rep_compensations(db, body.start, body.end, reps)
     return {"ok": True}
+
+
+# ── Upsells (Client Delivery Revenue Pipeline) ────────────────────────────────
+
+@router.get("/upsells")
+async def upsells(
+    start: date = Query(..., description="Start date (YYYY-MM-DD)"),
+    end: date = Query(..., description="End date (YYYY-MM-DD)"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Client Delivery Revenue Pipeline — outreach → call → close funnel metrics.
+
+    Date anchor is opportunity created_at_ghl (not appointment date).
+    Returns summary KPIs + per-rep breakdown.
+    """
+    summary = await get_upsell_summary(db, start, end)
+    by_rep  = await get_upsell_by_rep(db, start, end)
+    meta = {
+        "date_start": start.isoformat(),
+        "date_end":   end.isoformat(),
+        "date_by":    "created",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    return {"data": {"summary": summary, "by_rep": by_rep}, "meta": meta}
