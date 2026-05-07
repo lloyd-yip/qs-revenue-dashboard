@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>QS — Sales & Marketing Expenses</title>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #22263a;
+      --border: #2e3347;
+      --accent: #6366f1;
+      --accent2: #818cf8;
+      --text: #e2e8f0;
+      --text2: #94a3b8;
+      --text3: #64748b;
+      --green: #22c55e;
+      --red: #ef4444;
+      --yellow: #f59e0b;
+      --radius: 10px;
+      --font: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+
+    body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; min-height: 100vh; }
+
+    /* ── Header ── */
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 16px 24px; border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .header-left { display: flex; align-items: center; gap: 16px; }
+    header h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.3px; }
+    .nav-links { display: flex; gap: 8px; }
+    .nav-link {
+      color: var(--text2); text-decoration: none; font-size: 13px; padding: 5px 12px;
+      border-radius: 6px; border: 1px solid transparent; transition: all 0.15s;
+    }
+    .nav-link:hover { color: var(--text); background: var(--surface2); border-color: var(--border); }
+    .nav-link.active { color: #fff; background: var(--accent); border-color: var(--accent); }
+
+    /* ── Filters bar ── */
+    .filters {
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px 24px; background: var(--surface); border-bottom: 1px solid var(--border);
+    }
+    .filters label { font-size: 12px; color: var(--text2); }
+    select#period-select {
+      background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+      padding: 6px 12px; border-radius: 6px; font-size: 13px; cursor: pointer;
+      font-family: var(--font); min-width: 200px;
+    }
+    select#period-select:focus { outline: none; border-color: var(--accent); }
+
+    /* ── Main layout ── */
+    main { padding: 24px; max-width: 900px; margin: 0 auto; }
+
+    /* ── Grand total card ── */
+    .total-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 20px 24px; margin-bottom: 24px;
+      display: flex; align-items: baseline; justify-content: space-between;
+    }
+    .total-card .label { font-size: 13px; color: var(--text2); font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; }
+    .total-card .amount { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; color: var(--text); }
+    .total-card .sublabel { font-size: 12px; color: var(--text3); margin-top: 2px; }
+
+    /* ── Bucket sections ── */
+    .bucket {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      margin-bottom: 12px; overflow: hidden;
+    }
+
+    .bucket-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 18px; cursor: pointer; user-select: none;
+      transition: background 0.12s;
+    }
+    .bucket-header:hover { background: var(--surface2); }
+
+    .bucket-header-left { display: flex; align-items: center; gap: 10px; }
+    .bucket-chevron {
+      width: 16px; height: 16px; color: var(--text2); transition: transform 0.2s;
+      flex-shrink: 0;
+    }
+    .bucket.open .bucket-chevron { transform: rotate(90deg); }
+
+    .bucket-name { font-size: 14px; font-weight: 600; color: var(--text); }
+    .approx-badge {
+      font-size: 10px; font-weight: 600; color: var(--yellow);
+      background: rgba(245,158,11,0.12); border: 1px solid rgba(245,158,11,0.25);
+      padding: 2px 7px; border-radius: 4px; letter-spacing: 0.04em;
+    }
+
+    .bucket-total { font-size: 15px; font-weight: 700; color: var(--text); }
+
+    /* ── Vendor rows ── */
+    .bucket-body { display: none; border-top: 1px solid var(--border); }
+    .bucket.open .bucket-body { display: block; }
+
+    .vendor-row {
+      display: flex; align-items: baseline; justify-content: space-between;
+      padding: 10px 18px; border-bottom: 1px solid rgba(46,51,71,0.5);
+    }
+    .vendor-row:last-child { border-bottom: none; }
+    .vendor-row:hover { background: rgba(34,38,58,0.5); }
+
+    .vendor-name { font-size: 13px; color: var(--text); }
+    .vendor-meta { font-size: 11px; color: var(--text3); margin-top: 2px; }
+    .vendor-amount { font-size: 13px; font-weight: 600; color: var(--text2); white-space: nowrap; }
+    .vendor-amount.approx { color: var(--yellow); }
+    .approx-tilde { font-size: 11px; margin-right: 1px; }
+
+    /* ── Empty / loading states ── */
+    .state-msg {
+      text-align: center; padding: 60px 24px; color: var(--text2); font-size: 14px;
+    }
+    .state-msg .icon { font-size: 32px; margin-bottom: 12px; }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <h1>QS Revenue Dashboard</h1>
+    <nav class="nav-links">
+      <a class="nav-link" href="/dashboard">Sales</a>
+      <a class="nav-link active" href="/expenses">Expenses</a>
+      <a class="nav-link" href="/slwa-dashboard">SLWA</a>
+      <a class="nav-link" href="/sync-history">Sync</a>
+    </nav>
+  </div>
+</header>
+
+<div class="filters">
+  <label for="period-select">Period</label>
+  <select id="period-select">
+    <option value="">Loading periods…</option>
+  </select>
+</div>
+
+<main id="main-content">
+  <div class="state-msg" id="loading-msg">
+    <div class="icon">⏳</div>
+    Loading expense data…
+  </div>
+</main>
+
+<script>
+  const API = "";  // same origin
+
+  const periodEl = document.getElementById("period-select");
+  const mainEl   = document.getElementById("main-content");
+
+  function fmt(n) {
+    return "$" + Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  }
+
+  // ── Load period dropdown ────────────────────────────────────────────────────
+  async function loadPeriods() {
+    const res = await fetch(`${API}/api/dashboard/expenses/periods`);
+    const { data } = await res.json();
+
+    if (!data || data.length === 0) {
+      periodEl.innerHTML = "<option value=''>No data loaded yet</option>";
+      mainEl.innerHTML = `<div class="state-msg"><div class="icon">📭</div>No expense data loaded yet.<br>Use the upsert endpoint to load a period.</div>`;
+      return;
+    }
+
+    periodEl.innerHTML = data.map(p => {
+      const label = formatPeriodLabel(p.period_start, p.period_end);
+      return `<option value="${p.period_start}|${p.period_end}">${label}</option>`;
+    }).join("");
+
+    loadExpenses(data[0].period_start, data[0].period_end);
+    periodEl.addEventListener("change", () => {
+      const [start, end] = periodEl.value.split("|");
+      if (start && end) loadExpenses(start, end);
+    });
+  }
+
+  function formatPeriodLabel(startStr, endStr) {
+    const s = new Date(startStr + "T00:00:00");
+    const e = new Date(endStr + "T00:00:00");
+    const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    if (s.getFullYear() === e.getFullYear() && s.getMonth() === e.getMonth()) {
+      return `${monthNames[s.getMonth()]} ${s.getFullYear()}`;
+    }
+    return `${monthNames[s.getMonth()]} ${s.getDate()} – ${monthNames[e.getMonth()]} ${e.getDate()}, ${e.getFullYear()}`;
+  }
+
+  // ── Load expenses for a period ──────────────────────────────────────────────
+  async function loadExpenses(start, end) {
+    mainEl.innerHTML = `<div class="state-msg" id="loading-msg"><div class="icon">⏳</div>Loading…</div>`;
+    const res = await fetch(`${API}/api/dashboard/expenses?period_start=${start}&period_end=${end}`);
+    if (!res.ok) {
+      mainEl.innerHTML = `<div class="state-msg"><div class="icon">⚠️</div>Failed to load data (${res.status}).</div>`;
+      return;
+    }
+    const { data } = await res.json();
+    renderExpenses(data);
+  }
+
+  // ── Render ──────────────────────────────────────────────────────────────────
+  function renderExpenses(data) {
+    if (!data || !data.buckets || data.buckets.length === 0) {
+      mainEl.innerHTML = `<div class="state-msg"><div class="icon">📭</div>No line items for this period.</div>`;
+      return;
+    }
+
+    const periodLabel = formatPeriodLabel(data.period_start, data.period_end);
+    let html = "";
+
+    // Grand total card
+    html += `
+      <div class="total-card">
+        <div>
+          <div class="label">Total Sales &amp; Marketing Spend</div>
+          <div class="sublabel">${periodLabel}</div>
+        </div>
+        <div class="amount">${fmt(data.grand_total)}</div>
+      </div>
+    `;
+
+    // Bucket sections
+    data.buckets.forEach((bucket, i) => {
+      const isOpen = i === 0;
+      const approxBadge = bucket.has_approximate
+        ? `<span class="approx-badge">~ APPROX</span>` : "";
+
+      html += `
+        <div class="bucket ${isOpen ? "open" : ""}" id="bucket-${bucket.bucket}">
+          <div class="bucket-header" onclick="toggleBucket('${bucket.bucket}')">
+            <div class="bucket-header-left">
+              <svg class="bucket-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6"/>
+              </svg>
+              <span class="bucket-name">${bucket.label}</span>
+              ${approxBadge}
+            </div>
+            <span class="bucket-total">${fmt(bucket.total)}</span>
+          </div>
+          <div class="bucket-body">
+            ${bucket.items.map(item => {
+              const amtClass = item.is_approximate ? "vendor-amount approx" : "vendor-amount";
+              const tilde = item.is_approximate ? `<span class="approx-tilde">~</span>` : "";
+              const notes = item.notes ? `<div class="vendor-meta">${item.notes}</div>` : "";
+              return `
+                <div class="vendor-row">
+                  <div>
+                    <div class="vendor-name">${item.vendor}</div>
+                    ${notes}
+                  </div>
+                  <div class="${amtClass}">${tilde}${fmt(item.amount)}</div>
+                </div>
+              `;
+            }).join("")}
+          </div>
+        </div>
+      `;
+    });
+
+    mainEl.innerHTML = html;
+  }
+
+  function toggleBucket(key) {
+    const el = document.getElementById("bucket-" + key);
+    el.classList.toggle("open");
+  }
+
+  // ── Boot ────────────────────────────────────────────────────────────────────
+  loadPeriods();
+</script>
+
+</body>
+</html>

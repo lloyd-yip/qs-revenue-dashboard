@@ -10,6 +10,7 @@ Protected endpoints (/api/metrics/*, /api/sync/*) remain unchanged.
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.schemas.responses import (
@@ -34,6 +35,11 @@ from api.schemas.responses import (
     SLWADashboardResponse,
     SummaryResponse,
     TimeSeriesResponse,
+)
+from db.queries.expenses import (
+    get_available_periods,
+    get_expenses_for_period,
+    upsert_expense_line_items,
 )
 from db.queries.compliance import (
     get_compliance_by_rep,
@@ -567,3 +573,50 @@ async def upsells(
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
     return {"data": {"summary": summary, "by_rep": by_rep}, "meta": meta}
+
+
+# ── Expenses ──────────────────────────────────────────────────────────────────
+
+@router.get("/expenses/periods")
+async def expense_periods(db: AsyncSession = Depends(get_db)):
+    """Return all periods that have expense data loaded — drives the month dropdown."""
+    periods = await get_available_periods(db)
+    return {"data": periods}
+
+
+@router.get("/expenses")
+async def expenses(
+    period_start: date = Query(..., description="Period start (YYYY-MM-DD)"),
+    period_end: date = Query(..., description="Period end (YYYY-MM-DD)"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return classified expense line items grouped by bucket for a given period."""
+    data = await get_expenses_for_period(db, period_start, period_end)
+    return {
+        "data": data,
+        "meta": {"generated_at": datetime.now(timezone.utc).isoformat()},
+    }
+
+
+class ExpenseItemInput(BaseModel):
+    bucket: str
+    vendor: str
+    amount: float
+    is_approximate: bool = False
+    notes: str | None = None
+
+
+class UpsertExpensesRequest(BaseModel):
+    period_start: date
+    period_end: date
+    items: list[ExpenseItemInput]
+
+
+@router.post("/expenses/upsert")
+async def upsert_expenses(body: UpsertExpensesRequest, db: AsyncSession = Depends(get_db)):
+    """Load or overwrite expense line items for a period. Used during monthly Xero pull."""
+    count = await upsert_expense_line_items(
+        db, body.period_start, body.period_end,
+        [i.model_dump() for i in body.items]
+    )
+    return {"ok": True, "rows_upserted": count}

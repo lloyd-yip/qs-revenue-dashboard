@@ -102,6 +102,7 @@ app.include_router(dashboard_router.router)
 _STATIC_DIR = Path(__file__).parent.parent / "static"
 
 @app.get("/", include_in_schema=False)
+@app.get("/dashboard", include_in_schema=False)
 async def serve_dashboard():
     return FileResponse(
         _STATIC_DIR / "dashboard.html",
@@ -133,6 +134,13 @@ async def serve_sync_history():
 async def serve_slwa_dashboard():
     return FileResponse(
         _STATIC_DIR / "slwa-dashboard.html",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+    )
+
+@app.get("/expenses", include_in_schema=False)
+async def serve_expenses():
+    return FileResponse(
+        _STATIC_DIR / "expenses.html",
         headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
     )
 

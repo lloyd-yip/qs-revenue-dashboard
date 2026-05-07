@@ -12,6 +12,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    Index,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -233,6 +234,33 @@ class RepCompensation(Base):
     period_start: Mapped[datetime] = mapped_column(Date, nullable=False)
     period_end: Mapped[datetime] = mapped_column(Date, nullable=False)
     total_comp: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class ExpenseLineItem(Base):
+    """Classified expense line items stored from monthly Xero pull.
+
+    One row per (period_start, period_end, bucket, vendor).
+    Upsert on that unique key — re-loading the same month overwrites cleanly.
+    bucket values: 'sales' | 'marketing_salaries' | 'tech_tools' | 'paid_ads' | 'experiments'
+    """
+
+    __tablename__ = "expense_line_items"
+    __table_args__ = (
+        UniqueConstraint("period_start", "period_end", "bucket", "vendor"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    period_start: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    period_end: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    bucket: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    vendor: Mapped[str] = mapped_column(String(150), nullable=False)
+    amount: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
+    is_approximate: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
