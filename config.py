@@ -59,6 +59,7 @@ REP_ROSTER: dict[str, str] = {
     # Active Sales Reps
     "Ryan Matsumori": "active",
     "Melissa Fredericks": "active",
+    "Armando Valencia": "active",       # Closer, added 2026-05-07
     "Alex Amor Gesell": "active",       # Founder — takes calls to review quality
     "Lloyd Yip": "active",              # CRO — takes calls to check quality
     # Inactive Sales Reps
