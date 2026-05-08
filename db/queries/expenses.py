@@ -6,7 +6,7 @@ during a manual pull; all dashboard reads come from here.
 
 from datetime import date
 
-from sqlalchemy import select, distinct
+from sqlalchemy import func, select, distinct
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -109,7 +109,7 @@ async def upsert_expense_line_items(
                 "amount": item["amount"],
                 "is_approximate": item.get("is_approximate", False),
                 "notes": item.get("notes"),
-                "updated_at": "now()",
+                "updated_at": func.now(),
             },
         )
         await session.execute(stmt)
