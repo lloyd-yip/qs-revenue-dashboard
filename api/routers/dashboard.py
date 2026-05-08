@@ -610,13 +610,18 @@ class UpsertExpensesRequest(BaseModel):
     period_start: date
     period_end: date
     items: list[ExpenseItemInput]
+    replace: bool = False
 
 
 @router.post("/expenses/upsert")
 async def upsert_expenses(body: UpsertExpensesRequest, db: AsyncSession = Depends(get_db)):
-    """Load or overwrite expense line items for a period. Used during monthly Xero pull."""
+    """Load or overwrite expense line items for a period. Used during monthly Xero pull.
+
+    Set replace=true to wipe the period clean before inserting (safe monthly refresh).
+    """
     count = await upsert_expense_line_items(
         db, body.period_start, body.period_end,
-        [i.model_dump() for i in body.items]
+        [i.model_dump() for i in body.items],
+        replace=body.replace,
     )
     return {"ok": True, "rows_upserted": count}

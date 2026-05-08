@@ -6,7 +6,7 @@ during a manual pull; all dashboard reads come from here.
 
 from datetime import date
 
-from sqlalchemy import func, select, distinct
+from sqlalchemy import delete, func, select, distinct
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -87,13 +87,22 @@ async def upsert_expense_line_items(
     period_start: date,
     period_end: date,
     items: list[dict],
+    replace: bool = False,
 ) -> int:
     """Insert or overwrite expense line items for a period.
 
     Each item must have: bucket, vendor, amount.
     Optional: is_approximate (bool), notes (str).
+    If replace=True, all existing rows for the period are deleted first (clean refresh).
     Returns count of rows upserted.
     """
+    if replace:
+        await session.execute(
+            delete(ExpenseLineItem).where(
+                ExpenseLineItem.period_start == period_start,
+                ExpenseLineItem.period_end == period_end,
+            )
+        )
     for item in items:
         stmt = pg_insert(ExpenseLineItem).values(
             period_start=period_start,
