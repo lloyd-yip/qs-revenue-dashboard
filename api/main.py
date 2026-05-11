@@ -145,6 +145,14 @@ async def serve_expenses():
     )
 
 
+@app.get("/pnl", include_in_schema=False)
+async def serve_pnl():
+    return FileResponse(
+        _STATIC_DIR / "pnl.html",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+    )
+
+
 # Health check is exempt from auth — Railway uses it without credentials
 @app.get("/api/health", response_model=HealthResponse, tags=["health"])
 async def health():

@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>QS — P&amp;L</title>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #22263a;
+      --border: #2e3347;
+      --accent: #6366f1;
+      --accent2: #818cf8;
+      --text: #e2e8f0;
+      --text2: #94a3b8;
+      --text3: #64748b;
+      --green: #22c55e;
+      --green-dim: rgba(34,197,94,0.12);
+      --green-border: rgba(34,197,94,0.25);
+      --red: #ef4444;
+      --red-dim: rgba(239,68,68,0.12);
+      --red-border: rgba(239,68,68,0.25);
+      --yellow: #f59e0b;
+      --yellow-dim: rgba(245,158,11,0.12);
+      --blue: #38bdf8;
+      --blue-dim: rgba(56,189,248,0.10);
+      --blue-border: rgba(56,189,248,0.25);
+      --radius: 10px;
+      --font: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+
+    body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; min-height: 100vh; }
+
+    /* ── Header ── */
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 16px 24px; border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .header-left { display: flex; align-items: center; gap: 16px; }
+    header h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.3px; }
+    .nav-links { display: flex; gap: 8px; }
+    .nav-link {
+      color: var(--text2); text-decoration: none; font-size: 13px; padding: 5px 12px;
+      border-radius: 6px; border: 1px solid transparent; transition: all 0.15s;
+    }
+    .nav-link:hover { color: var(--text); background: var(--surface2); border-color: var(--border); }
+    .nav-link.active { color: #fff; background: var(--accent); border-color: var(--accent); }
+
+    /* ── Filters bar ── */
+    .filters {
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px 24px; background: var(--surface); border-bottom: 1px solid var(--border);
+    }
+    .filters label { font-size: 12px; color: var(--text2); }
+    select#period-select {
+      background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+      padding: 6px 12px; border-radius: 6px; font-size: 13px; cursor: pointer;
+      font-family: var(--font); min-width: 200px;
+    }
+    select#period-select:focus { outline: none; border-color: var(--accent); }
+
+    /* ── Main layout ── */
+    main { padding: 24px; max-width: 960px; margin: 0 auto; }
+
+    /* ── Summary cards row ── */
+    .summary-row {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px;
+    }
+    .summary-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 18px 20px;
+    }
+    .summary-card.green { background: var(--green-dim); border-color: var(--green-border); }
+    .summary-card.red   { background: var(--red-dim);   border-color: var(--red-border);   }
+    .summary-card .s-label { font-size: 11px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+    .summary-card .s-value { font-size: 26px; font-weight: 700; letter-spacing: -0.5px; }
+    .summary-card.green .s-value { color: var(--green); }
+    .summary-card.red   .s-value { color: var(--red);   }
+    .summary-card .s-sub { font-size: 11px; color: var(--text3); margin-top: 4px; }
+
+    /* ── AR notice card ── */
+    .ar-card {
+      background: var(--blue-dim); border: 1px solid var(--blue-border);
+      border-radius: var(--radius); padding: 14px 20px; margin-bottom: 24px;
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    }
+    .ar-card .ar-label { font-size: 12px; color: var(--blue); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+    .ar-card .ar-value { font-size: 20px; font-weight: 700; color: var(--blue); }
+    .ar-card .ar-note  { font-size: 11px; color: var(--text3); margin-top: 3px; }
+
+    /* ── Section headers ── */
+    .section-header {
+      font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--text3); padding: 0 2px; margin: 28px 0 10px;
+    }
+
+    /* ── Expandable buckets ── */
+    .bucket {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      margin-bottom: 8px; overflow: hidden;
+    }
+    .bucket-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 13px 18px; cursor: pointer; user-select: none; transition: background 0.12s;
+    }
+    .bucket-header:hover { background: var(--surface2); }
+    .bucket-header-left { display: flex; align-items: center; gap: 10px; }
+    .bucket-chevron {
+      width: 15px; height: 15px; color: var(--text2); transition: transform 0.2s; flex-shrink: 0;
+    }
+    .bucket.open .bucket-chevron { transform: rotate(90deg); }
+    .bucket-name { font-size: 14px; font-weight: 600; color: var(--text); }
+    .approx-badge {
+      font-size: 10px; font-weight: 600; color: var(--yellow);
+      background: rgba(245,158,11,0.12); border: 1px solid rgba(245,158,11,0.25);
+      padding: 2px 7px; border-radius: 4px; letter-spacing: 0.04em;
+    }
+    .bucket-count { font-size: 11px; color: var(--text3); padding: 2px 7px; background: var(--surface2); border-radius: 4px; }
+    .bucket-total { font-size: 15px; font-weight: 700; color: var(--text); }
+
+    .bucket-body { display: none; border-top: 1px solid var(--border); }
+    .bucket.open .bucket-body { display: block; }
+
+    .item-row {
+      display: flex; align-items: baseline; justify-content: space-between;
+      padding: 9px 18px; border-bottom: 1px solid rgba(46,51,71,0.5);
+    }
+    .item-row:last-child { border-bottom: none; }
+    .item-row:hover { background: rgba(34,38,58,0.5); }
+    .item-name { font-size: 13px; color: var(--text); }
+    .item-meta { font-size: 11px; color: var(--text3); margin-top: 2px; }
+    .item-amount { font-size: 13px; font-weight: 600; color: var(--text2); white-space: nowrap; }
+    .item-amount.approx { color: var(--yellow); }
+    .approx-tilde { font-size: 11px; margin-right: 1px; }
+
+    /* ── Divider ── */
+    .section-divider {
+      border: none; border-top: 1px solid var(--border); margin: 8px 0;
+    }
+
+    /* ── Empty / loading states ── */
+    .state-msg {
+      text-align: center; padding: 48px 24px; color: var(--text2); font-size: 14px;
+    }
+    .state-msg .icon { font-size: 30px; margin-bottom: 10px; }
+    .no-data-inline {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 20px; text-align: center; color: var(--text3); font-size: 13px; margin-bottom: 8px;
+    }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <h1>QS Revenue Dashboard</h1>
+    <nav class="nav-links">
+      <a class="nav-link" href="/dashboard">Sales</a>
+      <a class="nav-link active" href="/pnl">P&amp;L</a>
+      <a class="nav-link" href="/slwa-dashboard">SLWA</a>
+      <a class="nav-link" href="/sync-history">Sync</a>
+    </nav>
+  </div>
+</header>
+
+<div class="filters">
+  <label for="period-select">Period</label>
+  <select id="period-select">
+    <option value="">Loading periods…</option>
+  </select>
+</div>
+
+<main id="main-content">
+  <div class="state-msg" id="loading-msg">
+    <div class="icon">⏳</div>
+    Loading P&amp;L data…
+  </div>
+</main>
+
+<script>
+  const API = "";  // same origin
+
+  const periodEl = document.getElementById("period-select");
+  const mainEl   = document.getElementById("main-content");
+
+  function fmt(n) {
+    return "$" + Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  }
+
+  function formatPeriodLabel(startStr, endStr) {
+    const s = new Date(startStr + "T00:00:00");
+    const e = new Date(endStr + "T00:00:00");
+    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    if (s.getFullYear() === e.getFullYear() && s.getMonth() === e.getMonth()) {
+      return `${months[s.getMonth()]} ${s.getFullYear()}`;
+    }
+    return `${months[s.getMonth()]} ${s.getDate()} – ${months[e.getMonth()]} ${e.getDate()}, ${e.getFullYear()}`;
+  }
+
+  function periodKey(p) { return `${p.period_start}|${p.period_end}`; }
+
+  // ── Load period dropdown (union of revenue + expense periods) ───────────────
+  async function loadPeriods() {
+    const [revRes, expRes] = await Promise.all([
+      fetch(`${API}/api/dashboard/revenue/periods`),
+      fetch(`${API}/api/dashboard/expenses/periods`),
+    ]);
+    const revData = (await revRes.json()).data || [];
+    const expData = (await expRes.json()).data || [];
+
+    // Union: dedupe by period_start, keep all unique periods, sort newest first
+    const seen = new Set();
+    const allPeriods = [];
+    [...revData, ...expData].forEach(p => {
+      const k = periodKey(p);
+      if (!seen.has(k)) { seen.add(k); allPeriods.push(p); }
+    });
+    allPeriods.sort((a, b) => b.period_start.localeCompare(a.period_start));
+
+    if (allPeriods.length === 0) {
+      periodEl.innerHTML = "<option value=''>No data loaded yet</option>";
+      mainEl.innerHTML = `<div class="state-msg"><div class="icon">📭</div>No P&L data loaded yet.</div>`;
+      return;
+    }
+
+    periodEl.innerHTML = allPeriods.map(p =>
+      `<option value="${periodKey(p)}">${formatPeriodLabel(p.period_start, p.period_end)}</option>`
+    ).join("");
+
+    loadPnL(allPeriods[0].period_start, allPeriods[0].period_end);
+
+    periodEl.addEventListener("change", () => {
+      const [start, end] = periodEl.value.split("|");
+      if (start && end) loadPnL(start, end);
+    });
+  }
+
+  // ── Load both revenue + expense in parallel ─────────────────────────────────
+  async function loadPnL(start, end) {
+    mainEl.innerHTML = `<div class="state-msg"><div class="icon">⏳</div>Loading…</div>`;
+
+    const [revRes, expRes] = await Promise.all([
+      fetch(`${API}/api/dashboard/revenue?period_start=${start}&period_end=${end}`),
+      fetch(`${API}/api/dashboard/expenses?period_start=${start}&period_end=${end}`),
+    ]);
+
+    const revData = revRes.ok  ? (await revRes.json()).data  : null;
+    const expData = expRes.ok  ? (await expRes.json()).data  : null;
+
+    renderPnL(revData, expData, start, end);
+  }
+
+  // ── Render ──────────────────────────────────────────────────────────────────
+  function renderPnL(rev, exp, start, end) {
+    const periodLabel = formatPeriodLabel(start, end);
+
+    const cashCollected  = rev ? rev.total_cash_collected : 0;
+    const splititAR      = rev ? rev.total_splitit_ar     : 0;
+    const totalExpenses  = exp ? exp.grand_total          : 0;
+    const netMargin      = cashCollected - totalExpenses;
+    const netPositive    = netMargin >= 0;
+
+    let html = "";
+
+    // ── Summary cards ──
+    html += `
+      <div class="summary-row">
+        <div class="summary-card">
+          <div class="s-label">Cash Collected</div>
+          <div class="s-value">${fmt(cashCollected)}</div>
+          <div class="s-sub">USD · ${periodLabel}${rev ? "" : " · No revenue data"}</div>
+        </div>
+        <div class="summary-card">
+          <div class="s-label">Total Expenses</div>
+          <div class="s-value">${fmt(totalExpenses)}</div>
+          <div class="s-sub">Sales &amp; marketing · USD${exp ? "" : " · No expense data"}</div>
+        </div>
+        <div class="summary-card ${netPositive ? "green" : "red"}">
+          <div class="s-label">Net P&amp;L</div>
+          <div class="s-value">${netPositive ? "" : "−"}${fmt(Math.abs(netMargin))}</div>
+          <div class="s-sub">${netPositive ? "Profitable" : "Loss"} · cash basis</div>
+        </div>
+      </div>
+    `;
+
+    // ── Splitit AR ──
+    if (splititAR > 0) {
+      html += `
+        <div class="ar-card">
+          <div>
+            <div class="ar-label">Splitit AR — Outstanding Installments</div>
+            <div class="ar-note">Future installments from financing deals signed this month — not yet cash collected</div>
+          </div>
+          <div class="ar-value">${fmt(splititAR)}</div>
+        </div>
+      `;
+    }
+
+    // ── Revenue section ──
+    html += `<div class="section-header">Revenue Breakdown</div>`;
+    if (rev && rev.categories && rev.categories.length > 0) {
+      rev.categories
+        .filter(c => c.category === "cash_collected")
+        .forEach((cat, i) => {
+          html += renderBucket(
+            `rev-${cat.category}`,
+            cat.label,
+            cat.total,
+            cat.items.map(item => ({
+              name: item.label,
+              amount: item.amount,
+              meta: `${item.payment_count} payment${item.payment_count !== 1 ? "s" : ""}`,
+              is_approximate: false,
+              notes: null,
+            })),
+            i === 0,
+            `${cat.payment_count} payment${cat.payment_count !== 1 ? "s" : ""}`,
+          );
+        });
+    } else {
+      html += `<div class="no-data-inline">No revenue data for this period</div>`;
+    }
+
+    // ── Expenses section ──
+    html += `<div class="section-header">Expense Breakdown</div>`;
+    if (exp && exp.buckets && exp.buckets.length > 0) {
+      exp.buckets.forEach((bucket, i) => {
+        html += renderBucket(
+          `exp-${bucket.bucket}`,
+          bucket.label,
+          bucket.total,
+          bucket.items.map(item => ({
+            name: item.vendor,
+            amount: item.amount,
+            is_approximate: item.is_approximate,
+            notes: item.notes,
+          })),
+          i === 0,
+          null,
+          bucket.has_approximate,
+        );
+      });
+    } else {
+      html += `<div class="no-data-inline">No expense data for this period</div>`;
+    }
+
+    mainEl.innerHTML = html;
+  }
+
+  function renderBucket(id, name, total, items, startOpen, countLabel, hasApprox) {
+    const approxBadge = hasApprox
+      ? `<span class="approx-badge">~ APPROX</span>` : "";
+    const countBadge = countLabel
+      ? `<span class="bucket-count">${countLabel}</span>` : "";
+
+    return `
+      <div class="bucket ${startOpen ? "open" : ""}" id="bucket-${id}">
+        <div class="bucket-header" onclick="toggleBucket('${id}')">
+          <div class="bucket-header-left">
+            <svg class="bucket-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 18 15 12 9 6"/>
+            </svg>
+            <span class="bucket-name">${name}</span>
+            ${approxBadge}
+            ${countBadge}
+          </div>
+          <span class="bucket-total">${fmt(total)}</span>
+        </div>
+        <div class="bucket-body">
+          ${items.map(item => {
+            const amtClass = item.is_approximate ? "item-amount approx" : "item-amount";
+            const tilde    = item.is_approximate ? `<span class="approx-tilde">~</span>` : "";
+            const notes    = item.notes ? `<div class="item-meta">${item.notes}</div>` : "";
+            const meta     = item.meta ? `<div class="item-meta">${item.meta}</div>` : "";
+            return `
+              <div class="item-row">
+                <div>
+                  <div class="item-name">${item.name}</div>
+                  ${meta}${notes}
+                </div>
+                <div class="${amtClass}">${tilde}${fmt(item.amount)}</div>
+              </div>
+            `;
+          }).join("")}
+        </div>
+      </div>
+    `;
+  }
+
+  function toggleBucket(id) {
+    document.getElementById("bucket-" + id).classList.toggle("open");
+  }
+
+  // ── Boot ─────────────────────────────────────────────────────────────────────
+  loadPeriods();
+</script>
+
+</body>
+</html>
