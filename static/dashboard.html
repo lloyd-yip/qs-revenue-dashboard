@@ -253,6 +253,13 @@
     <option value="__all__">All Team</option>
   </select>
   <div class="filter-sep"></div>
+  <label>Date By</label>
+  <div class="toggle-group" id="dateby-toggle">
+    <button class="toggle-btn active" data-val="appointment" onclick="setDateBy('appointment')" title="Filter by when the meeting was scheduled to happen">Appt Date</button>
+    <button class="toggle-btn" data-val="booked" onclick="setDateBy('booked')" title="Filter by when the meeting was booked/scheduled">Booking Date</button>
+    <button class="toggle-btn" data-val="created" onclick="setDateBy('created')" title="Filter by when the opportunity was created in GHL">Created</button>
+  </div>
+  <div class="filter-sep"></div>
   <label>Granularity</label>
   <div class="toggle-group" id="granularity-toggle">
     <button class="toggle-btn" data-val="day" onclick="setGranularity('day')">Day</button>
@@ -648,7 +655,7 @@ function applyUrlState() {
     AppState.dateStart = start;
     AppState.dateEnd = end;
   }
-  if (dateBy === 'appointment' || dateBy === 'created') {
+  if (dateBy === 'appointment' || dateBy === 'booked' || dateBy === 'created') {
     AppState.dateBy = dateBy;
   }
   if (repId !== null) {
@@ -736,6 +743,15 @@ function onRepChange(val) {
 function setGranularity(val) {
   AppState.granularity = val;
   document.querySelectorAll('#granularity-toggle .toggle-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.val === val);
+  });
+  syncUrlState();
+  renderAll();
+}
+
+function setDateBy(val) {
+  AppState.dateBy = val;
+  document.querySelectorAll('#dateby-toggle .toggle-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.val === val);
   });
   syncUrlState();
@@ -2057,6 +2073,9 @@ async function init() {
 
   document.querySelectorAll('#granularity-toggle .toggle-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.val === AppState.granularity);
+  });
+  document.querySelectorAll('#dateby-toggle .toggle-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.val === AppState.dateBy);
   });
   syncUrlState();
 

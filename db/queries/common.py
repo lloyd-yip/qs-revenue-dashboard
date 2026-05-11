@@ -22,13 +22,18 @@ QUALIFIED_LEAD_QUALITY = ("Great", "Ok", "Barely Passable")
 def date_filter(start: date, end: date, date_by: str):
     """Return a SQLAlchemy WHERE clause for the chosen date dimension.
 
-    date_by: 'created' → filter on created_at_ghl
-             'appointment' → filter on call1_appointment_date OR call2_appointment_date
+    date_by: 'appointment' → call1_appointment_date OR call2_appointment_date in range
+             'booked'      → call1_booking_date (when the meeting was scheduled) in range
+             'created'     → created_at_ghl in range
     """
     if date_by == "created":
         col = Opportunity.created_at_ghl
         return and_(func.date(col) >= start, func.date(col) <= end)
+    elif date_by == "booked":
+        col = Opportunity.call1_booking_date
+        return and_(col.isnot(None), func.date(col) >= start, func.date(col) <= end)
     else:
+        # appointment (default)
         c1 = Opportunity.call1_appointment_date
         c2 = Opportunity.call2_appointment_date
         return or_(
@@ -99,16 +104,24 @@ def has_1st_call(start: date, end: date, date_by: str):
     """Opportunity had a 1st call within the relevant scope.
 
     appointment mode → call1_appointment_date falls in date range
+    booked mode      → call1_booking_date falls in date range (meeting booked in period;
+                       appointment may be before or after the range)
     created mode     → call1_appointment_date exists (opp was created in range via base_filter)
     """
     if date_by == "appointment":
         c1 = Opportunity.call1_appointment_date
         return and_(c1.isnot(None), func.date(c1) >= start, func.date(c1) <= end)
+    elif date_by == "booked":
+        bd = Opportunity.call1_booking_date
+        return and_(bd.isnot(None), func.date(bd) >= start, func.date(bd) <= end)
     return Opportunity.call1_appointment_date.isnot(None)
 
 
 def has_2nd_call(start: date, end: date, date_by: str):
-    """Opportunity had a 2nd call within the relevant scope."""
+    """Opportunity had a 2nd call within the relevant scope.
+
+    booked mode falls back to "2nd call exists" — we don't track 2nd call booking dates.
+    """
     if date_by == "appointment":
         c2 = Opportunity.call2_appointment_date
         return and_(c2.isnot(None), func.date(c2) >= start, func.date(c2) <= end)

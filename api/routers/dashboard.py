@@ -85,7 +85,7 @@ def _date_params(
     end: date = Query(..., description="End date (YYYY-MM-DD)"),
     date_by: str = Query("appointment", description="Date dimension: 'appointment' or 'created'"),
 ) -> tuple[date, date, str]:
-    if date_by not in ("appointment", "created"):
+    if date_by not in ("appointment", "booked", "created"):
         date_by = "appointment"
     return start, end, date_by
 
