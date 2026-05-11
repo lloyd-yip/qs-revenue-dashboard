@@ -158,14 +158,20 @@ def _whop_headers() -> dict:
 
 
 async def _fetch_whop_memberships(client: httpx.AsyncClient) -> list[dict]:
-    """Fetch all Whop memberships (paginated). Returns raw API objects."""
+    """Fetch all Whop memberships (paginated). Returns raw API objects.
+
+    Notes:
+    - Whop v2 uses per_page (not limit) with a max of 50.
+    - We fetch all statuses (omit status filter) so historical/expired members
+      are included — we need to match against past close dates.
+    """
     memberships: list[dict] = []
     page = 1
     while True:
         resp = await client.get(
             f"{WHOP_API_BASE}/memberships",
             headers=_whop_headers(),
-            params={"limit": 50, "page": page},
+            params={"per_page": 50, "page": page},
         )
         resp.raise_for_status()
         data = resp.json()
@@ -173,6 +179,10 @@ async def _fetch_whop_memberships(client: httpx.AsyncClient) -> list[dict]:
         memberships.extend(items)
         pagination = data.get("pagination", {})
         next_page = pagination.get("next_page")
+        logger.debug(
+            f"Whop memberships page {page}: got {len(items)} items, "
+            f"next_page={next_page}, total so far={len(memberships)}"
+        )
         if not next_page or not items:
             break
         page = next_page
@@ -189,7 +199,7 @@ async def _fetch_membership_payments(
         resp = await client.get(
             f"{WHOP_API_BASE}/payments",
             headers=_whop_headers(),
-            params={"membership_id": membership_id, "limit": 50, "page": page},
+            params={"membership_id": membership_id, "per_page": 50, "page": page},
         )
         if resp.status_code == 404:
             break
@@ -357,17 +367,27 @@ async def _match_one_deal(
 
     candidates: list[tuple[dict, int]] = []  # (membership, days_diff)
     for m in memberships:
-        created_raw = m.get("created_at", "")
+        created_raw = m.get("created_at")
         if not created_raw:
             continue
         try:
-            m_date = datetime.fromisoformat(
-                created_raw.replace("Z", "+00:00")
-            ).date()
-        except (ValueError, AttributeError):
+            # Whop v2 returns created_at as a Unix timestamp (int).
+            # Fall back to ISO string parsing for forward compatibility.
+            if isinstance(created_raw, (int, float)):
+                m_date = datetime.fromtimestamp(created_raw, tz=timezone.utc).date()
+            else:
+                m_date = datetime.fromisoformat(
+                    str(created_raw).replace("Z", "+00:00")
+                ).date()
+        except (ValueError, AttributeError, OSError):
             continue
         if window_start <= m_date <= window_end:
             candidates.append((m, (m_date - close_date).days))
+
+    logger.debug(
+        f"Deal {deal.ghl_opportunity_id}: close={close_date}, "
+        f"window=[{window_start}→{window_end}], candidates={len(candidates)}"
+    )
 
     # ── Score all candidates and pick the best ────────────────────────────
     best_score = 0.0
