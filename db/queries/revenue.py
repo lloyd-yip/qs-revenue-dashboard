@@ -20,8 +20,16 @@ CATEGORY_LABELS = {
 }
 
 PRODUCT_TYPE_LABELS = {
+    # Xero income account labels
+    "high_ticket_installment": "High-Ticket Installment",
+    "high_ticket_upfront":     "High-Ticket Upfront",
+    "low_ticket_installment":  "Low-Ticket",
+    "referral":                "Referral Income",
+    "refunds":                 "Refunds",
+    "saas":                    "SaaS",
+    "splitit_balance":         "Splitit Balance Adj.",
+    # Legacy Whop labels (kept for backward compat)
     "high_ticket": "High-Ticket",
-    "saas": "SaaS",
 }
 
 

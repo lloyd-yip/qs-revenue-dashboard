@@ -136,6 +136,7 @@
     .item-meta { font-size: 11px; color: var(--text3); margin-top: 2px; }
     .item-amount { font-size: 13px; font-weight: 600; color: var(--text2); white-space: nowrap; }
     .item-amount.approx { color: var(--yellow); }
+    .item-amount.negative { color: var(--red); }
     .approx-tilde { font-size: 11px; margin-right: 1px; }
 
     /* ── Divider ── */
@@ -362,6 +363,7 @@
       ? `<span class="approx-badge">~ APPROX</span>` : "";
     const countBadge = countLabel
       ? `<span class="bucket-count">${countLabel}</span>` : "";
+    const totalClass = total < 0 ? "bucket-total" : "bucket-total";
 
     return `
       <div class="bucket ${startOpen ? "open" : ""}" id="bucket-${id}">
@@ -374,12 +376,14 @@
             ${approxBadge}
             ${countBadge}
           </div>
-          <span class="bucket-total">${fmt(total)}</span>
+          <span class="${totalClass}">${total < 0 ? "−" : ""}${fmt(total)}</span>
         </div>
         <div class="bucket-body">
           ${items.map(item => {
-            const amtClass = item.is_approximate ? "item-amount approx" : "item-amount";
+            const isNeg = item.amount < 0;
+            const amtClass = item.is_approximate ? "item-amount approx" : isNeg ? "item-amount negative" : "item-amount";
             const tilde    = item.is_approximate ? `<span class="approx-tilde">~</span>` : "";
+            const negSign  = isNeg ? "−" : "";
             const notes    = item.notes ? `<div class="item-meta">${item.notes}</div>` : "";
             const meta     = item.meta ? `<div class="item-meta">${item.meta}</div>` : "";
             return `
@@ -388,7 +392,7 @@
                   <div class="item-name">${item.name}</div>
                   ${meta}${notes}
                 </div>
-                <div class="${amtClass}">${tilde}${fmt(item.amount)}</div>
+                <div class="${amtClass}">${tilde}${negSign}${fmt(item.amount)}</div>
               </div>
             `;
           }).join("")}
