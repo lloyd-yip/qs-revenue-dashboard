@@ -13,6 +13,7 @@ Metrics: calls booked, show rates, qual rates, 2nd-call show rate,
 
 import smtplib
 import sys
+import uuid
 from datetime import date, datetime, timedelta, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -882,10 +883,11 @@ def send_compliance_emails(compliance_data: dict, start: date, end: date,
                     parts.append(f"{mv_count} deal value{'s' if mv_count != 1 else ''} missing")
                 subject = f"⚠️ Action Required: {' · '.join(parts)} — {period_label}"
 
-                msg             = MIMEMultipart("alternative")
-                msg["Subject"]  = subject
-                msg["From"]     = SMTP_USER
-                msg["To"]       = email
+                msg                = MIMEMultipart("alternative")
+                msg["Message-ID"]  = f"<{uuid.uuid4()}@quantum-scaling.com>"
+                msg["Subject"]     = subject
+                msg["From"]        = SMTP_USER
+                msg["To"]          = email
                 msg.attach(MIMEText(html, "html"))
 
                 server.sendmail(SMTP_USER, [email], msg.as_string())
@@ -920,10 +922,11 @@ def main():
     subject      = f"📊 Revenue Report — Week of {period_label}"
     print(f"Sending main report: {subject}")
 
-    msg             = MIMEMultipart("alternative")
-    msg["Subject"]  = subject
-    msg["From"]     = SMTP_USER
-    msg["To"]       = ", ".join(RECIPIENTS)
+    msg                = MIMEMultipart("alternative")
+    msg["Message-ID"]  = f"<{uuid.uuid4()}@quantum-scaling.com>"
+    msg["Subject"]     = subject
+    msg["From"]        = SMTP_USER
+    msg["To"]          = ", ".join(RECIPIENTS)
     msg.attach(MIMEText(html, "html"))
 
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
