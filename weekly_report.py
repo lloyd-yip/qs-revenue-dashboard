@@ -840,11 +840,12 @@ def send_compliance_emails(compliance_data: dict, start: date, end: date,
         print("  No compliance failures or missing deal values — skipping rep emails.")
         return
 
-    # Group failures by rep name
+    # Group failures by canonical rep name (normalize whitespace)
     by_rep: dict[str, list] = {}
     for f in failures:
-        rep = f.get("rep_name") or "Unknown"
-        by_rep.setdefault(rep, []).append(f)
+        raw = f.get("rep_name") or "Unknown"
+        canonical_rep = " ".join(raw.split())
+        by_rep.setdefault(canonical_rep, []).append(f)
 
     # Also ensure reps with ONLY missing values (no call failures) get emailed
     for rep_name in mv_by_rep:
