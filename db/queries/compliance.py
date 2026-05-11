@@ -131,17 +131,21 @@ async def get_compliance_failures(
     non_compliance = rep_non_compliance_expr()
     showed = showed_1st_call_expr()
 
+    from sync.ghl_client import DISQUALIFIED_STAGE_ID
+
     result = await session.execute(
         select(
             Opportunity.ghl_opportunity_id,
             Opportunity.opportunity_name,
             Opportunity.opportunity_owner_name,
+            Opportunity.pipeline_stage_id,
             Opportunity.pipeline_stage_name,
             Opportunity.call1_appointment_date,
             Opportunity.call1_appointment_status,
             Opportunity.lead_quality,
             Opportunity.post_call_note_word_count,
             Opportunity.outcome_unfilled,
+            Opportunity.dq_reason,
         )
         .where(and_(bf, non_compliance))
         .order_by(Opportunity.call1_appointment_date.desc())
@@ -151,16 +155,23 @@ async def get_compliance_failures(
     for row in result.all():
         # Determine which violations this opp has for the detail table
         violations = []
+        is_dq = row.pipeline_stage_id == DISQUALIFIED_STAGE_ID
+
         if row.outcome_unfilled:
             violations.append("Outcome not logged")
-        # Qual and note violations only apply to opps that actually showed —
-        # no-shows don't need qual fields filled or a post-call note
-        actually_showed = row.call1_appointment_status == "Showed"
-        if actually_showed and row.lead_quality is None:
-            violations.append("Qual fields empty")
-        if actually_showed and row.post_call_note_word_count is not None and row.post_call_note_word_count < NOTE_MIN_WORDS:
-            wc = row.post_call_note_word_count
-            violations.append(f"Note lacks fidelity ({wc} words)" if wc > 0 else "No qualifying note found")
+
+        if is_dq:
+            # DQ'd leads: only obligation is to record why they were disqualified
+            if not row.dq_reason:
+                violations.append("DQ reason missing")
+        else:
+            # Non-DQ leads that showed: need qual fields + qualifying note
+            actually_showed = row.call1_appointment_status == "Showed"
+            if actually_showed and row.lead_quality is None:
+                violations.append("Qual fields empty")
+            if actually_showed and row.post_call_note_word_count is not None and row.post_call_note_word_count < NOTE_MIN_WORDS:
+                wc = row.post_call_note_word_count
+                violations.append(f"Note lacks fidelity ({wc} words)" if wc > 0 else "No qualifying note found")
 
         rows.append({
             "ghl_opportunity_id": row.ghl_opportunity_id,

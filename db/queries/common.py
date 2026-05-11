@@ -85,18 +85,26 @@ def rep_non_compliance_expr():
 
     TRUE if any of:
     1. outcome_unfilled — appointment passed 12h, status never updated
-    2. Showed + lead_quality not filled
-    3. Showed + post_call_note_word_count below threshold (or 0 = no note found)
+    2. Showed + NOT disqualified + lead_quality not filled
+    3. Showed + NOT disqualified + post_call_note_word_count below threshold
+    4. Disqualified + dq_reason not filled (DQ without a reason is still a violation)
+
+    DQ'd leads are exempt from lead_quality and note requirements — the only
+    obligation after disqualifying someone is to record why.
     """
     showed = showed_1st_call_expr()
+    is_dq = Opportunity.pipeline_stage_id == DISQUALIFIED_STAGE_ID
+    not_dq = Opportunity.pipeline_stage_id != DISQUALIFIED_STAGE_ID
     return or_(
         Opportunity.outcome_unfilled.is_(True),
-        and_(showed, Opportunity.lead_quality.is_(None)),
+        and_(showed, not_dq, Opportunity.lead_quality.is_(None)),
         and_(
             showed,
+            not_dq,
             Opportunity.post_call_note_word_count.isnot(None),  # notes were checked
             Opportunity.post_call_note_word_count < NOTE_MIN_WORDS,
         ),
+        and_(is_dq, Opportunity.dq_reason.is_(None)),
     )
 
 
