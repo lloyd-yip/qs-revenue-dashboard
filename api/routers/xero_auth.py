@@ -49,7 +49,7 @@ XERO_CLIENT_ID    = "EE84B9CECE064FDFA44A9989AD8356AA"   # colleague's paid app 
 XERO_CLIENT_SECRET = "HUlfGFWxvkSZXeQWANn7YZEqE5NEMqPJ5dVuk26CioDyPLvn"
 XERO_REDIRECT_URI  = "https://qs-revenue-dashboard-production.up.railway.app/xero/callback"
 XERO_TENANT_ID     = "3bead22e-28ff-4eb1-92cd-9b9d648e188a"
-XERO_SCOPES        = "openid profile email accounting.reports.read offline_access"
+XERO_SCOPES        = "openid profile email accounting.reports.profitandloss.read offline_access"
 
 XERO_AUTH_URL   = "https://login.xero.com/identity/connect/authorize"
 XERO_TOKEN_URL  = "https://identity.xero.com/connect/token"
