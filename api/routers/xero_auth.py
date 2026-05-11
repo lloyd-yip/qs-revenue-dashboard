@@ -14,10 +14,10 @@ Token lifecycle:
   Access token  — valid 30 minutes (auto-refreshed on every sync call)
   Refresh token — valid 60 days (refreshed automatically; stored back to DB after each use)
 
-Credentials (Revenue Team Xero app):
-  Client ID:    05523DA543B246E78CA8FAF2457F8C91
+Credentials (colleague's paid Xero app — free plan blocks accounting.reports.read):
+  Client ID:    EE84B9CECE064FDFA44A9989AD8356AA
   Redirect URI: https://qs-revenue-dashboard-production.up.railway.app/xero/callback
-  Client secret is read from XERO_CLIENT_SECRET env var (set in Railway).
+                (must be registered in Xero developer portal — localhost was the original)
   Tenant ID:    3bead22e-28ff-4eb1-92cd-9b9d648e188a (quantumSCALE Institute OÜ)
 """
 
@@ -45,8 +45,8 @@ router = APIRouter(tags=["xero"])
 
 # ── Xero OAuth constants ──────────────────────────────────────────────────────
 
-XERO_CLIENT_ID    = "05523DA543B246E78CA8FAF2457F8C91"
-XERO_CLIENT_SECRET = "BdwsWyuDSbkfmeONsBLsuTpPKq5fsFjN1wSKx_Bt7UrMIkdm"
+XERO_CLIENT_ID    = "EE84B9CECE064FDFA44A9989AD8356AA"   # colleague's paid app (50 connections, full scopes)
+XERO_CLIENT_SECRET = "HUlfGFWxvkSZXeQWANn7YZEqE5NEMqPJ5dVuk26CioDyPLvn"
 XERO_REDIRECT_URI  = "https://qs-revenue-dashboard-production.up.railway.app/xero/callback"
 XERO_TENANT_ID     = "3bead22e-28ff-4eb1-92cd-9b9d648e188a"
 XERO_SCOPES        = "openid profile email accounting.reports.read offline_access"
