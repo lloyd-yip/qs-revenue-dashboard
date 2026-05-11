@@ -62,6 +62,7 @@ from db.queries.metrics_by_rep import get_by_rep, get_daily_activity, get_rep_cl
 from db.queries.metrics_summary import get_summary
 from db.queries.pipeline_intelligence import get_pipeline_intelligence, get_segment_closes
 from db.queries.dead_deals import get_dead_deals_data
+from db.queries.stage_snapshot import get_stage_snapshot
 from db.queries.reps import get_reps
 from db.queries.slwa import get_slwa_closes, get_slwa_weekly_dashboard, upsert_slwa_weekly_input
 from db.queries.sync_status import get_recent_sync_runs
@@ -573,6 +574,29 @@ async def upsells(
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
     return {"data": {"summary": summary, "by_rep": by_rep}, "meta": meta}
+
+
+# ── Stage Snapshot (Hot / Warm List) ──────────────────────────────────────────
+
+@router.get("/stage-snapshot")
+async def stage_snapshot(db: AsyncSession = Depends(get_db)):
+    """Current-state Hot List + Warm List by rep with deal values.
+
+    No date params — reflects the live GHL pipeline right now.
+    Used by the weekly report for projected pipeline value calculations.
+
+    Discount rates applied by the consumer (weekly report):
+      Hot List  (Verbal Commit)         → 50% of deal value
+      Warm List (1st/2nd Call done)     → 10% of deal value
+
+    Also surfaces missing_value_count per rep/bucket so the report can flag
+    reps who haven't filled in deal value on their Hot/Warm opps.
+    """
+    data = await get_stage_snapshot(db)
+    return {
+        "data": data,
+        "meta": {"generated_at": datetime.now(timezone.utc).isoformat()},
+    }
 
 
 # ── Expenses ──────────────────────────────────────────────────────────────────

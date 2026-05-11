@@ -150,8 +150,17 @@ def fetch_all(start: date, end: date) -> dict:
         "date_by": "appointment",
     }
 
-    # Upcoming pipeline: next 35 days from today (scheduled calls per rep)
-    upcoming = {
+    # Upcoming week: Mon–Sun of the current week (report fires Monday morning)
+    week_monday = today - timedelta(days=today.weekday())
+    week_sunday  = week_monday + timedelta(days=6)
+    this_week = {
+        "start": week_monday.isoformat(),
+        "end":   week_sunday.isoformat(),
+        "date_by": "appointment",
+    }
+
+    # Upcoming 35 days: broader forward pipeline per rep
+    upcoming_35 = {
         "start": today.isoformat(),
         "end": (today + timedelta(days=35)).isoformat(),
         "date_by": "appointment",
@@ -174,10 +183,19 @@ def fetch_all(start: date, end: date) -> dict:
     print("  compliance...")
     compliance = api_get("/api/dashboard/compliance", base)
 
-    # Upcoming pipeline: next 35 days per rep (how loaded is each rep's calendar?)
-    print("  upcoming pipeline (next 35 days)...")
+    # This week's scheduled calls per rep (Mon–Sun)
+    print("  this week's pipeline (Mon–Sun)...")
+    this_week_pipeline = api_get("/api/dashboard/pipeline-intelligence",
+                                 {**this_week, "group_by": "rep"})
+
+    # 35-day forward calendar per rep (broader view)
+    print("  upcoming pipeline (35-day)...")
     upcoming_pipeline = api_get("/api/dashboard/pipeline-intelligence",
-                                {**upcoming, "group_by": "rep"})
+                                {**upcoming_35, "group_by": "rep"})
+
+    # Hot/Warm list snapshot — current-state, no date filter
+    print("  stage snapshot (hot/warm)...")
+    stage_snap_raw = api_get("/api/dashboard/stage-snapshot", {})
 
     def unwrap(d):
         return d.get("data", d) if isinstance(d, dict) else d
@@ -185,6 +203,8 @@ def fetch_all(start: date, end: date) -> dict:
     by_rep_list = unwrap(by_rep)
     if isinstance(by_rep_list, dict):
         by_rep_list = by_rep_list.get("reps", [])
+
+    stage_snap_data = stage_snap_raw.get("data", {}) if isinstance(stage_snap_raw, dict) else {}
 
     # Per-rep LQ breakdown: call pipeline-intelligence?group_by=lead_quality per rep
     # so Section 2 can show Great/Ok/Barely/Bad mix per rep.
@@ -211,18 +231,22 @@ def fetch_all(start: date, end: date) -> dict:
                 lq_by_rep_id[rep_id] = {}
 
     return {
-        "summary":          unwrap(summary),
-        "by_rep":           by_rep_list,
-        "channels":         unwrap(channels),
-        "closes":           unwrap(closes_raw),
-        "compliance":       unwrap(compliance),
-        "upcoming_pipeline": unwrap(upcoming_pipeline),
-        "lq_by_rep_id":    lq_by_rep_id,
+        "summary":            unwrap(summary),
+        "by_rep":             by_rep_list,
+        "channels":           unwrap(channels),
+        "closes":             unwrap(closes_raw),
+        "compliance":         unwrap(compliance),
+        "this_week_pipeline": unwrap(this_week_pipeline),
+        "upcoming_pipeline":  unwrap(upcoming_pipeline),
+        "stage_snapshot":     stage_snap_data,
+        "lq_by_rep_id":       lq_by_rep_id,
+        "week_monday":        week_monday,
+        "week_sunday":        week_sunday,
     }
 
 
 # ── ANOMALY DETECTION ────────────────────────────────────────────────────────
-def detect_anomalies(s: dict, reps: list) -> list[str]:
+def detect_anomalies(s: dict, reps: list, stage_snapshot: dict | None = None) -> list[str]:
     flags = []
 
     # Team show rate — flag only if clearly unhealthy (below 50%)
@@ -257,19 +281,45 @@ def detect_anomalies(s: dict, reps: list) -> list[str]:
         if notlogged >= 3:
             flags.append(f"⚠️ {name} has {notlogged} calls with outcome not logged")
 
+    # Missing deal values on Hot/Warm list
+    if stage_snapshot:
+        team = stage_snapshot.get("team") or {}
+        total_missing = (team.get("hot_missing_value") or 0) + (team.get("warm_missing_value") or 0)
+        if total_missing > 0:
+            flags.append(
+                f"⚠️ {total_missing} Hot/Warm list opp(s) have no deal value — "
+                f"reps need to fill in monetary value in GHL"
+            )
+
     return flags or ["✅ All metrics within normal range"]
 
 
 # ── BUILD HTML ────────────────────────────────────────────────────────────────
 def build_html(start: date, end: date, data: dict, anomalies: list, generated_at: str) -> str:
-    period_label       = f"{start.strftime('%b %d')} – {end.strftime('%b %d, %Y')}"
-    s                  = data.get("summary") or {}
-    reps               = data.get("by_rep") or []
-    channels           = data.get("channels") or []
-    closes             = data.get("closes") or []
-    upcoming_pipeline  = data.get("upcoming_pipeline") or {}
-    lq_by_rep_id       = data.get("lq_by_rep_id") or {}
-    up_rows            = upcoming_pipeline.get("rows", []) if isinstance(upcoming_pipeline, dict) else []
+    period_label        = f"{start.strftime('%b %d')} – {end.strftime('%b %d, %Y')}"
+    s                   = data.get("summary") or {}
+    reps                = data.get("by_rep") or []
+    channels            = data.get("channels") or []
+    closes              = data.get("closes") or []
+    this_week_pipeline  = data.get("this_week_pipeline") or {}
+    upcoming_pipeline   = data.get("upcoming_pipeline") or {}
+    stage_snapshot      = data.get("stage_snapshot") or {}
+    lq_by_rep_id        = data.get("lq_by_rep_id") or {}
+    week_monday         = data.get("week_monday") or date.today()
+    week_sunday         = data.get("week_sunday") or (date.today() + timedelta(days=6))
+    compliance_data     = data.get("compliance") or {}
+
+    tw_rows   = this_week_pipeline.get("rows", []) if isinstance(this_week_pipeline, dict) else []
+    up_rows   = upcoming_pipeline.get("rows",  []) if isinstance(upcoming_pipeline, dict) else []
+    snap_reps = stage_snapshot.get("by_rep", []) if isinstance(stage_snapshot, dict) else []
+    snap_team = stage_snapshot.get("team", {})   if isinstance(stage_snapshot, dict) else {}
+
+    # Build a quick lookup: rep_name → 2nd-call outcome_unfilled count
+    # from the compliance by_rep data so we can annotate the 2nd call row in Section 1
+    comp_by_rep_map: dict[str, dict] = {}
+    for cr in (compliance_data.get("by_rep") or []):
+        n = " ".join((cr.get("rep_name") or "").split())
+        comp_by_rep_map[n] = cr
 
     # ── Anomaly banner ───────────────────────────────────────────────────────
     if anomalies[0].startswith("✅"):
@@ -293,6 +343,16 @@ def build_html(start: date, end: date, data: dict, anomalies: list, generated_at
     qual_r  = s.get("qualification_rate")
     dq_r    = s.get("dq_rate")
 
+    # 2nd call compliance: count team outcome_unfilled on 2nd calls this period.
+    # The compliance endpoint flags outcome_unfilled for any appointment (incl. call2)
+    # so if b2 > 0 and shows_2nd = 0 we surface how many are outcome_unfilled.
+    team_outcome_unfilled = (compliance_data.get("summary") or {}).get("outcome_unfilled_count") or 0
+    # We show a note on the 2nd call row when there are b2 calls and zero shows,
+    # to make clear it may be a logging gap rather than all genuine no-shows.
+    c2_sub = f"{sh2}/{b2} showed"
+    if b2 > 0 and sh2 == 0 and team_outcome_unfilled > 0:
+        c2_sub += f" · {team_outcome_unfilled} outcome unfilled"
+
     # Note: close_rate is excluded — not meaningful on a weekly basis.
     # A close this week likely came from a call made 2–4 weeks ago; the weekly window misleads.
     overview = (
@@ -305,7 +365,7 @@ def build_html(start: date, end: date, data: dict, anomalies: list, generated_at
         row_html("2nd Call Show Rate (of previously scheduled)",
                  fmt_rate(sr2),
                  color=rate_color_from_decimal(sr2, 0.75, 0.60),
-                 sub=f"{sh2}/{b2} showed") +
+                 sub=c2_sub) +
         row_html("Qual Rate (of 1st-call shows)",
                  fmt_rate(qual_r),
                  color=rate_color_from_decimal(qual_r, 0.60, 0.45)) +
@@ -416,35 +476,55 @@ def build_html(start: date, end: date, data: dict, anomalies: list, generated_at
         + "</table>"
     ) if ch_rows_html else f'<div style="color:{C["muted"]};">No channel data for this period.</div>'
 
-    # ── SECTION 4: Upcoming pipeline (next 35 days, per rep) ─────────────────
-    # Shows how loaded each rep's near-term calendar is.
-    # C2 heavy = rep is deep in the pipeline → 🔥 indicator.
-    today        = date.today()
+    # ── SECTION 4: Pipeline — this week + forward calendar + hot/warm value ──────
+    today = date.today()
+
+    # Part A: This week's scheduled calls (Mon–Sun)
+    week_label   = f"{week_monday.strftime('%b %d')} – {week_sunday.strftime('%b %d')}"
+    tw_html_rows = ""
+    for pr in tw_rows:
+        seg  = pr.get("segment") or "?"
+        pc1b = pr.get("calls_booked_1st") or 0
+        pc2b = pr.get("calls_booked_2nd") or 0
+        if not (pc1b or pc2b):
+            continue
+        tw_html_rows += tr_html([
+            seg.split()[0],
+            str(pc1b),
+            f'<span style="color:{C["accent"]};font-weight:700;">{pc2b}</span>',
+            str(pc1b + pc2b),
+        ])
+
+    tw_table = (
+        f'<div style="font-size:11px;color:{C["muted"]};font-style:italic;margin-bottom:10px;">'
+        f'Appointments scheduled {week_label}</div>'
+        + f'<table style="width:100%;border-collapse:collapse;">'
+        + th(["Rep", "1st Calls", "2nd Calls", "Total"])
+        + tw_html_rows
+        + "</table>"
+    ) if tw_html_rows else f'<div style="color:{C["muted"]};">No calls scheduled this week.</div>'
+
+    # Part B: 35-day forward calendar (broader load view)
     look_end     = today + timedelta(days=35)
     up_period    = f"{today.strftime('%b %d')} – {look_end.strftime('%b %d')}"
     up_html_rows = ""
     total_c1_up  = 0
     total_c2_up  = 0
-
     for pr in up_rows:
         seg  = pr.get("segment") or "?"
         pc1b = pr.get("calls_booked_1st") or 0
         pc2b = pr.get("calls_booked_2nd") or 0
         if not (pc1b or pc2b):
             continue
-        total  = pc1b + pc2b
-        hot    = " 🔥" if pc2b >= 10 else ""
-        name   = seg.split()[0]
+        hot   = " 🔥" if pc2b >= 10 else ""
         total_c1_up += pc1b
         total_c2_up += pc2b
         up_html_rows += tr_html([
-            name,
+            seg.split()[0],
             str(pc1b),
             f'<span style="color:{C["accent"]};font-weight:700;">{pc2b}{hot}</span>',
-            str(total),
+            str(pc1b + pc2b),
         ])
-
-    # Totals row
     if up_html_rows:
         up_html_rows += tr_html([
             f'<strong style="color:{C["text"]};">TOTAL</strong>',
@@ -452,15 +532,100 @@ def build_html(start: date, end: date, data: dict, anomalies: list, generated_at
             f'<strong style="color:{C["accent"]};">{total_c2_up}</strong>',
             f'<strong style="color:{C["text"]};">{total_c1_up + total_c2_up}</strong>',
         ])
-
-    upcoming_html = (
-        f'<div style="font-size:11px;color:{C["muted"]};font-style:italic;margin-bottom:12px;">'
-        f'Scheduled appointments from {up_period} · 🔥 = 10+ 2nd calls (hot pipeline)</div>'
+    up_table = (
+        f'<div style="font-size:11px;color:{C["muted"]};font-style:italic;margin-bottom:10px;">'
+        f'{up_period} · 🔥 = 10+ 2nd calls lined up</div>'
         + f'<table style="width:100%;border-collapse:collapse;">'
-        + th(["Rep", "1st Calls Scheduled", "2nd Calls Scheduled", "Total"])
+        + th(["Rep", "1st Calls", "2nd Calls", "Total"])
         + up_html_rows
         + "</table>"
     ) if up_html_rows else f'<div style="color:{C["muted"]};">No upcoming pipeline data.</div>'
+
+    # Part C: Hot / Warm list projected value
+    HOT_DISCOUNT  = 0.50   # 50% close probability
+    WARM_DISCOUNT = 0.10   # 10% close probability
+
+    snap_rows_html  = ""
+    team_hot_proj   = snap_team.get("hot_value", 0)  * HOT_DISCOUNT
+    team_warm_proj  = snap_team.get("warm_value", 0) * WARM_DISCOUNT
+    team_total_proj = team_hot_proj + team_warm_proj
+    team_hot_miss   = snap_team.get("hot_missing_value", 0)
+    team_warm_miss  = snap_team.get("warm_missing_value", 0)
+
+    for sr in snap_reps:
+        rname     = (sr.get("rep_name") or "?").split()[0]
+        hot_cnt   = sr.get("hot_count", 0)
+        hot_val   = sr.get("hot_value", 0.0)
+        hot_miss  = sr.get("hot_missing_value", 0)
+        warm_cnt  = sr.get("warm_count", 0)
+        warm_val  = sr.get("warm_value", 0.0)
+        warm_miss = sr.get("warm_missing_value", 0)
+        if not (hot_cnt or warm_cnt):
+            continue
+
+        hot_proj  = hot_val  * HOT_DISCOUNT
+        warm_proj = warm_val * WARM_DISCOUNT
+        proj_total = hot_proj + warm_proj
+
+        miss_note = ""
+        if hot_miss or warm_miss:
+            miss_note = (
+                f'<span style="color:{C["yellow"]};font-size:10px;margin-left:4px;">'
+                f'⚠ {hot_miss + warm_miss} no deal value</span>'
+            )
+
+        snap_rows_html += tr_html([
+            rname,
+            f'{hot_cnt}' + (f' <span style="color:{C["yellow"]};font-size:10px;">({hot_miss} no $)</span>' if hot_miss else ''),
+            fmt_money(hot_proj),
+            f'{warm_cnt}' + (f' <span style="color:{C["yellow"]};font-size:10px;">({warm_miss} no $)</span>' if warm_miss else ''),
+            fmt_money(warm_proj),
+            f'<span style="color:{C["green"]};font-weight:700;">{fmt_money(proj_total)}</span>',
+        ])
+
+    # Team totals row
+    if snap_rows_html:
+        miss_total = team_hot_miss + team_warm_miss
+        snap_rows_html += tr_html([
+            f'<strong style="color:{C["text"]};">TEAM</strong>',
+            f'<strong>{snap_team.get("hot_count", 0)}</strong>',
+            f'<strong style="color:{C["accent"]};">{fmt_money(team_hot_proj)}</strong>',
+            f'<strong>{snap_team.get("warm_count", 0)}</strong>',
+            f'<strong style="color:{C["accent"]};">{fmt_money(team_warm_proj)}</strong>',
+            f'<strong style="color:{C["green"]};">{fmt_money(team_total_proj)}</strong>',
+        ])
+
+    pipeline_value_note = (
+        f'<div style="font-size:11px;color:{C["muted"]};font-style:italic;margin-bottom:10px;">'
+        f'Current GHL pipeline · Hot×50% + Warm×10% = projected value'
+        + (f' · <span style="color:{C["yellow"]};">⚠ {team_hot_miss + team_warm_miss} opps missing deal value</span>' if (team_hot_miss + team_warm_miss) > 0 else '')
+        + '</div>'
+    )
+    snap_table = (
+        pipeline_value_note
+        + f'<table style="width:100%;border-collapse:collapse;">'
+        + th(["Rep", "Hot 🔥", "Hot Proj", "Warm", "Warm Proj", "Total Proj"])
+        + snap_rows_html
+        + "</table>"
+    ) if snap_rows_html else f'<div style="color:{C["muted"]};">No Hot/Warm list data found.</div>'
+
+    upcoming_html = f"""
+    <div style="margin-bottom:20px;">
+      <div style="font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;
+                  color:{C["yellow"]};margin-bottom:8px;">THIS WEEK — {week_label}</div>
+      {tw_table}
+    </div>
+    <div style="margin-bottom:20px;">
+      <div style="font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;
+                  color:{C["yellow"]};margin-bottom:8px;">35-DAY FORWARD LOAD</div>
+      {up_table}
+    </div>
+    <div>
+      <div style="font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;
+                  color:{C["yellow"]};margin-bottom:8px;">PROJECTED PIPELINE VALUE</div>
+      {snap_table}
+    </div>
+    """
 
     # ── SECTION 5: Recent closes (90-day window) ──────────────────────────────
     close_rows_html = ""
@@ -529,7 +694,8 @@ def build_html(start: date, end: date, data: dict, anomalies: list, generated_at
 
 
 # ── COMPLIANCE EMAILS ─────────────────────────────────────────────────────────
-def build_compliance_email_html(rep_first_name: str, failures: list, period_label: str) -> str:
+def build_compliance_email_html(rep_first_name: str, failures: list, period_label: str,
+                                missing_value_opps: list | None = None) -> str:
     """Build per-rep HTML email listing outcomes that need to be logged."""
     rows = ""
     for f in failures:
@@ -559,6 +725,44 @@ def build_compliance_email_html(rep_first_name: str, failures: list, period_labe
         </tr>"""
 
     count = len(failures)
+
+    # Missing deal value section
+    if missing_value_opps:
+        mv_rows = ""
+        for opp in missing_value_opps:
+            opp_name = opp.get("opp_name") or "Unknown"
+            bucket   = opp.get("bucket") or "hot"
+            q        = opp_name.replace(" ", "+")
+            ghl_url  = f"https://app.gohighlevel.com/v2/location/{GHL_LOCATION_ID}/contacts/?q={q}"
+            badge_color = "#f87171" if bucket == "hot" else "#fbbf24"
+            mv_rows += f"""
+            <tr>
+              <td style="padding:9px 12px;border-bottom:1px solid #2a2a2a;color:#e8e8e8;font-size:13px;">{opp_name}</td>
+              <td style="padding:9px 12px;border-bottom:1px solid #2a2a2a;">
+                <span style="color:{badge_color};font-size:11px;font-weight:700;text-transform:uppercase;">{bucket} list</span>
+              </td>
+              <td style="padding:9px 12px;border-bottom:1px solid #2a2a2a;">
+                <a href="{ghl_url}" style="color:#60a5fa;font-size:12px;text-decoration:none;">Open in GHL →</a>
+              </td>
+            </tr>"""
+        missing_value_section = f"""
+  <div style="background:#1a1a1a;border:1px solid #fbbf24;border-radius:10px;overflow:hidden;margin-bottom:12px;">
+    <div style="padding:12px 16px;background:#1f1a0a;border-bottom:1px solid #fbbf24;">
+      <strong style="color:#fbbf24;font-size:13px;">⚠️ Deal value missing on {len(missing_value_opps)} Hot/Warm opp(s)</strong>
+      <p style="margin:4px 0 0;color:#888;font-size:12px;">Please add monetary value in GHL so pipeline projections are accurate.</p>
+    </div>
+    <table style="width:100%;border-collapse:collapse;">
+      <tr>
+        <td style="padding:7px 12px;color:#888;font-size:11px;font-weight:700;text-transform:uppercase;border-bottom:1px solid #2a2a2a;">Opportunity</td>
+        <td style="padding:7px 12px;color:#888;font-size:11px;font-weight:700;text-transform:uppercase;border-bottom:1px solid #2a2a2a;">List</td>
+        <td style="padding:7px 12px;color:#888;font-size:11px;font-weight:700;text-transform:uppercase;border-bottom:1px solid #2a2a2a;">Link</td>
+      </tr>
+      {mv_rows}
+    </table>
+  </div>"""
+    else:
+        missing_value_section = ""
+
     return f"""<!DOCTYPE html>
 <html><head><meta charset="UTF-8"></head>
 <body style="margin:0;padding:0;background:#0f0f0f;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
@@ -591,11 +795,13 @@ def build_compliance_email_html(rep_first_name: str, failures: list, period_labe
     </table>
   </div>
 
-  <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:16px 20px;">
+  <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:16px 20px;margin-bottom:12px;">
     <p style="margin:0;color:#888;font-size:12px;">
       <strong style="color:#e8e8e8;">Reminder:</strong> Every call needs: (1) outcome logged, (2) lead quality set, (3) post-call note with 50+ words. This data feeds the team dashboard and weekly report.
     </p>
   </div>
+
+  {missing_value_section}
 
   <div style="text-align:center;padding:20px 0 8px;font-size:11px;color:#555;">
     Quantum Scaling · Auto-generated compliance reminder
@@ -604,11 +810,34 @@ def build_compliance_email_html(rep_first_name: str, failures: list, period_labe
 </div></body></html>"""
 
 
-def send_compliance_emails(compliance_data: dict, start: date, end: date) -> None:
-    """Send individual compliance reminder emails to each rep with outstanding outcomes."""
+def send_compliance_emails(compliance_data: dict, start: date, end: date,
+                           stage_snapshot: dict | None = None) -> None:
+    """Send individual compliance reminder emails to each rep with outstanding outcomes.
+
+    Also attaches a missing-deal-value section for any rep who has Hot/Warm opps
+    without a monetary value filled in.
+    """
     failures = compliance_data.get("failures", [])
-    if not failures:
-        print("  No compliance failures — skipping rep compliance emails.")
+
+    # Build per-rep missing-value lookup from stage snapshot
+    # snap_reps is a list of {rep_name, hot_count, hot_missing_value, warm_count, ...}
+    # We don't have opp names here — just counts. We flag the count and tell them to check GHL.
+    # For the compliance email, we'll construct a synthetic list of "unknown opp name" placeholders
+    # based on counts so reps know exactly how many to fix.
+    mv_by_rep: dict[str, list] = {}
+    if stage_snapshot:
+        for sr in (stage_snapshot.get("by_rep") or []):
+            canonical = " ".join((sr.get("rep_name") or "").split())
+            items = []
+            for bucket, miss_key in [("hot", "hot_missing_value"), ("warm", "warm_missing_value")]:
+                miss_count = sr.get(miss_key) or 0
+                for _ in range(miss_count):
+                    items.append({"opp_name": f"(no deal value — check GHL {bucket} list)", "bucket": bucket})
+            if items:
+                mv_by_rep[canonical] = items
+
+    if not failures and not any(mv_by_rep.values()):
+        print("  No compliance failures or missing deal values — skipping rep emails.")
         return
 
     # Group failures by rep name
@@ -616,6 +845,11 @@ def send_compliance_emails(compliance_data: dict, start: date, end: date) -> Non
     for f in failures:
         rep = f.get("rep_name") or "Unknown"
         by_rep.setdefault(rep, []).append(f)
+
+    # Also ensure reps with ONLY missing values (no call failures) get emailed
+    for rep_name in mv_by_rep:
+        if rep_name not in by_rep:
+            by_rep[rep_name] = []
 
     period_label = f"{start.strftime('%b %d')} – {end.strftime('%b %d, %Y')}"
 
@@ -632,13 +866,20 @@ def send_compliance_emails(compliance_data: dict, start: date, end: date) -> Non
                           file=sys.stderr)
                     continue
 
-                first_name = canonical.split()[0]
-                count      = len(rep_failures)
-                html       = build_compliance_email_html(first_name, rep_failures, period_label)
-                subject    = (
-                    f"⚠️ Action Required: {count} outcome{'s' if count != 1 else ''} "
-                    f"to log — {period_label}"
+                first_name   = canonical.split()[0]
+                count        = len(rep_failures)
+                missing_opps = mv_by_rep.get(canonical, [])
+                html         = build_compliance_email_html(
+                    first_name, rep_failures, period_label,
+                    missing_value_opps=missing_opps if missing_opps else None,
                 )
+                mv_count = len(missing_opps)
+                parts = []
+                if count:
+                    parts.append(f"{count} outcome{'s' if count != 1 else ''} to log")
+                if mv_count:
+                    parts.append(f"{mv_count} deal value{'s' if mv_count != 1 else ''} missing")
+                subject = f"⚠️ Action Required: {' · '.join(parts)} — {period_label}"
 
                 msg             = MIMEMultipart("alternative")
                 msg["Subject"]  = subject
@@ -647,7 +888,10 @@ def send_compliance_emails(compliance_data: dict, start: date, end: date) -> Non
                 msg.attach(MIMEText(html, "html"))
 
                 server.sendmail(SMTP_USER, [email], msg.as_string())
-                print(f"  ✅ Compliance email → {canonical} ({email}): {count} failures")
+                summary_parts = []
+                if count:     summary_parts.append(f"{count} failures")
+                if mv_count:  summary_parts.append(f"{mv_count} missing values")
+                print(f"  ✅ Compliance email → {canonical} ({email}): {', '.join(summary_parts) or 'sent'}")
     except smtplib.SMTPException as e:
         print(f"  ERROR sending compliance emails: {e}", file=sys.stderr)
 
@@ -666,7 +910,8 @@ def main():
     if isinstance(reps, dict):
         reps = reps.get("reps", [])
 
-    anomalies    = detect_anomalies(s, reps)
+    stage_snap   = data.get("stage_snapshot") or {}
+    anomalies    = detect_anomalies(s, reps, stage_snap)
     generated_at = datetime.now(timezone.utc).strftime("%B %d, %Y %H:%M UTC")
     html         = build_html(start, end, data, anomalies, generated_at)
 
@@ -688,8 +933,9 @@ def main():
 
     # Send individual compliance emails to reps with outstanding outcomes
     print("Sending compliance emails...")
-    compliance = data.get("compliance") or {}
-    send_compliance_emails(compliance, start, end)
+    compliance  = data.get("compliance") or {}
+    stage_snap2 = data.get("stage_snapshot") or {}
+    send_compliance_emails(compliance, start, end, stage_snapshot=stage_snap2)
 
     print("Done.")
 
