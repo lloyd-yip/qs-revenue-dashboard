@@ -13,10 +13,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from db.models import Opportunity
 from config import ACTIVE_REP_NAMES, _normalize_name
 
+# Normalized active rep names for post-query filtering (handles double-space variants)
+_ACTIVE_NORMALIZED = frozenset(_normalize_name(n) for n in ACTIVE_REP_NAMES)
+
 # ── Stage ID constants ────────────────────────────────────────────────────────
+# Only the two canonical stages we care about — no temp/legacy stages.
 HOT_STAGE_IDS = frozenset({
     "8b0e8559-7665-4033-b762-23d94bfce90b",  # Hot List (Verbal Commit)
-    "fb6fe57f-8baf-4edd-b3a5-c0e8c3d29355",  # Temp Ryan/ Hot List
 })
 
 WARM_STAGE_IDS = frozenset({
@@ -28,7 +31,6 @@ ALL_TRACKED_STAGE_IDS = HOT_STAGE_IDS | WARM_STAGE_IDS
 # Human-readable label for each stage bucket
 STAGE_BUCKET: dict[str, str] = {
     "8b0e8559-7665-4033-b762-23d94bfce90b": "hot",
-    "fb6fe57f-8baf-4edd-b3a5-c0e8c3d29355": "hot",
     "d51c088d-1629-43f2-8ee8-c51bf74b8553": "warm",
 }
 
@@ -91,10 +93,13 @@ async def get_stage_snapshot(session: AsyncSession) -> dict:
 
     rows = result.all()
 
-    # Aggregate into per-rep buckets
+    # Aggregate into per-rep buckets — active reps only
     rep_data: dict[str, dict] = {}
     for row in rows:
         name    = row.rep_name or "Unknown"
+        # Skip inactive/other reps — only surface active sales reps
+        if _normalize_name(name) not in _ACTIVE_NORMALIZED:
+            continue
         rep_id  = row.rep_id or ""
         bucket  = STAGE_BUCKET.get(row.stage_id, "warm")
         count   = row.count or 0
