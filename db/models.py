@@ -267,6 +267,36 @@ class ExpenseLineItem(Base):
     )
 
 
+class RevenueLineItem(Base):
+    """Revenue line items loaded from Whop payments API (and future Xero income).
+
+    One row per (period_start, period_end, source, category, product_type).
+    source values: 'whop'
+    category values: 'cash_collected' | 'splitit_ar'
+    product_type values: 'high_ticket' | 'saas'
+    Upsert on the unique key — re-seeding the same month overwrites cleanly.
+    """
+
+    __tablename__ = "revenue_line_items"
+    __table_args__ = (
+        UniqueConstraint("period_start", "period_end", "source", "category", "product_type"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    period_start: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    period_end: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    source: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    category: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    product_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    amount: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
+    payment_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
 class SLWAWeeklyInput(Base):
     """Manual weekly dashboard inputs for Slack / WhatsApp / SMS channel pages.
 

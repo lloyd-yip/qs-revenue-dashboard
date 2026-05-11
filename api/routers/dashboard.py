@@ -41,6 +41,12 @@ from db.queries.expenses import (
     get_expenses_for_period,
     upsert_expense_line_items,
 )
+from db.queries.revenue import (
+    get_available_revenue_periods,
+    get_revenue_for_period,
+    get_all_revenue_periods_summary,
+    upsert_revenue_line_items,
+)
 from db.queries.compliance import (
     get_compliance_by_rep,
     get_compliance_failures,
@@ -644,6 +650,69 @@ async def upsert_expenses(body: UpsertExpensesRequest, db: AsyncSession = Depend
     Set replace=true to wipe the period clean before inserting (safe monthly refresh).
     """
     count = await upsert_expense_line_items(
+        db, body.period_start, body.period_end,
+        [i.model_dump() for i in body.items],
+        replace=body.replace,
+    )
+    return {"ok": True, "rows_upserted": count}
+
+
+# ── Revenue ────────────────────────────────────────────────────────────────────
+
+@router.get("/revenue/periods")
+async def revenue_periods(db: AsyncSession = Depends(get_db)):
+    """Return all periods that have revenue data loaded — drives the month dropdown."""
+    periods = await get_available_revenue_periods(db)
+    return {"data": periods}
+
+
+@router.get("/revenue/summary")
+async def revenue_summary(db: AsyncSession = Depends(get_db)):
+    """Return cash collected + splitit AR totals for all months — drives the P&L multi-month view."""
+    data = await get_all_revenue_periods_summary(db)
+    return {
+        "data": data,
+        "meta": {"generated_at": datetime.now(timezone.utc).isoformat()},
+    }
+
+
+@router.get("/revenue")
+async def revenue(
+    period_start: date = Query(..., description="Period start (YYYY-MM-DD)"),
+    period_end: date = Query(..., description="Period end (YYYY-MM-DD)"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return revenue line items grouped by category for a given period."""
+    data = await get_revenue_for_period(db, period_start, period_end)
+    return {
+        "data": data,
+        "meta": {"generated_at": datetime.now(timezone.utc).isoformat()},
+    }
+
+
+class RevenueItemInput(BaseModel):
+    source: str
+    category: str
+    product_type: str
+    amount: float
+    payment_count: int = 0
+    notes: str | None = None
+
+
+class UpsertRevenueRequest(BaseModel):
+    period_start: date
+    period_end: date
+    items: list[RevenueItemInput]
+    replace: bool = False
+
+
+@router.post("/revenue/upsert")
+async def upsert_revenue(body: UpsertRevenueRequest, db: AsyncSession = Depends(get_db)):
+    """Load or overwrite revenue line items for a period. Used during monthly Whop sync.
+
+    Set replace=true to wipe the period clean before inserting (safe monthly refresh).
+    """
+    count = await upsert_revenue_line_items(
         db, body.period_start, body.period_end,
         [i.model_dump() for i in body.items],
         replace=body.replace,
