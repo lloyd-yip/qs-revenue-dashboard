@@ -64,6 +64,24 @@
     }
     select#period-select:focus { outline: none; border-color: var(--accent); }
 
+    /* ── Sync button ── */
+    .btn-sync {
+      display: flex; align-items: center; gap: 6px;
+      background: var(--accent); color: #fff; border: none; border-radius: 6px;
+      padding: 7px 14px; font-size: 13px; font-family: var(--font); font-weight: 500;
+      cursor: pointer; transition: opacity 0.15s;
+    }
+    .btn-sync:hover { opacity: 0.85; }
+    .btn-sync:disabled { opacity: 0.5; cursor: not-allowed; }
+    .sync-status {
+      font-size: 12px; padding: 4px 10px; border-radius: 5px;
+      display: none;
+    }
+    .sync-status.syncing { display: inline-block; color: var(--text2); }
+    .sync-status.ok      { display: inline-block; color: var(--green); background: var(--green-dim); border: 1px solid var(--green-border); }
+    .sync-status.err     { display: inline-block; color: var(--red);   background: var(--red-dim);   border: 1px solid var(--red-border); }
+    .filters-spacer { flex: 1; }
+
     /* ── Main layout ── */
     main { padding: 24px; max-width: 960px; margin: 0 auto; }
 
@@ -179,6 +197,11 @@
   <select id="period-select">
     <option value="">Loading periods…</option>
   </select>
+  <div class="filters-spacer"></div>
+  <span class="sync-status" id="sync-status"></span>
+  <button class="btn-sync" id="sync-btn" onclick="syncFromXero()" title="Pull latest Xero P&amp;L data for the selected month">
+    ↻ Sync from Xero
+  </button>
 </div>
 
 <main id="main-content">
@@ -403,6 +426,58 @@
 
   function toggleBucket(id) {
     document.getElementById("bucket-" + id).classList.toggle("open");
+  }
+
+  // ── Sync from Xero ───────────────────────────────────────────────────────────
+  // Pulls the latest P&L data from Xero for the currently selected month,
+  // then reloads the dashboard automatically. Token is the Railway API bearer token.
+  const SYNC_TOKEN = "RAILWAY_BEARER_REMOVED";
+
+  async function syncFromXero() {
+    const val = periodEl.value;
+    if (!val) { alert("Select a period first."); return; }
+
+    // Extract YYYY-MM from the period value ("YYYY-MM-DD|YYYY-MM-DD")
+    const month = val.split("|")[0].slice(0, 7);  // "YYYY-MM"
+
+    const btn    = document.getElementById("sync-btn");
+    const status = document.getElementById("sync-status");
+
+    btn.disabled = true;
+    status.className = "sync-status syncing";
+    status.textContent = `⏳ Syncing ${month}…`;
+
+    try {
+      const resp = await fetch(`${API}/xero/sync-revenue?month=${month}`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${SYNC_TOKEN}` },
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+        throw new Error(err.detail || `HTTP ${resp.status}`);
+      }
+      const result = await resp.json();
+      status.className = "sync-status ok";
+      status.textContent = `✓ Synced ${result.rows_upserted} rows (${month})`;
+
+      // Reload the P&L data for this period to reflect the new numbers
+      const [start, end] = val.split("|");
+      await loadPnL(start, end);
+
+      // Also refresh the period dropdown in case this was a new month
+      await loadPeriods();
+
+    } catch (e) {
+      status.className = "sync-status err";
+      status.textContent = `✗ ${e.message}`;
+    } finally {
+      btn.disabled = false;
+      // Auto-clear the status message after 8 seconds
+      setTimeout(() => {
+        status.className = "sync-status";
+        status.textContent = "";
+      }, 8000);
+    }
   }
 
   // ── Boot ─────────────────────────────────────────────────────────────────────

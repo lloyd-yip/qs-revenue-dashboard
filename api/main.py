@@ -16,6 +16,7 @@ from sqlalchemy import select
 
 from api.routers import metrics, sync as sync_router
 from api.routers import dashboard as dashboard_router
+from api.routers import xero_auth as xero_auth_router
 from api.schemas.responses import HealthResponse
 from config import settings
 from db.models import SyncRun
@@ -97,6 +98,10 @@ app.include_router(sync_router.router, dependencies=[Depends(verify_token)])
 
 # Dashboard router — no auth, browser-facing read-only analytics
 app.include_router(dashboard_router.router)
+
+# Xero OAuth router — /xero/auth and /xero/callback are public (OAuth flow requires it)
+# /xero/sync-revenue is protected (bearer token checked inside the router itself)
+app.include_router(xero_auth_router.router)
 
 # Serve dashboard.html at root
 _STATIC_DIR = Path(__file__).parent.parent / "static"
