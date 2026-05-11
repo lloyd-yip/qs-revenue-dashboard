@@ -297,6 +297,66 @@ class RevenueLineItem(Base):
     )
 
 
+class DealWhopMatch(Base):
+    """One row per GHL closed-won deal — matched (or attempted) against Whop memberships.
+
+    ghl_opportunity_id is the UNIQUE idempotency key. The auto-matcher upserts
+    on this key. If is_confirmed=True, the matcher skips the row entirely —
+    manual matches are permanent.
+    """
+
+    __tablename__ = "deal_whop_matches"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+
+    # GHL deal (idempotency key)
+    ghl_opportunity_id: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
+
+    # GHL deal data (denormalized for display — avoids joins at query time)
+    ghl_close_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    ghl_opportunity_name: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    ghl_owner_name: Mapped[str | None] = mapped_column(String(150), nullable=True, index=True)
+    ghl_contact_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    ghl_contact_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    ghl_contact_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    ghl_monetary_value: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    ghl_cash_collected: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+
+    # Whop match data (NULL when unmatched)
+    whop_membership_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    whop_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    whop_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    whop_product_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    whop_plan_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    whop_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Match quality
+    match_confidence: Mapped[str] = mapped_column(String(20), nullable=False, default="unmatched", index=True)
+    match_score: Mapped[float] = mapped_column(Numeric(5, 3), nullable=False, default=0)
+    match_method: Mapped[str] = mapped_column(String(100), nullable=False, default="none")
+
+    # Manual override — once True, the auto-matcher never touches this row
+    is_confirmed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
+    confirmed_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Payment metrics (populated from Whop payments API for HIGH/MEDIUM matches)
+    upfront_cash: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    total_paid: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    total_contract_value: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    remaining_ar: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    is_financing: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    payment_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Operational timestamps
+    matched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    metrics_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
 class SLWAWeeklyInput(Base):
     """Manual weekly dashboard inputs for Slack / WhatsApp / SMS channel pages.
 

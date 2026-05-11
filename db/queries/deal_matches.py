@@ -1,0 +1,223 @@
+"""Deal-Whop match queries — read/write for the deals reconciliation table."""
+
+from datetime import date, datetime
+from typing import Optional
+
+from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from db.models import DealWhopMatch, Opportunity
+from sync.ghl_client import DEAL_WON_STAGE_ID
+
+
+async def get_won_deals(session: AsyncSession) -> list[Opportunity]:
+    """Return all closed-won, non-excluded opportunities that have a close_date.
+
+    Used by the matching engine as its input set.
+    """
+    rows = (await session.execute(
+        select(Opportunity)
+        .where(Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID)
+        .where(Opportunity.is_excluded == False)  # noqa: E712
+        .where(Opportunity.close_date.isnot(None))
+        .order_by(Opportunity.close_date.desc())
+    )).scalars().all()
+    return list(rows)
+
+
+async def get_existing_match(
+    session: AsyncSession, ghl_opportunity_id: str
+) -> Optional[DealWhopMatch]:
+    """Return existing match row for a GHL opportunity, or None."""
+    row = (await session.execute(
+        select(DealWhopMatch)
+        .where(DealWhopMatch.ghl_opportunity_id == ghl_opportunity_id)
+    )).scalar_one_or_none()
+    return row
+
+
+async def upsert_deal_match(session: AsyncSession, data: dict) -> None:
+    """Insert or update a deal match row.
+
+    Idempotency gate: if an existing row has is_confirmed=True, this
+    function does nothing — the manual match is never overwritten.
+
+    Plain English: "upsert" = insert if new, update if exists. The
+    is_confirmed gate is the lock — once a human confirms a match,
+    the robot can't change it.
+    """
+    ghl_opp_id = data["ghl_opportunity_id"]
+
+    # Check idempotency gate before touching DB
+    existing = await get_existing_match(session, ghl_opp_id)
+    if existing and existing.is_confirmed:
+        return  # Never overwrite a confirmed manual match
+
+    stmt = (
+        pg_insert(DealWhopMatch)
+        .values(
+            ghl_opportunity_id=ghl_opp_id,
+            ghl_close_date=data.get("ghl_close_date"),
+            ghl_opportunity_name=data.get("ghl_opportunity_name"),
+            ghl_owner_name=data.get("ghl_owner_name"),
+            ghl_contact_id=data.get("ghl_contact_id"),
+            ghl_contact_email=data.get("ghl_contact_email"),
+            ghl_contact_name=data.get("ghl_contact_name"),
+            ghl_monetary_value=data.get("ghl_monetary_value"),
+            ghl_cash_collected=data.get("ghl_cash_collected"),
+            whop_membership_id=data.get("whop_membership_id"),
+            whop_email=data.get("whop_email"),
+            whop_name=data.get("whop_name"),
+            whop_product_id=data.get("whop_product_id"),
+            whop_plan_name=data.get("whop_plan_name"),
+            whop_created_at=data.get("whop_created_at"),
+            match_confidence=data.get("match_confidence", "unmatched"),
+            match_score=data.get("match_score", 0.0),
+            match_method=data.get("match_method", "none"),
+            upfront_cash=data.get("upfront_cash"),
+            total_paid=data.get("total_paid"),
+            total_contract_value=data.get("total_contract_value"),
+            remaining_ar=data.get("remaining_ar"),
+            is_financing=data.get("is_financing"),
+            payment_count=data.get("payment_count"),
+            matched_at=func.now(),
+            metrics_updated_at=func.now() if data.get("total_paid") is not None else None,
+        )
+        .on_conflict_do_update(
+            index_elements=["ghl_opportunity_id"],
+            # Never touch is_confirmed / confirmed_by / confirmed_at — those
+            # are manual fields and must survive an auto-match re-run.
+            set_={
+                "ghl_close_date": data.get("ghl_close_date"),
+                "ghl_opportunity_name": data.get("ghl_opportunity_name"),
+                "ghl_owner_name": data.get("ghl_owner_name"),
+                "ghl_contact_id": data.get("ghl_contact_id"),
+                "ghl_contact_email": data.get("ghl_contact_email"),
+                "ghl_contact_name": data.get("ghl_contact_name"),
+                "ghl_monetary_value": data.get("ghl_monetary_value"),
+                "ghl_cash_collected": data.get("ghl_cash_collected"),
+                "whop_membership_id": data.get("whop_membership_id"),
+                "whop_email": data.get("whop_email"),
+                "whop_name": data.get("whop_name"),
+                "whop_product_id": data.get("whop_product_id"),
+                "whop_plan_name": data.get("whop_plan_name"),
+                "whop_created_at": data.get("whop_created_at"),
+                "match_confidence": data.get("match_confidence", "unmatched"),
+                "match_score": data.get("match_score", 0.0),
+                "match_method": data.get("match_method", "none"),
+                "upfront_cash": data.get("upfront_cash"),
+                "total_paid": data.get("total_paid"),
+                "total_contract_value": data.get("total_contract_value"),
+                "remaining_ar": data.get("remaining_ar"),
+                "is_financing": data.get("is_financing"),
+                "payment_count": data.get("payment_count"),
+                "matched_at": func.now(),
+                "metrics_updated_at": func.now() if data.get("total_paid") is not None else None,
+                "updated_at": func.now(),
+            },
+        )
+    )
+    await session.execute(stmt)
+    await session.commit()
+
+
+async def get_deal_matches(
+    session: AsyncSession,
+    month_start: Optional[date] = None,
+    month_end: Optional[date] = None,
+    owner_name: Optional[str] = None,
+    confidence: Optional[str] = None,
+) -> list[dict]:
+    """Return deal match rows, optionally filtered by close date range, rep, or confidence.
+
+    Returns list of dicts ready for JSON serialisation.
+    """
+    query = select(DealWhopMatch).order_by(DealWhopMatch.ghl_close_date.desc().nullslast())
+
+    if month_start:
+        query = query.where(DealWhopMatch.ghl_close_date >= month_start)
+    if month_end:
+        query = query.where(DealWhopMatch.ghl_close_date <= month_end)
+    if owner_name:
+        query = query.where(DealWhopMatch.ghl_owner_name == owner_name)
+    if confidence:
+        query = query.where(DealWhopMatch.match_confidence == confidence)
+
+    rows = (await session.execute(query)).scalars().all()
+
+    return [
+        {
+            "ghl_opportunity_id": r.ghl_opportunity_id,
+            "ghl_close_date": str(r.ghl_close_date) if r.ghl_close_date else None,
+            "ghl_opportunity_name": r.ghl_opportunity_name,
+            "ghl_owner_name": r.ghl_owner_name,
+            "ghl_contact_email": r.ghl_contact_email,
+            "ghl_contact_name": r.ghl_contact_name,
+            "ghl_monetary_value": float(r.ghl_monetary_value) if r.ghl_monetary_value else None,
+            "ghl_cash_collected": float(r.ghl_cash_collected) if r.ghl_cash_collected else None,
+            "whop_membership_id": r.whop_membership_id,
+            "whop_email": r.whop_email,
+            "whop_name": r.whop_name,
+            "whop_product_id": r.whop_product_id,
+            "whop_plan_name": r.whop_plan_name,
+            "match_confidence": r.match_confidence,
+            "match_score": float(r.match_score) if r.match_score else 0.0,
+            "match_method": r.match_method,
+            "is_confirmed": r.is_confirmed,
+            "confirmed_by": r.confirmed_by,
+            "upfront_cash": float(r.upfront_cash) if r.upfront_cash else None,
+            "total_paid": float(r.total_paid) if r.total_paid else None,
+            "total_contract_value": float(r.total_contract_value) if r.total_contract_value else None,
+            "remaining_ar": float(r.remaining_ar) if r.remaining_ar else None,
+            "is_financing": r.is_financing,
+            "payment_count": r.payment_count,
+            "matched_at": r.matched_at.isoformat() if r.matched_at else None,
+        }
+        for r in rows
+    ]
+
+
+async def get_deal_match_summary(session: AsyncSession) -> dict:
+    """Aggregate stats for the deals page header cards."""
+    rows = (await session.execute(select(DealWhopMatch))).scalars().all()
+
+    total = len(rows)
+    by_confidence: dict[str, int] = {"high": 0, "medium": 0, "low": 0, "unmatched": 0}
+    total_contract = 0.0
+    total_paid_sum = 0.0
+    total_ar = 0.0
+
+    for r in rows:
+        conf = r.match_confidence or "unmatched"
+        by_confidence[conf] = by_confidence.get(conf, 0) + 1
+        if r.total_contract_value:
+            total_contract += float(r.total_contract_value)
+        if r.total_paid:
+            total_paid_sum += float(r.total_paid)
+        if r.remaining_ar and r.remaining_ar > 0:
+            total_ar += float(r.remaining_ar)
+
+    matched = by_confidence["high"] + by_confidence["medium"]
+    match_rate = round(matched / total * 100, 1) if total else 0.0
+
+    return {
+        "total_deals": total,
+        "matched_high": by_confidence["high"],
+        "matched_medium": by_confidence["medium"],
+        "matched_low": by_confidence["low"],
+        "unmatched": by_confidence["unmatched"],
+        "match_rate_pct": match_rate,
+        "total_contract_value": round(total_contract, 2),
+        "total_paid": round(total_paid_sum, 2),
+        "total_remaining_ar": round(total_ar, 2),
+    }
+
+
+async def get_last_match_run(session: AsyncSession) -> Optional[str]:
+    """Return the most recent matched_at timestamp across all rows."""
+    result = await session.execute(
+        select(func.max(DealWhopMatch.matched_at))
+    )
+    ts = result.scalar_one_or_none()
+    return ts.isoformat() if ts else None

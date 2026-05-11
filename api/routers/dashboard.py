@@ -70,6 +70,11 @@ from db.queries.pipeline_intelligence import get_pipeline_intelligence, get_segm
 from db.queries.dead_deals import get_dead_deals_data
 from db.queries.stage_snapshot import get_stage_snapshot
 from db.queries.reps import get_reps
+from db.queries.deal_matches import (
+    get_deal_matches,
+    get_deal_match_summary,
+    get_last_match_run,
+)
 from db.queries.slwa import get_slwa_closes, get_slwa_weekly_dashboard, upsert_slwa_weekly_input
 from db.queries.sync_status import get_recent_sync_runs
 from db.queries.time_series import get_time_series
@@ -718,3 +723,73 @@ async def upsert_revenue(body: UpsertRevenueRequest, db: AsyncSession = Depends(
         replace=body.replace,
     )
     return {"ok": True, "rows_upserted": count}
+
+
+# ── Deal ↔ Whop Reconciliation ──────────────────────────────────────────────
+
+@router.get("/deals/matches")
+async def deal_matches(
+    month_start: date | None = Query(None, description="Filter by close date from (YYYY-MM-DD)"),
+    month_end: date | None = Query(None, description="Filter by close date to (YYYY-MM-DD)"),
+    owner_name: str | None = Query(None, description="Filter by rep name"),
+    confidence: str | None = Query(None, description="Filter: high | medium | low | unmatched"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return deal-Whop match rows for the Deals dashboard.
+
+    Verify: GET /api/dashboard/deals/matches → should return array of deal objects
+    with fields: ghl_opportunity_name, match_confidence, total_paid, remaining_ar.
+    Silent failure: empty array when won deals exist → run-match hasn't been triggered yet.
+    """
+    rows = await get_deal_matches(db, month_start, month_end, owner_name, confidence)
+    return {
+        "data": rows,
+        "meta": {"generated_at": datetime.now(timezone.utc).isoformat(), "count": len(rows)},
+    }
+
+
+@router.get("/deals/summary")
+async def deal_summary(db: AsyncSession = Depends(get_db)):
+    """Aggregate stats for the deals page header cards.
+
+    Verify: GET /api/dashboard/deals/summary → returns total_deals, match_rate_pct,
+    total_contract_value, total_remaining_ar. If total_deals=0, run-match first.
+    """
+    summary = await get_deal_match_summary(db)
+    last_run = await get_last_match_run(db)
+    return {
+        "data": summary,
+        "last_match_run": last_run,
+        "meta": {"generated_at": datetime.now(timezone.utc).isoformat()},
+    }
+
+
+@router.post("/deals/run-match")
+async def run_deal_match(db: AsyncSession = Depends(get_db)):
+    """Trigger GHL↔Whop matching engine. Runs synchronously (may take 2-4 min).
+
+    Requires WHOP_API_KEY set in Railway env vars. Idempotent — safe to run
+    multiple times. Confirmed matches (is_confirmed=True) are never overwritten.
+
+    Verify: POST /api/dashboard/deals/run-match → {"ok": true, "stats": {...}}
+    stats.matched_high should be > 0 if deals exist and WHOP_API_KEY is correct.
+    Silent failure: stats.errors > 0 → check Railway logs for the traceback.
+    """
+    import logging
+    from config import settings
+
+    logger = logging.getLogger(__name__)
+
+    if not settings.whop_api_key:
+        return {
+            "ok": False,
+            "error": "WHOP_API_KEY not set in Railway env vars. Add it and redeploy.",
+        }
+
+    from sync.match_deals_whop import run_matching
+    try:
+        stats = await run_matching()
+        return {"ok": True, "stats": stats}
+    except Exception as exc:
+        logger.error(f"Deal matching failed: {exc}", exc_info=True)
+        return {"ok": False, "error": str(exc), "stats": {}}

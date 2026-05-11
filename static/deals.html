@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Deals · QS Dashboard</title>
+  <style>
+    /* ── Reset & base ──────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:        #0f1117;
+      --surface:   #1a1d27;
+      --surface2:  #222636;
+      --border:    #2a2d3e;
+      --text:      #e2e8f0;
+      --muted:     #8892a4;
+      --accent:    #6c63ff;
+      --green:     #22c55e;
+      --yellow:    #f59e0b;
+      --orange:    #f97316;
+      --red:       #ef4444;
+      --blue:      #3b82f6;
+      --radius:    8px;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    /* ── Nav ───────────────────────────────────────────────────────────── */
+    nav {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 24px;
+      height: 52px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    nav a {
+      color: var(--muted);
+      text-decoration: none;
+      padding: 6px 12px;
+      border-radius: var(--radius);
+      font-size: 13px;
+      transition: background 0.15s, color 0.15s;
+    }
+    nav a:hover { background: var(--surface2); color: var(--text); }
+    nav a.active { background: var(--surface2); color: var(--text); }
+    .nav-brand { font-weight: 700; color: var(--text); margin-right: 8px; }
+
+    /* ── Page layout ───────────────────────────────────────────────────── */
+    .page { max-width: 1400px; margin: 0 auto; padding: 28px 24px 48px; }
+    .page-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 24px;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .page-title { font-size: 22px; font-weight: 700; }
+    .page-subtitle { color: var(--muted); font-size: 13px; margin-top: 2px; }
+
+    /* ── Run-match button ──────────────────────────────────────────────── */
+    .run-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 18px;
+      background: var(--accent);
+      border: none;
+      border-radius: var(--radius);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      white-space: nowrap;
+    }
+    .run-btn:hover { opacity: 0.85; }
+    .run-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .run-btn.running { background: var(--surface2); color: var(--muted); }
+
+    .last-run { font-size: 12px; color: var(--muted); margin-top: 4px; text-align: right; }
+
+    /* ── Summary cards ─────────────────────────────────────────────────── */
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 14px;
+      margin-bottom: 24px;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+    }
+    .card-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+    .card-value { font-size: 22px; font-weight: 700; margin: 4px 0 2px; }
+    .card-sub   { font-size: 12px; color: var(--muted); }
+    .card.highlight { border-color: var(--accent); }
+    .card.ar-card   { border-color: #f59e0b44; }
+
+    /* ── Filters ───────────────────────────────────────────────────────── */
+    .filters {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 18px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .filters select, .filters input {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      padding: 7px 12px;
+      font-size: 13px;
+      outline: none;
+      cursor: pointer;
+    }
+    .filters select:focus, .filters input:focus { border-color: var(--accent); }
+    .filter-label { font-size: 12px; color: var(--muted); }
+    .clear-btn {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--muted);
+      padding: 7px 12px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .clear-btn:hover { color: var(--text); border-color: var(--muted); }
+
+    /* ── Table ─────────────────────────────────────────────────────────── */
+    .table-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow-x: auto;
+    }
+    table { width: 100%; border-collapse: collapse; }
+    thead th {
+      padding: 10px 14px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+      user-select: none;
+      cursor: pointer;
+    }
+    thead th:hover { color: var(--text); }
+    thead th .sort-arrow { margin-left: 4px; opacity: 0.4; }
+    thead th.sorted .sort-arrow { opacity: 1; color: var(--accent); }
+    tbody tr {
+      border-bottom: 1px solid var(--border);
+      transition: background 0.1s;
+    }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: var(--surface2); }
+    td {
+      padding: 10px 14px;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    td.deal-name {
+      max-width: 240px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-weight: 500;
+    }
+    td.dim { color: var(--muted); font-size: 12px; }
+    td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    td.num.pos { color: var(--green); }
+    td.num.neg { color: var(--red); }
+
+    /* ── Confidence pill ───────────────────────────────────────────────── */
+    .pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    .pill-high      { background: #22c55e22; color: var(--green); border: 1px solid #22c55e44; }
+    .pill-medium    { background: #f59e0b22; color: var(--yellow); border: 1px solid #f59e0b44; }
+    .pill-low       { background: #f9731622; color: var(--orange); border: 1px solid #f9731644; }
+    .pill-unmatched { background: #ef444422; color: var(--red);    border: 1px solid #ef444444; }
+
+    /* ── Financing badge ───────────────────────────────────────────────── */
+    .badge-fin {
+      display: inline-block;
+      padding: 1px 7px;
+      border-radius: 999px;
+      font-size: 11px;
+      background: #3b82f622;
+      color: var(--blue);
+      border: 1px solid #3b82f644;
+    }
+
+    /* ── Empty / loading states ────────────────────────────────────────── */
+    .empty-row td {
+      text-align: center;
+      color: var(--muted);
+      padding: 48px 24px;
+      font-size: 14px;
+    }
+    .spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Toast ─────────────────────────────────────────────────────────── */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 18px;
+      font-size: 13px;
+      max-width: 360px;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity 0.2s, transform 0.2s;
+      z-index: 200;
+      pointer-events: none;
+    }
+    #toast.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
+    #toast.success { border-color: var(--green); color: var(--green); }
+    #toast.error   { border-color: var(--red);   color: var(--red);   }
+    #toast.info    { border-color: var(--blue);   color: var(--blue);  }
+
+    /* ── Match legend ──────────────────────────────────────────────────── */
+    .legend {
+      display: flex;
+      gap: 16px;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+    .legend span { display: flex; align-items: center; gap: 6px; }
+  </style>
+</head>
+<body>
+
+<nav>
+  <span class="nav-brand">QS</span>
+  <a href="/">📊 Dashboard</a>
+  <a href="/pnl">💰 P&amp;L</a>
+  <a href="/expenses">📋 Expenses</a>
+  <a href="/deals" class="active">🤝 Deals</a>
+  <a href="/data-quality">🔍 Data Quality</a>
+</nav>
+
+<div class="page">
+
+  <div class="page-header">
+    <div>
+      <div class="page-title">🤝 Deal Reconciliation</div>
+      <div class="page-subtitle">GHL closed-won deals matched to Whop memberships &amp; payment data</div>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+      <button class="run-btn" id="runBtn" onclick="runMatch()">
+        ▶ Run Match
+      </button>
+      <div class="last-run" id="lastRun">Last run: —</div>
+    </div>
+  </div>
+
+  <!-- Summary cards -->
+  <div class="cards" id="cards">
+    <div class="card"><div class="card-label">Total Won Deals</div><div class="card-value" id="c-total">—</div><div class="card-sub">in database</div></div>
+    <div class="card highlight"><div class="card-label">Matched (High)</div><div class="card-value" id="c-high" style="color:var(--green)">—</div><div class="card-sub" id="c-match-rate">—% match rate</div></div>
+    <div class="card"><div class="card-label">Matched (Medium)</div><div class="card-value" id="c-medium" style="color:var(--yellow)">—</div><div class="card-sub">partial confidence</div></div>
+    <div class="card"><div class="card-label">Unmatched</div><div class="card-value" id="c-unmatched" style="color:var(--red)">—</div><div class="card-sub">no Whop member found</div></div>
+    <div class="card"><div class="card-label">Total Contract Value</div><div class="card-value" id="c-contract">—</div><div class="card-sub">from GHL</div></div>
+    <div class="card ar-card"><div class="card-label">Remaining AR</div><div class="card-value" id="c-ar" style="color:var(--yellow)">—</div><div class="card-sub">outstanding installments</div></div>
+  </div>
+
+  <!-- Filters -->
+  <div class="filters">
+    <div>
+      <div class="filter-label" style="margin-bottom:3px;">Month</div>
+      <select id="filterMonth" onchange="applyFilters()">
+        <option value="">All Months</option>
+      </select>
+    </div>
+    <div>
+      <div class="filter-label" style="margin-bottom:3px;">Rep</div>
+      <select id="filterRep" onchange="applyFilters()">
+        <option value="">All Reps</option>
+      </select>
+    </div>
+    <div>
+      <div class="filter-label" style="margin-bottom:3px;">Confidence</div>
+      <select id="filterConf" onchange="applyFilters()">
+        <option value="">All</option>
+        <option value="high">High</option>
+        <option value="medium">Medium</option>
+        <option value="low">Low</option>
+        <option value="unmatched">Unmatched</option>
+      </select>
+    </div>
+    <div style="align-self:flex-end;">
+      <button class="clear-btn" onclick="clearFilters()">✕ Clear</button>
+    </div>
+    <div style="margin-left:auto;align-self:flex-end;color:var(--muted);font-size:12px;" id="rowCount"></div>
+  </div>
+
+  <!-- Match legend -->
+  <div class="legend">
+    <span><span class="pill pill-high">High</span> email domain or exact match</span>
+    <span><span class="pill pill-medium">Medium</span> fuzzy domain + name</span>
+    <span><span class="pill pill-low">Low</span> name-only match</span>
+    <span><span class="pill pill-unmatched">Unmatched</span> no Whop member found in ±3 days</span>
+  </div>
+
+  <!-- Table -->
+  <div class="table-wrap">
+    <table id="dealsTable">
+      <thead>
+        <tr>
+          <th onclick="sortBy('ghl_opportunity_name')">Deal <span class="sort-arrow">↕</span></th>
+          <th onclick="sortBy('ghl_owner_name')">Closed By <span class="sort-arrow">↕</span></th>
+          <th onclick="sortBy('ghl_close_date')">Close Date <span class="sort-arrow">↕</span></th>
+          <th onclick="sortBy('match_confidence')">Match <span class="sort-arrow">↕</span></th>
+          <th>Whop Email</th>
+          <th onclick="sortBy('upfront_cash')" style="text-align:right">Upfront Cash <span class="sort-arrow">↕</span></th>
+          <th onclick="sortBy('total_paid')" style="text-align:right">Total Paid <span class="sort-arrow">↕</span></th>
+          <th onclick="sortBy('total_contract_value')" style="text-align:right">Contract Value <span class="sort-arrow">↕</span></th>
+          <th onclick="sortBy('remaining_ar')" style="text-align:right">Remaining AR <span class="sort-arrow">↕</span></th>
+          <th style="text-align:center">Financing</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody">
+        <tr class="empty-row"><td colspan="10"><span class="spinner"></span>Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const API = '/api/dashboard';
+const BEARER = 'RAILWAY_BEARER_REMOVED';
+
+let allRows = [];
+let sortKey = 'ghl_close_date';
+let sortDir = -1; // -1 = desc
+
+// ── Boot ───────────────────────────────────────────────────────────────────
+(async () => {
+  await Promise.all([loadSummary(), loadDeals()]);
+})();
+
+// ── API calls ───────────────────────────────────────────────────────────────
+async function loadSummary() {
+  try {
+    const r = await fetch(`${API}/deals/summary`);
+    const j = await r.json();
+    const d = j.data;
+    el('c-total').textContent = fmt(d.total_deals, 0);
+    el('c-high').textContent = fmt(d.matched_high, 0);
+    el('c-medium').textContent = fmt(d.matched_medium, 0);
+    el('c-unmatched').textContent = fmt(d.unmatched, 0);
+    el('c-match-rate').textContent = `${d.match_rate_pct}% match rate`;
+    el('c-contract').textContent = fmtUSD(d.total_contract_value);
+    el('c-ar').textContent = fmtUSD(d.total_remaining_ar);
+    if (j.last_match_run) {
+      const dt = new Date(j.last_match_run);
+      el('lastRun').textContent = `Last run: ${dt.toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'})} ${dt.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}`;
+    }
+  } catch (e) {
+    console.error('Summary load error', e);
+  }
+}
+
+async function loadDeals() {
+  try {
+    const r = await fetch(`${API}/deals/matches`);
+    const j = await r.json();
+    allRows = j.data || [];
+    populateFilters(allRows);
+    renderTable(allRows);
+  } catch (e) {
+    setTableMsg('Failed to load deals. Check console.');
+  }
+}
+
+async function runMatch() {
+  const btn = el('runBtn');
+  btn.disabled = true;
+  btn.classList.add('running');
+  btn.textContent = '⏳ Running… (may take 2-4 min)';
+  showToast('Matching engine started. This runs GHL + Whop API calls — please wait.', 'info');
+
+  try {
+    const r = await fetch(`${API}/deals/run-match`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const j = await r.json();
+    if (j.ok) {
+      const s = j.stats;
+      showToast(
+        `✅ Done! High: ${s.matched_high || 0} · Medium: ${s.matched_medium || 0} · ` +
+        `Low: ${s.matched_low || 0} · Unmatched: ${s.unmatched || 0} · Errors: ${s.errors || 0}`,
+        'success'
+      );
+      await Promise.all([loadSummary(), loadDeals()]);
+    } else {
+      showToast(`❌ Error: ${j.error}`, 'error');
+    }
+  } catch (e) {
+    showToast(`❌ Request failed: ${e.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove('running');
+    btn.textContent = '▶ Run Match';
+  }
+}
+
+// ── Filters ─────────────────────────────────────────────────────────────────
+function populateFilters(rows) {
+  const months = [...new Set(
+    rows.map(r => r.ghl_close_date ? r.ghl_close_date.slice(0, 7) : null).filter(Boolean)
+  )].sort().reverse();
+  const reps = [...new Set(rows.map(r => r.ghl_owner_name).filter(Boolean))].sort();
+
+  const mSel = el('filterMonth');
+  months.forEach(m => {
+    const o = document.createElement('option');
+    o.value = m;
+    const [y, mo] = m.split('-');
+    o.textContent = `${new Date(y, mo - 1).toLocaleString('default', {month:'long'})} ${y}`;
+    mSel.appendChild(o);
+  });
+
+  const rSel = el('filterRep');
+  reps.forEach(rep => {
+    const o = document.createElement('option');
+    o.value = rep;
+    o.textContent = rep;
+    rSel.appendChild(o);
+  });
+}
+
+function applyFilters() {
+  const month = el('filterMonth').value;
+  const rep   = el('filterRep').value;
+  const conf  = el('filterConf').value;
+
+  let filtered = allRows;
+  if (month) filtered = filtered.filter(r => r.ghl_close_date && r.ghl_close_date.startsWith(month));
+  if (rep)   filtered = filtered.filter(r => r.ghl_owner_name === rep);
+  if (conf)  filtered = filtered.filter(r => r.match_confidence === conf);
+
+  renderTable(filtered);
+}
+
+function clearFilters() {
+  el('filterMonth').value = '';
+  el('filterRep').value   = '';
+  el('filterConf').value  = '';
+  renderTable(allRows);
+}
+
+// ── Table rendering ──────────────────────────────────────────────────────────
+function renderTable(rows) {
+  const sorted = sortRows([...rows]);
+  el('rowCount').textContent = `${sorted.length} deal${sorted.length !== 1 ? 's' : ''}`;
+
+  const tbody = el('tableBody');
+  if (!sorted.length) {
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="10">
+      No deals found. Run the matcher first or adjust filters.
+    </td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = sorted.map(row => {
+    const conf = row.match_confidence || 'unmatched';
+    const pillClass = `pill-${conf}`;
+    const whopEmail = row.whop_email
+      ? `<span title="${row.whop_email}">${truncate(row.whop_email, 28)}</span>`
+      : `<span style="color:var(--muted)">—</span>`;
+    const ar = row.remaining_ar;
+    const arClass = ar && ar > 0 ? 'num pos' : 'num dim';
+
+    return `<tr>
+      <td class="deal-name" title="${esc(row.ghl_opportunity_name || '')}">${esc(truncate(row.ghl_opportunity_name || '—', 36))}</td>
+      <td class="dim">${esc(row.ghl_owner_name || '—')}</td>
+      <td class="dim">${fmtDate(row.ghl_close_date)}</td>
+      <td><span class="pill ${pillClass}">${conf}</span></td>
+      <td class="dim" style="font-size:12px">${whopEmail}</td>
+      <td class="num">${fmtUSD(row.upfront_cash)}</td>
+      <td class="num ${row.total_paid ? 'pos' : 'dim'}">${fmtUSD(row.total_paid)}</td>
+      <td class="num">${fmtUSD(row.total_contract_value || row.ghl_monetary_value)}</td>
+      <td class="${arClass}">${ar != null ? fmtUSD(ar) : '—'}</td>
+      <td style="text-align:center">${row.is_financing ? '<span class="badge-fin">Install</span>' : '<span style="color:var(--muted);font-size:12px">Upfront</span>'}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Sorting ──────────────────────────────────────────────────────────────────
+function sortBy(key) {
+  if (sortKey === key) { sortDir *= -1; }
+  else { sortKey = key; sortDir = -1; }
+  // Update header arrow styling
+  document.querySelectorAll('thead th').forEach(th => th.classList.remove('sorted'));
+  event.currentTarget.classList.add('sorted');
+  applyFilters();
+}
+
+const CONF_ORDER = { high: 3, medium: 2, low: 1, unmatched: 0 };
+function sortRows(rows) {
+  return rows.sort((a, b) => {
+    let av = a[sortKey], bv = b[sortKey];
+    if (sortKey === 'match_confidence') { av = CONF_ORDER[av] ?? 0; bv = CONF_ORDER[bv] ?? 0; }
+    if (av == null) av = sortDir > 0 ? Infinity : -Infinity;
+    if (bv == null) bv = sortDir > 0 ? Infinity : -Infinity;
+    if (typeof av === 'string') av = av.toLowerCase();
+    if (typeof bv === 'string') bv = bv.toLowerCase();
+    return av < bv ? -sortDir : av > bv ? sortDir : 0;
+  });
+}
+
+// ── Utilities ────────────────────────────────────────────────────────────────
+function el(id) { return document.getElementById(id); }
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function truncate(s, n) { return s.length > n ? s.slice(0, n) + '…' : s; }
+
+function fmt(v, dec = 0) {
+  if (v == null) return '—';
+  return Number(v).toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+}
+function fmtUSD(v) {
+  if (v == null || v === 0) return '—';
+  return '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+function fmtDate(s) {
+  if (!s) return '—';
+  const d = new Date(s + 'T12:00:00');
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function setTableMsg(msg) {
+  el('tableBody').innerHTML = `<tr class="empty-row"><td colspan="10">${msg}</td></tr>`;
+}
+
+let toastTimer;
+function showToast(msg, type = 'info') {
+  const t = el('toast');
+  t.textContent = msg;
+  t.className = `show ${type}`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.className = ''; }, type === 'success' ? 6000 : 10000);
+}
+</script>
+</body>
+</html>

@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     ghl_page_delay_ms: int = 150
     ghl_page_size: int = 100
 
+    # Whop — optional, only needed for /deals/run-match
+    # Add WHOP_API_KEY to Railway env vars to enable deal matching.
+    # Verify it's set: Railway → qs-revenue-dashboard → Variables → WHOP_API_KEY
+    # Silent failure: if missing, POST /deals/run-match returns 401 from Whop API
+    whop_api_key: str = ""
+
     # Fireflies
     fireflies_api_key: str
 
