@@ -256,7 +256,7 @@ def _compute_payment_metrics(payments: list[dict], ghl_monetary_value: float) ->
     """Derive payment summary from raw Whop payment objects.
 
     Returns:
-        total_paid, payment_count, is_financing, remaining_ar
+        upfront_cash, total_paid, payment_count, is_financing, remaining_ar
     """
     paid = [
         p for p in payments
@@ -271,7 +271,14 @@ def _compute_payment_metrics(payments: list[dict], ghl_monetary_value: float) ->
     remaining_ar = max(contract_value - total_paid, 0.0) if contract_value else None
     is_financing = payment_count > 1 and bool(remaining_ar and remaining_ar > 1)
 
+    # Upfront cash = first payment amount (sorted by created_at/paid_at)
+    upfront_cash = None
+    if paid:
+        first = min(paid, key=lambda p: p.get("created_at") or p.get("paid_at") or 0)
+        upfront_cash = float(first.get("final_amount") or first.get("total") or 0)
+
     return {
+        "upfront_cash": round(upfront_cash, 2) if upfront_cash else None,
         "total_paid": round(total_paid, 2),
         "payment_count": payment_count,
         "is_financing": is_financing,
@@ -496,7 +503,6 @@ async def _match_one_deal(
                 payments, float(deal.monetary_value or 0)
             )
             record.update(metrics)
-            record["upfront_cash"] = float(deal.cash_collected or 0) or None
 
     await upsert_deal_match(session, record)
 
