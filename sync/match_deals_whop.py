@@ -179,13 +179,21 @@ async def _fetch_whop_memberships(client: httpx.AsyncClient) -> list[dict]:
         memberships.extend(items)
         pagination = data.get("pagination", {})
         next_page = pagination.get("next_page")
-        logger.debug(
+        logger.info(
             f"Whop memberships page {page}: got {len(items)} items, "
-            f"next_page={next_page}, total so far={len(memberships)}"
+            f"pagination={pagination}, total so far={len(memberships)}"
         )
         if not next_page or not items:
             break
         page = next_page
+    # Log a sample item shape for debugging
+    if memberships:
+        sample = memberships[0]
+        logger.info(
+            f"Whop membership sample keys: {list(sample.keys())}, "
+            f"user type: {type(sample.get('user')).__name__}, "
+            f"has email: {'email' in sample}"
+        )
     return memberships
 
 
@@ -218,10 +226,14 @@ async def _fetch_membership_payments(
 def _extract_whop_identity(m: dict) -> tuple[str, str]:
     """Pull email + name from a Whop membership object.
 
-    Whop v2 nests identity under 'user' in some endpoints and at the root
-    in others — handle both shapes.
+    Whop v2 sometimes embeds a full user object under 'user', sometimes
+    just a user_id string. Guard against both shapes.
+    Email may also sit directly on the membership at root level.
     """
-    user = m.get("user") or {}
+    user = m.get("user")
+    # Protect against user being a string user_id rather than an embedded dict
+    if not isinstance(user, dict):
+        user = {}
     email = m.get("email") or user.get("email") or ""
     name = (
         m.get("name")
