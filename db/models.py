@@ -371,6 +371,53 @@ class DealWhopMatch(Base):
     )
 
 
+class XeroBankTransfer(Base):
+    """One row per incoming bank transfer on the Wise USD / Wise EUR accounts in Xero.
+
+    Populated by POST /xero/sync-wise-transfers.
+    Matched to GHL deals by the Wise reconciliation engine (name + amount + date).
+    xero_transaction_id is the idempotency key — upserts are safe.
+
+    Matching flow:
+      1. Sync pulls RECEIVE transactions from Xero for Wise USD + EUR accounts
+      2. Reconciliation engine fuzzy-matches contact_name against deal_whop_matches
+      3. ghl_opportunity_id is set when a deal is identified
+      4. The Deals page shows linked transfers per deal (total wire received vs. AR)
+    """
+
+    __tablename__ = "xero_bank_transfers"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+
+    # Xero-side identifiers (idempotency key)
+    xero_transaction_id: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
+    xero_account_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    account_name: Mapped[str | None] = mapped_column(String(100), nullable=True)   # "Wise USD" / "Wise EUR"
+
+    # Transaction data from Xero/Wise
+    date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    amount: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    currency: Mapped[str] = mapped_column(String(10), nullable=False, default="USD")
+    contact_name: Mapped[str | None] = mapped_column(String(300), nullable=True)   # sender name
+    reference: Mapped[str | None] = mapped_column(String(500), nullable=True)      # payment ref from sender
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)           # line item description
+    is_reconciled: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
+    # Deal link (NULL = unmatched)
+    ghl_opportunity_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    match_method: Mapped[str] = mapped_column(String(50), nullable=False, default="none")
+    match_confidence: Mapped[str] = mapped_column(String(20), nullable=False, default="unmatched", index=True)
+    match_score: Mapped[float] = mapped_column(Numeric(5, 3), nullable=False, default=0.0)
+    is_confirmed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # Timestamps
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
 class SLWAWeeklyInput(Base):
     """Manual weekly dashboard inputs for Slack / WhatsApp / SMS channel pages.
 

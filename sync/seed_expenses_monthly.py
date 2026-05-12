@@ -5,15 +5,84 @@ Run:
     python sync/seed_expenses_monthly.py
 
 Posts directly to Railway — no DATABASE_URL needed.
+
+--- CATEGORIZATION RULES (applied on every sync) ---
+
+EXCLUDED vendors (not revenue-team costs):
+  - James Walter / James Wolter  (delivery team, miscoded in Xero)
+  - Doug Rich                    (delivery team)
+  - Xero                         (accounting software, not revenue team)
+  - BitWarden                    (password manager, delivery team)
+  - Profitable By Design         (delivery project, not revenue experiment)
+  - Tailscale                    (infra/delivery, not revenue team)
+
+BUCKET OVERRIDES (move from Xero account default):
+  - Go High Level / Highlevel Inc  → tech_tools  (CRM billed to various accounts)
+  - CLIENTACQUISITIONIO            → tech_tools
+  - Fiverr / Upwork                → tech_tools
+  - Render.com                     → tech_tools
+  - Twilio                         → tech_tools
+  - LightxEditor                   → tech_tools
+  - CrowdTamers                    → experiments
+
+50% ALLOCATION (shared with delivery team):
+  - ClickUp   (project mgmt used by both teams)
+  - Fireflies (meeting recorder used by both teams)
 """
 
 import json
-import sys
 import urllib.request
 import urllib.error
 
 RAILWAY_URL = "https://qs-revenue-dashboard-production.up.railway.app/api/dashboard/expenses/upsert"
 BEARER = "RAILWAY_BEARER_REMOVED"
+
+# ── Categorization rules ──────────────────────────────────────────────────────
+
+EXCLUDE_VENDORS = {
+    "JAMES WALTER", "JAMES WOLTER",
+    "DOUG RICH",
+    "XERO",
+    "BITWARDEN",
+    "PROFITABLE BY DESIGN",
+    "TAILSCALE",
+}
+
+TECH_TOOLS_OVERRIDE = {
+    "GO HIGH LEVEL", "HIGHLEVEL INC",
+    "CLIENTACQUISITIONIO",
+    "FIVERR", "FIVER",
+    "UPWORK",
+    "RENDER.COM",
+    "TWILIO",
+    "LIGHTXEDITOR",
+}
+
+EXPERIMENTS_OVERRIDE = {
+    "CROWDTAMERS",
+}
+
+# Vendors whose costs are split 50/50 with delivery team
+HALF_VENDORS = {
+    "CLICKUP",
+    "FIREFLIES",
+}
+
+# Xero org base currency is EUR (quantumSCALE Institute OÜ, Estonia).
+# All Xero amounts are in EUR — convert to USD using historical monthly averages
+# from Frankfurter (api.frankfurter.dev). Update when adding new months.
+EUR_USD_RATES = {
+    "2025-10": 1.1630,
+    "2025-11": 1.1560,
+    "2025-12": 1.1709,
+    "2026-01": 1.1738,
+    "2026-02": 1.1824,
+    "2026-03": 1.1558,
+    "2026-04": 1.1706,
+    "2026-05": 1.1729,
+}
+
+# ── Monthly data (replace with Xero API pull on next sync) ───────────────────
 
 MONTHS = [
     {
@@ -165,6 +234,46 @@ MONTHS = [
 ]
 
 
+def apply_categorization_rules(items: list) -> list:
+    """Apply Lloyd's categorization corrections to a list of expense items.
+
+    Rules are maintained at the top of this file. Update those sets when
+    new vendors are identified, not here.
+    """
+    result = []
+    for item in items:
+        key = item.get("vendor", "").upper()
+
+        if key in EXCLUDE_VENDORS:
+            continue
+
+        corrected = dict(item)
+
+        if key in TECH_TOOLS_OVERRIDE:
+            corrected["bucket"] = "tech_tools"
+        elif key in EXPERIMENTS_OVERRIDE:
+            corrected["bucket"] = "experiments"
+
+        if key in HALF_VENDORS:
+            corrected["amount"] = round(corrected["amount"] / 2, 2)
+            corrected["vendor"] = corrected["vendor"] + " (50%)"
+            corrected.setdefault("notes", "")
+            corrected["notes"] = (corrected["notes"] + " (50% revenue-team allocation)").strip()
+
+        result.append(corrected)
+
+    return result
+
+
+def convert_to_usd(items: list, period_start: str) -> list:
+    """Convert EUR amounts to USD using the historical monthly average rate."""
+    month = period_start[:7]
+    rate = EUR_USD_RATES.get(month)
+    if rate is None:
+        raise ValueError(f"No EUR/USD rate for month {month}. Add it to EUR_USD_RATES.")
+    return [{**item, "amount": round(item["amount"] * rate, 2)} for item in items]
+
+
 def post_month(payload: dict) -> dict:
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
@@ -183,10 +292,23 @@ def post_month(payload: dict) -> dict:
 def main():
     grand_total = 0.0
     for m in MONTHS:
-        month_total = sum(i["amount"] for i in m["items"])
+        items = apply_categorization_rules(m["items"])
+        items = convert_to_usd(items, m["period_start"])
+        month_total = sum(i["amount"] for i in items)
         grand_total += month_total
-        print(f"Posting {m['period_start']} → {m['period_end']}  ({len(m['items'])} items, ${month_total:,.2f})...", end=" ", flush=True)
-        result = post_month(m)
+        payload = {
+            "period_start": m["period_start"],
+            "period_end": m["period_end"],
+            "replace": m.get("replace", True),
+            "items": items,
+        }
+        print(
+            f"Posting {m['period_start']} → {m['period_end']}  "
+            f"({len(items)} items, ${month_total:,.2f})...",
+            end=" ",
+            flush=True,
+        )
+        result = post_month(payload)
         print(f"OK — {result.get('rows_upserted', result)}")
     print(f"\nDone. Grand total seeded: ${grand_total:,.2f}")
 

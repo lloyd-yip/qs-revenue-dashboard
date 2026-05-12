@@ -24,7 +24,9 @@ Credentials (colleague's paid Xero app — free plan blocks accounting.reports.r
 import base64
 import calendar
 import logging
-from datetime import date
+import re
+import unicodedata
+from datetime import date, datetime, timezone
 from urllib.parse import urlencode
 
 import httpx
@@ -32,9 +34,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Security, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
+from db.models import DealWhopMatch, XeroBankTransfer
 from db.queries.revenue import upsert_revenue_line_items
 from db.queries.settings import get_setting, set_setting
 from db.session import AsyncSessionLocal
@@ -46,14 +51,27 @@ router = APIRouter(tags=["xero"])
 # ── Xero OAuth constants ──────────────────────────────────────────────────────
 
 XERO_CLIENT_ID    = "EE84B9CECE064FDFA44A9989AD8356AA"   # colleague's paid app (50 connections, full scopes)
-XERO_CLIENT_SECRET = "HUlfGFWxvkSZXeQWANn7YZEqE5NEMqPJ5dVuk26CioDyPLvn"
+# Secret loaded from XERO_CLIENT_SECRET Railway env var — never hardcoded.
+# Set it in Railway → qs-revenue-dashboard → Variables → XERO_CLIENT_SECRET
+# (Get the value from Xero developer portal → "Automate accounting" → Configuration → Client secret 2)
 XERO_REDIRECT_URI  = "https://qs-revenue-dashboard-production.up.railway.app/xero/callback"
 XERO_TENANT_ID     = "3bead22e-28ff-4eb1-92cd-9b9d648e188a"
-XERO_SCOPES        = "openid profile email accounting.reports.profitandloss.read offline_access"
+# Scopes: P&L reports + bank transactions (for Wise wire reconciliation) + contacts (sender name lookup)
+XERO_SCOPES = (
+    "openid profile email offline_access "
+    "accounting.reports.profitandloss.read "
+    "accounting.banktransactions.read "
+    "accounting.contacts.read"
+)
 
-XERO_AUTH_URL   = "https://login.xero.com/identity/connect/authorize"
-XERO_TOKEN_URL  = "https://identity.xero.com/connect/token"
+XERO_AUTH_URL    = "https://login.xero.com/identity/connect/authorize"
+XERO_TOKEN_URL   = "https://identity.xero.com/connect/token"
 XERO_REPORTS_URL = "https://api.xero.com/api.xro/2.0/Reports/ProfitAndLoss"
+XERO_BANK_TXN_URL = "https://api.xero.com/api.xro/2.0/BankTransactions"
+
+# Wise account IDs in Xero (from Bank Accounts → URL accountId param)
+WISE_USD_XERO_ID = "6E143B3701FF412EA200F5FD8EFCA5F0"
+WISE_EUR_XERO_ID = "F58E3D6C41EE4F65B9D9CBB4B5C19214"
 
 # ── Xero account name → internal product_type slug ───────────────────────────
 NAME_TO_TYPE: dict[str, str] = {
@@ -86,8 +104,19 @@ async def _verify_token(
 # ── Helper: Basic Auth header ─────────────────────────────────────────────────
 
 def _basic_auth_header() -> str:
-    """Return the Authorization header value for Xero token endpoint calls."""
-    raw = f"{XERO_CLIENT_ID}:{XERO_CLIENT_SECRET}"
+    """Return the Authorization header value for Xero token endpoint calls.
+
+    Uses XERO_CLIENT_SECRET env var. If not set, token calls will fail with 401.
+    Silent failure signal: /xero/auth will complete but /xero/callback returns 502.
+    """
+    secret = settings.xero_client_secret
+    if not secret:
+        raise HTTPException(
+            status_code=500,
+            detail="XERO_CLIENT_SECRET env var is not set. "
+                   "Add it in Railway → qs-revenue-dashboard → Variables.",
+        )
+    raw = f"{XERO_CLIENT_ID}:{secret}"
     encoded = base64.b64encode(raw.encode()).decode()
     return f"Basic {encoded}"
 
@@ -431,4 +460,390 @@ async def xero_sync_revenue(
             }
             for i in db_items
         ],
+    )
+
+
+# ── Wise bank transfer sync ───────────────────────────────────────────────────
+# Fetches RECEIVE (incoming) transactions from Wise USD + Wise EUR accounts in Xero.
+# Normalises them into xero_bank_transfers table.
+# Then runs a matching pass: links transfers to GHL deals by contact name + amount + date.
+#
+# Plain English: Xero knows about every wire transfer because Wise is connected
+# as a bank feed. This route downloads all of them and tries to figure out
+# which client each transfer is from, then links it to their deal in the system.
+
+
+def _normalise_name(name: str) -> str:
+    """Lowercase, strip accents, collapse whitespace — for fuzzy matching."""
+    if not name:
+        return ""
+    # Decompose unicode (e.g. é → e + combining accent) then drop non-ASCII
+    nfkd = unicodedata.normalize("NFKD", name)
+    ascii_only = nfkd.encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"\s+", " ", ascii_only).lower().strip()
+
+
+def _name_similarity(a: str, b: str) -> float:
+    """Simple token-overlap similarity 0–1 between two name strings.
+
+    Plain English: splits both names into words, counts how many words appear
+    in both, and returns a ratio. "Hankins Consulting Group" vs "Hankins Consulting"
+    would score ~0.8 (2 of 3 words match).
+    """
+    if not a or not b:
+        return 0.0
+    tokens_a = set(_normalise_name(a).split())
+    tokens_b = set(_normalise_name(b).split())
+    if not tokens_a or not tokens_b:
+        return 0.0
+    overlap = len(tokens_a & tokens_b)
+    return overlap / max(len(tokens_a), len(tokens_b))
+
+
+def _parse_xero_date(raw: str) -> date | None:
+    """Parse Xero's /Date(milliseconds+offset)/ format into a Python date.
+
+    Xero returns dates as "/Date(1234567890000+0000)/" — milliseconds since epoch.
+    """
+    if not raw:
+        return None
+    m = re.search(r"/Date\((\d+)", raw)
+    if m:
+        ts = int(m.group(1)) / 1000
+        return datetime.fromtimestamp(ts, tz=timezone.utc).date()
+    # Fallback: try ISO string
+    try:
+        return date.fromisoformat(raw[:10])
+    except ValueError:
+        return None
+
+
+async def _fetch_xero_bank_transactions(
+    access_token: str,
+    account_id: str,
+    account_name: str,
+    date_from: str,
+    date_to: str,
+) -> list[dict]:
+    """Fetch all RECEIVE (incoming) bank transactions from one Xero account.
+
+    Paginates automatically (100 per page). Returns normalised dicts.
+    """
+    results = []
+    page = 1
+    async with httpx.AsyncClient(timeout=30) as client:
+        while True:
+            resp = await client.get(
+                XERO_BANK_TXN_URL,
+                headers={
+                    "Authorization":  f"Bearer {access_token}",
+                    "Xero-Tenant-Id": XERO_TENANT_ID,
+                    "Accept":         "application/json",
+                },
+                params={
+                    "BankAccountID": account_id,
+                    "where":        'Type=="RECEIVE"',
+                    "DateFrom":     date_from,
+                    "DateTo":       date_to,
+                    "page":         page,
+                },
+            )
+            if resp.status_code == 404 or resp.status_code == 204:
+                break  # no more pages
+            if resp.status_code != 200:
+                logger.error("Xero BankTransactions %s page %d: %s %s",
+                             account_name, page, resp.status_code, resp.text[:300])
+                break
+
+            data = resp.json()
+            txns = data.get("BankTransactions", [])
+            if not txns:
+                break
+
+            for t in txns:
+                contact_name = (
+                    t.get("Contact", {}).get("Name") or
+                    t.get("Contact", {}).get("ContactName") or
+                    ""
+                ).strip()
+                # Reference from top-level or first line item
+                reference = (t.get("Reference") or "").strip()
+                description = ""
+                for li in (t.get("LineItems") or []):
+                    if li.get("Description"):
+                        description = li["Description"].strip()
+                        break
+
+                results.append({
+                    "xero_transaction_id": t.get("BankTransactionID", ""),
+                    "xero_account_id":     account_id,
+                    "account_name":        account_name,
+                    "date":                _parse_xero_date(t.get("Date", "")),
+                    "amount":              float(t.get("Total") or t.get("SubTotal") or 0),
+                    "currency":            t.get("CurrencyCode", "USD"),
+                    "contact_name":        contact_name,
+                    "reference":           reference,
+                    "description":         description,
+                    "is_reconciled":       bool(t.get("IsReconciled")),
+                })
+
+            if len(txns) < 100:
+                break  # last page
+            page += 1
+
+    logger.info("Fetched %d RECEIVE txns from %s (%s→%s)", len(results), account_name, date_from, date_to)
+    return results
+
+
+def _match_transfer_to_deal(
+    transfer: dict,
+    deals: list[DealWhopMatch],
+) -> tuple[str | None, str, str, float]:
+    """Try to match one Xero transfer to a GHL deal.
+
+    Returns (ghl_opportunity_id, method, confidence, score) or (None, "none", "unmatched", 0.0).
+
+    Matching rules (in priority order):
+      HIGH   ≥ 0.85 name similarity + amount within 30% + date within 60 days
+      MEDIUM ≥ 0.70 name similarity + amount within 40%
+      LOW    ≥ 0.60 name similarity only
+
+    Plain English: we compare the sender name from the bank statement against
+    the client name on each deal. We also check the dollar amount and date
+    to avoid false matches between clients with similar names.
+    """
+    best_id: str | None = None
+    best_method = "none"
+    best_confidence = "unmatched"
+    best_score = 0.0
+
+    t_name = transfer.get("contact_name", "")
+    t_amount = float(transfer.get("amount") or 0)
+    t_date = transfer.get("date")
+
+    for deal in deals:
+        # Try matching against both the contact name and the company in opportunity name
+        candidate_names = [
+            deal.ghl_contact_name or "",
+            deal.ghl_opportunity_name or "",
+        ]
+        name_score = max(_name_similarity(t_name, cn) for cn in candidate_names)
+        if name_score < 0.50:
+            continue  # not even close
+
+        # Amount similarity: how close is the transfer to the deal value or installment?
+        amount_score = 0.0
+        if t_amount > 0 and deal.ghl_monetary_value:
+            deal_val = float(deal.ghl_monetary_value)
+            # Check against full deal value and common installment fractions
+            for divisor in [1, 2, 3, 4, 6, 12]:
+                expected = deal_val / divisor
+                if expected > 0:
+                    ratio = min(t_amount, expected) / max(t_amount, expected)
+                    if ratio > amount_score:
+                        amount_score = ratio
+
+        # Date proximity (days between transfer date and deal close date)
+        date_ok = False
+        if t_date and deal.ghl_close_date:
+            delta = abs((t_date - deal.ghl_close_date).days)
+            date_ok = delta <= 90
+
+        # Compute composite score and assign confidence
+        score = name_score * 0.6 + amount_score * 0.4
+
+        if name_score >= 0.85 and amount_score >= 0.70 and date_ok:
+            confidence = "high"
+        elif name_score >= 0.70 and amount_score >= 0.60:
+            confidence = "medium"
+        elif name_score >= 0.60:
+            confidence = "low"
+        else:
+            continue
+
+        if score > best_score:
+            best_score = score
+            best_id = deal.ghl_opportunity_id
+            best_confidence = confidence
+            best_method = "name_amount_date"
+
+    return best_id, best_method, best_confidence, round(best_score, 3)
+
+
+class WiseSyncResult(BaseModel):
+    period_start: str
+    period_end: str
+    usd_fetched: int
+    eur_fetched: int
+    total_upserted: int
+    matched_high: int
+    matched_medium: int
+    matched_low: int
+    unmatched: int
+
+
+@router.post(
+    "/xero/sync-wise-transfers",
+    response_model=WiseSyncResult,
+    dependencies=[Depends(_verify_token)],
+)
+async def xero_sync_wise_transfers(
+    date_from: str = Query(
+        default="2025-01-01",
+        description="Sync start date YYYY-MM-DD (default: 2025-01-01)",
+        pattern=r"^\d{4}-\d{2}-\d{2}$",
+    ),
+    date_to: str = Query(
+        default="",
+        description="Sync end date YYYY-MM-DD (default: today)",
+        pattern=r"^(\d{4}-\d{2}-\d{2})?$",
+    ),
+):
+    """
+    Sync all incoming (RECEIVE) Wise USD and Wise EUR bank transactions from Xero,
+    then attempt to match each transfer to a GHL deal.
+
+    Steps:
+      1. Load refresh token from DB (set via /xero/auth)
+      2. Refresh access token
+      3. Fetch RECEIVE transactions for Wise USD + Wise EUR from Xero
+      4. Upsert into xero_bank_transfers (idempotent — safe to run repeatedly)
+      5. Run matching pass: link unconfirmed transfers to GHL deals by name+amount+date
+
+    Verification: after running, call GET /api/dashboard/deals/wise-transfers to see results.
+    Silent failure signal: if total_upserted = 0 and you know there are transfers in Xero,
+    the Xero token needs re-auth (visit /xero/auth) or the account IDs are wrong.
+
+    Requires bearer token.
+    """
+    if not date_to:
+        date_to = date.today().isoformat()
+
+    # 1. Load refresh token
+    async with AsyncSessionLocal() as session:
+        refresh_token = await get_setting(session, "xero_refresh_token")
+    if not refresh_token:
+        raise HTTPException(
+            status_code=400,
+            detail="No Xero refresh token. Visit /xero/auth to connect Xero first.",
+        )
+
+    # 2. Refresh access token
+    tokens = await _refresh_access_token(refresh_token)
+    access_token      = tokens["access_token"]
+    new_refresh_token = tokens.get("refresh_token", refresh_token)
+    async with AsyncSessionLocal() as session:
+        await set_setting(session, "xero_refresh_token", new_refresh_token)
+
+    # 3. Fetch from both Wise accounts
+    usd_txns = await _fetch_xero_bank_transactions(
+        access_token, WISE_USD_XERO_ID, "Wise USD", date_from, date_to
+    )
+    eur_txns = await _fetch_xero_bank_transactions(
+        access_token, WISE_EUR_XERO_ID, "Wise EUR", date_from, date_to
+    )
+    all_txns = usd_txns + eur_txns
+
+    if not all_txns:
+        logger.info("No Wise transfers found for %s → %s", date_from, date_to)
+        return WiseSyncResult(
+            period_start=date_from, period_end=date_to,
+            usd_fetched=0, eur_fetched=0, total_upserted=0,
+            matched_high=0, matched_medium=0, matched_low=0, unmatched=0,
+        )
+
+    # 4. Upsert into DB (plain English: if a transfer already exists with the same
+    #    Xero ID, update its fields but never overwrite a manually confirmed match)
+    async with AsyncSessionLocal() as session:
+        for txn in all_txns:
+            if not txn["xero_transaction_id"]:
+                continue
+            stmt = pg_insert(XeroBankTransfer).values(
+                xero_transaction_id=txn["xero_transaction_id"],
+                xero_account_id=txn["xero_account_id"],
+                account_name=txn["account_name"],
+                date=txn["date"],
+                amount=txn["amount"],
+                currency=txn["currency"],
+                contact_name=txn["contact_name"],
+                reference=txn["reference"],
+                description=txn["description"],
+                is_reconciled=txn["is_reconciled"],
+            ).on_conflict_do_update(
+                index_elements=["xero_transaction_id"],
+                set_={
+                    "account_name":  txn["account_name"],
+                    "date":          txn["date"],
+                    "amount":        txn["amount"],
+                    "currency":      txn["currency"],
+                    "contact_name":  txn["contact_name"],
+                    "reference":     txn["reference"],
+                    "description":   txn["description"],
+                    "is_reconciled": txn["is_reconciled"],
+                    "synced_at":     datetime.now(timezone.utc),
+                },
+                where=XeroBankTransfer.is_confirmed == False,  # noqa: E712
+            )
+            await session.execute(stmt)
+        await session.commit()
+
+    # 5. Matching pass: load unmatched/unconfirmed transfers + all deals, run matcher
+    async with AsyncSessionLocal() as session:
+        unmatched_transfers = (await session.execute(
+            select(XeroBankTransfer)
+            .where(XeroBankTransfer.is_confirmed == False)  # noqa: E712
+            .where(XeroBankTransfer.match_confidence.in_(["unmatched", "low"]))
+        )).scalars().all()
+
+        all_deals = (await session.execute(
+            select(DealWhopMatch)
+            .where(DealWhopMatch.ghl_close_date.isnot(None))
+        )).scalars().all()
+
+    counters = {"high": 0, "medium": 0, "low": 0, "unmatched": 0}
+
+    async with AsyncSessionLocal() as session:
+        for transfer in unmatched_transfers:
+            ghl_id, method, confidence, score = _match_transfer_to_deal(
+                {
+                    "contact_name": transfer.contact_name,
+                    "amount":       float(transfer.amount or 0),
+                    "date":         transfer.date,
+                },
+                list(all_deals),
+            )
+            counters[confidence] = counters.get(confidence, 0) + 1
+
+            await session.execute(
+                pg_insert(XeroBankTransfer)
+                .values(xero_transaction_id=transfer.xero_transaction_id)
+                .on_conflict_do_update(
+                    index_elements=["xero_transaction_id"],
+                    set_={
+                        "ghl_opportunity_id": ghl_id,
+                        "match_method":       method,
+                        "match_confidence":   confidence,
+                        "match_score":        score,
+                    },
+                    where=XeroBankTransfer.is_confirmed == False,  # noqa: E712
+                )
+            )
+        await session.commit()
+
+    logger.info(
+        "Wise sync done: %d USD + %d EUR txns, matched high=%d medium=%d low=%d unmatched=%d",
+        len(usd_txns), len(eur_txns),
+        counters["high"], counters["medium"], counters["low"], counters["unmatched"],
+    )
+
+    return WiseSyncResult(
+        period_start=date_from,
+        period_end=date_to,
+        usd_fetched=len(usd_txns),
+        eur_fetched=len(eur_txns),
+        total_upserted=len(all_txns),
+        matched_high=counters["high"],
+        matched_medium=counters["medium"],
+        matched_low=counters["low"],
+        unmatched=counters["unmatched"],
     )

@@ -33,6 +33,21 @@ class Settings(BaseSettings):
     # Add STRIPE_SECRET_KEY to Railway env vars to enable.
     stripe_secret_key: str = ""
 
+    # Xero OAuth — optional, enables P&L sync and Wise bank transfer reconciliation.
+    # XERO_CLIENT_SECRET: get from Xero developer portal → "Automate accounting" app → Configuration
+    # After setting, visit /xero/auth on Railway to complete the OAuth flow (stores refresh token in DB).
+    xero_client_secret: str = ""
+
+    # Wise — optional, enables bank transfer reconciliation.
+    # Add WISE_API_KEY + WISE_PRIVATE_KEY to Railway env vars to enable.
+    # WISE_PRIVATE_KEY = the RSA private key PEM (multi-line — use Railway's
+    # multi-line env var support). The corresponding public key must be registered
+    # in Wise → Settings → Developer → Strong Customer Authentication.
+    # Verify: POST /api/dashboard/deals/sync-wise → should return incoming transactions.
+    # Silent failure: if WISE_PRIVATE_KEY is missing, sync returns 0 transactions.
+    wise_api_key: str = ""
+    wise_private_key: str = ""
+
     # Fireflies
     fireflies_api_key: str
 

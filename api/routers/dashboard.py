@@ -75,6 +75,7 @@ from db.queries.deal_matches import (
     get_deal_match_summary,
     get_last_match_run,
 )
+from db.queries.wise_transfers import get_wise_transfers_for_deal, get_all_wise_transfers
 from db.queries.slwa import get_slwa_closes, get_slwa_weekly_dashboard, upsert_slwa_weekly_input
 from db.queries.sync_status import get_recent_sync_runs
 from db.queries.time_series import get_time_series
@@ -818,3 +819,26 @@ async def run_deal_match(db: AsyncSession = Depends(get_db)):
     except Exception as exc:
         logger.error(f"Deal matching failed: {exc}", exc_info=True)
         return {"ok": False, "error": str(exc), "stats": {}}
+
+
+# ── Wise / Xero bank transfer endpoints ──────────────────────────────────────
+
+@router.get("/deals/wise-transfers")
+async def get_deals_wise_transfers(
+    ghl_opportunity_id: str | None = Query(default=None, description="Filter to one deal"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return Wise bank transfers from xero_bank_transfers table.
+
+    If ghl_opportunity_id is provided, returns only transfers linked to that deal.
+    Otherwise returns all transfers (most recent first, limit 500).
+
+    Verification: after running POST /xero/sync-wise-transfers, call this endpoint.
+    If you see the transfers you expect (e.g. FRANCHISE PIPELINE SOLUTIONS LLC $17,995),
+    the sync worked. If the list is empty, the sync hasn't run or Xero auth is missing.
+    """
+    if ghl_opportunity_id:
+        rows = await get_wise_transfers_for_deal(db, ghl_opportunity_id)
+    else:
+        rows = await get_all_wise_transfers(db)
+    return {"transfers": rows, "count": len(rows)}
