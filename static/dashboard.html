@@ -427,48 +427,49 @@
     </div>
   </details>
 
-  <!-- Revenue Metrics — macro business overview -->
+  <!-- Webinar Invite Funnel — auto-populated from Xero expense data -->
   <div style="margin-bottom:28px;">
     <div style="display:flex; align-items:baseline; gap:12px; margin-bottom:14px;">
-      <h3 style="font-size:13px; font-weight:600; color:var(--text2); text-transform:uppercase; letter-spacing:0.4px; margin:0;">Revenue Metrics</h3>
-      <span style="font-size:11px; color:var(--text2); background:rgba(99,102,241,0.08); border:1px solid rgba(99,102,241,0.2); border-radius:4px; padding:2px 8px;">Pending accounting data</span>
+      <h3 style="font-size:13px; font-weight:600; color:var(--text2); text-transform:uppercase; letter-spacing:0.4px; margin:0;">Webinar Invite Funnel</h3>
+      <span id="fe-badge" style="font-size:11px; color:var(--text2); background:rgba(99,102,241,0.08); border:1px solid rgba(99,102,241,0.2); border-radius:4px; padding:2px 8px;">Loading...</span>
+      <span style="font-size:11px; color:var(--text2);">Webinar Live channel only · costs from Xero</span>
     </div>
     <div class="kpi-row" style="grid-template-columns: repeat(4, 1fr); margin-bottom:12px;">
       <div class="kpi-card">
         <div class="kpi-label">Cost / Call Booked</div>
-        <div class="kpi-value" style="font-size:22px; color:var(--text2);">—</div>
+        <div id="fe-cost-per-call" class="kpi-value" style="font-size:22px; color:var(--text2);">—</div>
         <div class="kpi-sub">Mktg spend ÷ calls booked</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-label">Cost / Show</div>
-        <div class="kpi-value" style="font-size:22px; color:var(--text2);">—</div>
+        <div id="fe-cost-per-show" class="kpi-value" style="font-size:22px; color:var(--text2);">—</div>
         <div class="kpi-sub">Mktg spend ÷ shows</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-label">Cost / Qual Show</div>
-        <div class="kpi-value" style="font-size:22px; color:var(--text2);">—</div>
+        <div id="fe-cost-per-qual-show" class="kpi-value" style="font-size:22px; color:var(--text2);">—</div>
         <div class="kpi-sub">Mktg spend ÷ qual shows</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-label">Cost / Acquisition</div>
-        <div class="kpi-value" style="font-size:22px; color:var(--text2);">—</div>
+        <div id="fe-cost-per-acq" class="kpi-value" style="font-size:22px; color:var(--text2);">—</div>
         <div class="kpi-sub">(Mktg + sales comp) ÷ closed</div>
       </div>
     </div>
     <div class="kpi-row" style="grid-template-columns: repeat(3, 1fr);">
       <div class="kpi-card">
         <div class="kpi-label">Avg Contract Value</div>
-        <div class="kpi-value" style="font-size:22px; color:var(--text2);">—</div>
+        <div id="fe-avg-contract" class="kpi-value" style="font-size:22px; color:var(--text2);">—</div>
         <div class="kpi-sub">Avg contract value per close</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-label">Avg Cash Collected Upfront</div>
-        <div class="kpi-value" style="font-size:22px; color:var(--text2);">—</div>
+        <div id="fe-avg-cash" class="kpi-value" style="font-size:22px; color:var(--text2);">—</div>
         <div class="kpi-sub">Cash collected upfront per close</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-label">Avg % Cash Upfront</div>
-        <div class="kpi-value" style="font-size:22px; color:var(--text2);">—</div>
+        <div id="fe-avg-pct-cash" class="kpi-value" style="font-size:22px; color:var(--text2);">—</div>
         <div class="kpi-sub">Upfront cash ÷ contract value</div>
       </div>
     </div>
@@ -1646,14 +1647,54 @@ async function renderPipelineIntelligence() {
 
 
 // ─── Tab 4: Cost Analysis ─────────────────────────────────────────────────────
+
+/** Format a dollar value for cost cards — "$1,234" style. */
+function fmtCost(v) {
+  if (v === null || v === undefined) return '<span style="color:var(--text2);">—</span>';
+  return '<span style="color:var(--text);">$' + Math.round(v).toLocaleString() + '</span>';
+}
+
+/** Populate the 7 Webinar Invite Funnel KPI cards from the funnel-economics API response. */
+function populateFunnelEconomicsCards(fe) {
+  const badge = document.getElementById('fe-badge');
+
+  const hasCosts = fe.marketing_spend !== null;
+  if (hasCosts) {
+    badge.textContent = `Mktg $${Math.round(fe.marketing_spend).toLocaleString()} · Sales comp $${Math.round(fe.sales_comp ?? 0).toLocaleString()} · ${fe.calls_booked} calls booked`;
+    badge.style.background = 'rgba(34,197,94,0.08)';
+    badge.style.borderColor = 'rgba(34,197,94,0.3)';
+    badge.style.color = 'var(--green)';
+  } else {
+    badge.textContent = 'No expense data for this period — sync Xero to populate';
+    badge.style.background = 'rgba(99,102,241,0.08)';
+    badge.style.borderColor = 'rgba(99,102,241,0.2)';
+    badge.style.color = 'var(--text2)';
+  }
+
+  document.getElementById('fe-cost-per-call').innerHTML     = fmtCost(fe.cost_per_call_booked);
+  document.getElementById('fe-cost-per-show').innerHTML     = fmtCost(fe.cost_per_show);
+  document.getElementById('fe-cost-per-qual-show').innerHTML = fmtCost(fe.cost_per_qual_show);
+  document.getElementById('fe-cost-per-acq').innerHTML      = fmtCost(fe.cost_per_acquisition);
+
+  document.getElementById('fe-avg-contract').innerHTML  = fmtCost(fe.avg_contract_value);
+  document.getElementById('fe-avg-cash').innerHTML      = fmtCost(fe.avg_cash_collected);
+  document.getElementById('fe-avg-pct-cash').innerHTML  = fe.avg_pct_cash_upfront !== null
+    ? `<span style="color:var(--text);">${fe.avg_pct_cash_upfront.toFixed(1)}%</span>`
+    : '<span style="color:var(--text2);">—</span>';
+}
+
 async function renderCostAnalysis() {
   const repParam = AppState.repId ? `&rep_id=${AppState.repId}` : '';
   try {
-    const [channels, byRep, inputs] = await Promise.all([
+    const [channels, byRep, inputs, funnelEco] = await Promise.all([
       apiFetch(`/api/dashboard/channels?${qs()}${repParam}`),
       apiFetch(`/api/dashboard/by-rep?${qs()}`),
       apiFetch(`/api/dashboard/funnel-inputs?start=${AppState.dateStart}&end=${AppState.dateEnd}`),
+      apiFetch(`/api/dashboard/funnel-economics?${qs()}`),
     ]);
+
+    // ── Webinar Invite Funnel cost cards ─────────────────────────────────────
+    populateFunnelEconomicsCards(funnelEco.data);
 
     // ── Period inputs panel ──────────────────────────────────────────────
     const fi = inputs.data;
@@ -1742,6 +1783,13 @@ async function renderCostAnalysis() {
     document.getElementById('cost-rep-body').innerHTML = repRows || '<tr><td colspan="15" class="empty">No data.</td></tr>';
 
   } catch(e) {
+    const badge = document.getElementById('fe-badge');
+    if (badge) {
+      badge.textContent = `Failed to load — ${e.message}`;
+      badge.style.background = 'rgba(239,68,68,0.08)';
+      badge.style.borderColor = 'rgba(239,68,68,0.3)';
+      badge.style.color = 'var(--red)';
+    }
     document.getElementById('cost-channel-body').innerHTML = `<tr><td colspan="10" class="empty">Failed to load. ${e.message}</td></tr>`;
     document.getElementById('cost-rep-body').innerHTML = `<tr><td colspan="15" class="empty">Failed to load. ${e.message}</td></tr>`;
   }

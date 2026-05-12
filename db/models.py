@@ -191,13 +191,19 @@ class SyncRun(Base):
 
 class SourceNormalization(Base):
     """Configurable mapping from raw UTM/source values to canonical channel names.
-    Seeded from the UTM Builder CSV. Editable without code changes."""
+    Seeded from the UTM Builder CSV. Editable without code changes.
+
+    is_primary_funnel: TRUE for channels that belong to the webinar invite funnel.
+    Used to auto-populate the 4 cost cards on the Funnel Economics tab.
+    Currently "Webinar Live" is the only primary funnel channel.
+    """
 
     __tablename__ = "source_normalization"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     raw_value: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
     canonical_channel: Mapped[str] = mapped_column(String, nullable=False)
+    is_primary_funnel: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 

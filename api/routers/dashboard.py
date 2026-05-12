@@ -62,7 +62,7 @@ from db.queries.lead_source import (
 )
 from db.queries.data_quality import get_data_quality_issues
 from db.queries.debug_drilldown import get_drilldown_opps
-from db.queries.funnel_economics import get_period_inputs, upsert_marketing_spend, upsert_rep_compensations
+from db.queries.funnel_economics import get_auto_funnel_economics, get_period_inputs, upsert_marketing_spend, upsert_rep_compensations
 from db.queries.upsell_metrics import get_upsell_summary, get_upsell_by_rep
 from db.queries.metrics_by_rep import get_by_rep, get_daily_activity, get_rep_closes, get_rep_opps
 from db.queries.metrics_summary import get_summary
@@ -561,6 +561,31 @@ async def save_comp(body: SaveCompRequest, db: AsyncSession = Depends(get_db)):
     reps = [r.model_dump() for r in body.reps]
     await upsert_rep_compensations(db, body.start, body.end, reps)
     return {"ok": True}
+
+
+@router.get("/funnel-economics")
+async def funnel_economics(
+    params: tuple = Depends(_date_params),
+    db: AsyncSession = Depends(get_db),
+):
+    """Auto-computed cost card metrics for the primary webinar invite funnel.
+
+    Pulls marketing spend + sales comp from Xero expense data and GHL opportunity
+    metrics (calls booked / shows / qual shows / closed) from the database.
+
+    Only counts opportunities whose canonical_channel is flagged is_primary_funnel=True
+    in source_normalization (currently "Webinar Live").
+
+    Returns null for cost fields when no expense data exists for the period —
+    this is expected until Xero sync has been run for the selected month.
+
+    VERIFICATION: GET /api/dashboard/funnel-economics?start=2026-05-01&end=2026-05-31
+    Response should include marketing_spend, sales_comp, and the 4 cost card values
+    once Xero has been synced for that month.
+    """
+    start, end, date_by = params
+    data = await get_auto_funnel_economics(db, start, end, date_by)
+    return {"data": data, "meta": _meta(start, end, date_by).model_dump()}
 
 
 # ── Upsells (Client Delivery Revenue Pipeline) ────────────────────────────────
