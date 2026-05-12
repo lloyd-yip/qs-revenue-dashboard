@@ -263,7 +263,7 @@ def _compute_payment_metrics(payments: list[dict], ghl_monetary_value: float) ->
         if p.get("status") in ("paid", "complete", "completed")
     ]
     total_paid = sum(
-        float(p.get("final_price") or p.get("price") or p.get("amount") or 0)
+        float(p.get("final_amount") or p.get("total") or p.get("subtotal") or 0)
         for p in paid
     )
     payment_count = len(paid)
@@ -380,50 +380,68 @@ async def _match_one_deal(
     # close_date is a datetime (with tz) from the DB — normalise to date
     close_date = close_dt.date() if hasattr(close_dt, "date") else close_dt
 
-    # ── Find candidates within ±MATCH_WINDOW_DAYS ─────────────────────────
-    window_start = close_date - timedelta(days=MATCH_WINDOW_DAYS)
-    window_end = close_date + timedelta(days=MATCH_WINDOW_DAYS)
-
-    candidates: list[tuple[dict, int]] = []  # (membership, days_diff)
-    for m in memberships:
-        created_raw = m.get("created_at")
-        if not created_raw:
-            continue
-        try:
-            # Whop v2 returns created_at as a Unix timestamp (int).
-            # Fall back to ISO string parsing for forward compatibility.
-            if isinstance(created_raw, (int, float)):
-                m_date = datetime.fromtimestamp(created_raw, tz=timezone.utc).date()
-            else:
-                m_date = datetime.fromisoformat(
-                    str(created_raw).replace("Z", "+00:00")
-                ).date()
-        except (ValueError, AttributeError, OSError):
-            continue
-        if window_start <= m_date <= window_end:
-            candidates.append((m, (m_date - close_date).days))
-
-    logger.info(
-        f"Deal {deal.ghl_opportunity_id} ({ghl_email or 'no-email'}): "
-        f"close={close_date}, window=[{window_start}→{window_end}], "
-        f"candidates={len(candidates)}"
-    )
-
-    # ── Score all candidates and pick the best ────────────────────────────
+    # ── Step A: Email-exact match (no time window) ─────────────────────────
+    # If the GHL email matches a Whop email exactly, that's definitive
+    # regardless of how far apart the dates are.
     best_score = 0.0
     best_m: dict | None = None
     best_method = "none"
 
-    for m, _days_diff in candidates:
-        w_email, w_name = _extract_whop_identity(m)
-        score, method = score_match(ghl_email, ghl_name, w_email, w_name)
+    if ghl_email:
+        for m in memberships:
+            w_email, _ = _extract_whop_identity(m)
+            if w_email and w_email == ghl_email.lower().strip():
+                score, method = score_match(ghl_email, ghl_name, w_email, _)
+                if score > best_score:
+                    best_score = score
+                    best_m = m
+                    best_method = method
+
+    # ── Step B: Time-windowed fuzzy search (only if no exact match) ───────
+    # For domain/name matches, use ±MATCH_WINDOW_DAYS to avoid false positives.
+    if not best_m:
+        window_start = close_date - timedelta(days=MATCH_WINDOW_DAYS)
+        window_end = close_date + timedelta(days=MATCH_WINDOW_DAYS)
+
+        candidates: list[tuple[dict, int]] = []  # (membership, days_diff)
+        for m in memberships:
+            created_raw = m.get("created_at")
+            if not created_raw:
+                continue
+            try:
+                if isinstance(created_raw, (int, float)):
+                    m_date = datetime.fromtimestamp(created_raw, tz=timezone.utc).date()
+                else:
+                    m_date = datetime.fromisoformat(
+                        str(created_raw).replace("Z", "+00:00")
+                    ).date()
+            except (ValueError, AttributeError, OSError):
+                continue
+            if window_start <= m_date <= window_end:
+                candidates.append((m, (m_date - close_date).days))
+
         logger.info(
-            f"  candidate {m.get('id')} ({w_email}): score={score:.2f} method={method}"
+            f"Deal {deal.ghl_opportunity_id} ({ghl_email or 'no-email'}): "
+            f"close={close_date}, window=[{window_start}→{window_end}], "
+            f"candidates={len(candidates)}"
         )
-        if score > best_score:
-            best_score = score
-            best_m = m
-            best_method = method
+
+        for m, _days_diff in candidates:
+            w_email, w_name = _extract_whop_identity(m)
+            score, method = score_match(ghl_email, ghl_name, w_email, w_name)
+            logger.info(
+                f"  candidate {m.get('id')} ({w_email}): score={score:.2f} method={method}"
+            )
+            if score > best_score:
+                best_score = score
+                best_m = m
+                best_method = method
+
+    if best_m:
+        logger.info(
+            f"Deal {deal.ghl_opportunity_id}: best match={best_m.get('id')} "
+            f"score={best_score:.2f} method={best_method}"
+        )
 
     confidence = classify_confidence(best_score)
 
