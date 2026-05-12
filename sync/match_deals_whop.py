@@ -449,13 +449,26 @@ async def _match_one_deal(
         # Guard: if they happen to be dicts in a future API version, extract .get("id").
         _plan = best_m.get("plan")
         _product = best_m.get("product")
+
+        # Whop v2 returns created_at as a Unix timestamp (int).
+        # DB column is DateTime(timezone=True) — must convert.
+        _created_raw = best_m.get("created_at")
+        if isinstance(_created_raw, (int, float)):
+            _whop_created_dt = datetime.fromtimestamp(_created_raw, tz=timezone.utc)
+        elif _created_raw:
+            _whop_created_dt = datetime.fromisoformat(
+                str(_created_raw).replace("Z", "+00:00")
+            )
+        else:
+            _whop_created_dt = None
+
         record.update({
             "whop_membership_id": best_m.get("id"),
             "whop_email": w_email or None,
             "whop_name": w_name or None,
             "whop_product_id": _product if isinstance(_product, str) else (_product or {}).get("id"),
             "whop_plan_name": _plan if isinstance(_plan, str) else (_plan or {}).get("name"),
-            "whop_created_at": best_m.get("created_at"),
+            "whop_created_at": _whop_created_dt,
         })
 
         # Fetch payment metrics for HIGH and MEDIUM matches only
