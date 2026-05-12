@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     # Silent failure: if missing, POST /deals/run-match returns 401 from Whop API
     whop_api_key: str = ""
 
+    # Stripe — optional, enables second-pass enrichment of deal payment data.
+    # Matches unmatched deals via Stripe metadata (GHL contactId) and email.
+    # Fills missing payment metrics (upfront_cash, total_paid) on Whop-matched deals.
+    # Add STRIPE_SECRET_KEY to Railway env vars to enable.
+    stripe_secret_key: str = ""
+
     # Fireflies
     fireflies_api_key: str
 

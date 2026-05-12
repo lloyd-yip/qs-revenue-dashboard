@@ -3,7 +3,7 @@
 from datetime import date, datetime
 from typing import Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -126,6 +126,71 @@ async def upsert_deal_match(session: AsyncSession, data: dict) -> None:
     )
     await session.execute(stmt)
     await session.commit()
+
+
+async def enrich_deal_match_payments(
+    session: AsyncSession,
+    ghl_opportunity_id: str,
+    payment_data: dict,
+) -> bool:
+    """Update ONLY payment metrics on an existing match row.
+
+    Used by Stripe enrichment to fill in missing payment data
+    without overwriting match-method or Whop-sourced fields.
+    Only updates fields that are currently NULL or zero.
+
+    Returns True if any field was actually updated.
+    """
+    existing = await get_existing_match(session, ghl_opportunity_id)
+    if not existing or existing.is_confirmed:
+        return False
+
+    updates: dict = {}
+
+    if (existing.upfront_cash is None or float(existing.upfront_cash or 0) == 0) \
+            and payment_data.get("upfront_cash"):
+        updates["upfront_cash"] = payment_data["upfront_cash"]
+
+    if (existing.total_paid is None or float(existing.total_paid or 0) == 0) \
+            and payment_data.get("total_paid"):
+        updates["total_paid"] = payment_data["total_paid"]
+
+    if existing.total_contract_value is None and payment_data.get("total_contract_value"):
+        updates["total_contract_value"] = payment_data["total_contract_value"]
+
+    if existing.remaining_ar is None and payment_data.get("remaining_ar") is not None:
+        updates["remaining_ar"] = payment_data["remaining_ar"]
+
+    if existing.is_financing is None and payment_data.get("is_financing") is not None:
+        updates["is_financing"] = payment_data["is_financing"]
+
+    if (existing.payment_count is None or existing.payment_count == 0) \
+            and payment_data.get("payment_count"):
+        updates["payment_count"] = payment_data["payment_count"]
+
+    if existing.is_splitit is None and payment_data.get("is_splitit") is not None:
+        updates["is_splitit"] = payment_data["is_splitit"]
+
+    if existing.first_payment_date is None and payment_data.get("first_payment_date"):
+        updates["first_payment_date"] = payment_data["first_payment_date"]
+
+    if existing.total_installments is None and payment_data.get("total_installments"):
+        updates["total_installments"] = payment_data["total_installments"]
+
+    if not updates:
+        return False
+
+    updates["metrics_updated_at"] = func.now()
+    updates["updated_at"] = func.now()
+
+    stmt = (
+        update(DealWhopMatch)
+        .where(DealWhopMatch.ghl_opportunity_id == ghl_opportunity_id)
+        .values(**updates)
+    )
+    await session.execute(stmt)
+    await session.commit()
+    return True
 
 
 async def get_deal_matches(

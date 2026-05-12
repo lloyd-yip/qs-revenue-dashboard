@@ -1,11 +1,21 @@
-"""GHL ↔ Whop Deal Reconciliation Engine.
+"""GHL ↔ Whop + Stripe Deal Reconciliation Engine.
 
-Matches every GHL closed-won opportunity to a Whop membership using:
-  1. Email domain match     — strongest signal (score 0.80)
-  2. Exact email match      — perfect match (score 1.00)
+Two-pass matching:
+  Pass 1 (Whop): Match deals to Whop memberships by email/domain/name.
+  Pass 2 (Stripe): Match remaining unmatched deals via Stripe metadata
+    (GHL contactId in charge/customer metadata) and email. Also enriches
+    Whop-matched deals that have missing payment data (upfront_cash, total_paid).
+
+Scoring (Whop pass):
+  1. Exact email match      — perfect match (score 1.00)
+  2. Email domain match     — strong signal (score 0.80)
   3. Fuzzy domain match     — similar domains / typos (score 0.50)
   4. Name similarity        — secondary signal (+0.25 / +0.12)
-  5. ±3-day timing window   — only candidates created within 3 days of close
+  5. ±3-day timing window   — only for fuzzy/domain matches
+
+Scoring (Stripe pass):
+  1. GHL contactId match    — from Stripe charge/customer metadata (score 1.00)
+  2. Email exact match      — customer email = GHL contact email (score 0.95)
 
 Idempotency gate: if is_confirmed=True on an existing row, it is NEVER
 overwritten — manual matches survive any number of re-runs.
@@ -346,6 +356,300 @@ def _compute_payment_metrics(payments: list[dict], ghl_monetary_value: float) ->
     }
 
 
+# ── Stripe API helpers ──────────────────────────────────────────────────────
+
+STRIPE_API_BASE = "https://api.stripe.com/v1"
+
+
+async def _fetch_stripe_charges(client: httpx.AsyncClient) -> list[dict]:
+    """Fetch all succeeded Stripe charges > $100 (10000 cents).
+
+    Uses Stripe Search API with pagination via next_page token.
+    Returns raw charge objects with amount in cents.
+    """
+    charges: list[dict] = []
+    query = "status:'succeeded' AND amount>10000"
+    next_page = None
+
+    while True:
+        params: dict = {"query": query, "limit": 100}
+        if next_page:
+            params["page"] = next_page
+
+        resp = await client.get(
+            f"{STRIPE_API_BASE}/charges/search",
+            params=params,
+            auth=(settings.stripe_secret_key, ""),
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        batch = data.get("data", [])
+        charges.extend(batch)
+        logger.info(
+            f"Stripe charges page: got {len(batch)}, total so far={len(charges)}"
+        )
+
+        if data.get("has_more") and data.get("next_page"):
+            next_page = data["next_page"]
+        else:
+            break
+
+    return charges
+
+
+async def _fetch_stripe_customer(
+    client: httpx.AsyncClient, customer_id: str, cache: dict
+) -> dict:
+    """Fetch a Stripe customer by ID, with in-memory cache."""
+    if customer_id in cache:
+        return cache[customer_id]
+
+    resp = await client.get(
+        f"{STRIPE_API_BASE}/customers/{customer_id}",
+        auth=(settings.stripe_secret_key, ""),
+    )
+    if resp.status_code == 404:
+        cache[customer_id] = {}
+        return {}
+    resp.raise_for_status()
+    customer = resp.json()
+    cache[customer_id] = customer
+    return customer
+
+
+async def _build_stripe_index(
+    client: httpx.AsyncClient,
+) -> tuple[dict[str, list[dict]], dict[str, list[dict]]]:
+    """Build lookup maps from Stripe charges for deal matching.
+
+    Resolves customer data for each charge (cached) and extracts:
+    - GHL contact ID from charge.metadata.contactId or customer.metadata.id
+    - Email from charge.receipt_email or customer.email
+
+    Returns:
+        ghl_contact_map: {ghl_contact_id: [charges_with_resolved_data]}
+        email_map:       {email: [charges_with_resolved_data]}
+    """
+    charges = await _fetch_stripe_charges(client)
+    logger.info(f"Fetched {len(charges)} total Stripe charges")
+
+    customer_cache: dict[str, dict] = {}
+    ghl_contact_map: dict[str, list[dict]] = {}
+    email_map: dict[str, list[dict]] = {}
+
+    for charge in charges:
+        cust_id = charge.get("customer")
+        customer: dict = {}
+        if cust_id:
+            customer = await _fetch_stripe_customer(client, cust_id, customer_cache)
+            await asyncio.sleep(0.05)  # ~20 req/s — stay well inside Stripe 100/s limit
+
+        # Attach resolved data to charge object for later use
+        charge["_resolved_customer"] = customer
+        charge["_resolved_email"] = (
+            charge.get("receipt_email")
+            or customer.get("email")
+            or ""
+        ).lower().strip()
+
+        # Extract GHL contact ID from either charge or customer metadata
+        ch_meta = charge.get("metadata") or {}
+        cu_meta = customer.get("metadata") or {}
+        ghl_cid = ch_meta.get("contactId") or cu_meta.get("id") or ""
+        charge["_ghl_contact_id"] = ghl_cid
+
+        if ghl_cid:
+            ghl_contact_map.setdefault(ghl_cid, []).append(charge)
+        email = charge["_resolved_email"]
+        if email:
+            email_map.setdefault(email, []).append(charge)
+
+    logger.info(
+        f"Stripe index built: {len(ghl_contact_map)} GHL contacts, "
+        f"{len(email_map)} unique emails, "
+        f"{len(customer_cache)} customers resolved"
+    )
+    return ghl_contact_map, email_map
+
+
+def _compute_stripe_payment_metrics(
+    charges: list[dict], ghl_monetary_value: float
+) -> dict:
+    """Derive payment summary from Stripe charge objects.
+
+    Stripe amounts are in cents — divide by 100.
+    Returns same shape as _compute_payment_metrics for consistency.
+    """
+    succeeded = [c for c in charges if c.get("status") == "succeeded"]
+    if not succeeded:
+        return {}
+
+    total_paid = sum(c.get("amount", 0) / 100.0 for c in succeeded)
+    payment_count = len(succeeded)
+    contract_value = ghl_monetary_value or 0.0
+    remaining_ar = max(contract_value - total_paid, 0.0) if contract_value else None
+    is_financing = bool(remaining_ar and remaining_ar > 0)
+
+    sorted_charges = sorted(succeeded, key=lambda c: c.get("created", 0))
+    upfront_cash = sorted_charges[0].get("amount", 0) / 100.0 if sorted_charges else None
+
+    first_ts = sorted_charges[0].get("created") if sorted_charges else None
+    first_payment_date = None
+    if first_ts:
+        try:
+            first_payment_date = datetime.fromtimestamp(first_ts, tz=timezone.utc).date()
+        except (ValueError, OSError):
+            pass
+
+    return {
+        "upfront_cash": round(upfront_cash, 2) if upfront_cash else None,
+        "total_paid": round(total_paid, 2),
+        "payment_count": payment_count,
+        "is_financing": is_financing,
+        "total_contract_value": round(contract_value, 2) if contract_value else None,
+        "remaining_ar": round(remaining_ar, 2) if remaining_ar is not None else None,
+        "is_splitit": False,  # Splitit is Whop-specific
+        "first_payment_date": first_payment_date,
+        "total_installments": payment_count,
+    }
+
+
+async def _run_stripe_pass(
+    session,
+    won_deals: list,
+    contact_cache: dict,
+) -> dict:
+    """Second pass: match unmatched deals via Stripe and enrich existing matches.
+
+    Runs after the Whop pass. For each deal:
+    1. If unmatched → try Stripe contactId match → email match → full upsert
+    2. If matched but missing payment data → fill from Stripe charges (NULL fields only)
+
+    Returns stats: {stripe_matched, stripe_enriched, stripe_errors}
+    """
+    from db.queries.deal_matches import enrich_deal_match_payments, get_existing_match
+
+    stats = {"stripe_matched": 0, "stripe_enriched": 0, "stripe_errors": 0}
+
+    if not settings.stripe_secret_key:
+        logger.info("STRIPE_SECRET_KEY not set — skipping Stripe pass")
+        return stats
+
+    logger.info("=== Stripe Enrichment Pass: start ===")
+
+    async with httpx.AsyncClient(timeout=30.0) as stripe_client:
+        ghl_map, email_map = await _build_stripe_index(stripe_client)
+
+        for deal in won_deals:
+            try:
+                existing = await get_existing_match(session, deal.ghl_opportunity_id)
+                if existing and existing.is_confirmed:
+                    continue
+
+                contact = contact_cache.get(deal.ghl_contact_id or "") or {}
+                ghl_email = contact.get("email", "").lower().strip()
+                ghl_name = contact.get("name") or deal.opportunity_name or ""
+                ghl_cid = deal.ghl_contact_id or ""
+
+                # Find Stripe charges for this deal
+                matched_charges: list[dict] = []
+                match_method_stripe = ""
+
+                # Priority 1: GHL contact ID → Stripe metadata
+                if ghl_cid and ghl_cid in ghl_map:
+                    matched_charges = ghl_map[ghl_cid]
+                    match_method_stripe = "stripe_contactid"
+
+                # Priority 2: Email exact match
+                if not matched_charges and ghl_email and ghl_email in email_map:
+                    matched_charges = email_map[ghl_email]
+                    match_method_stripe = "stripe_email_exact"
+
+                if not matched_charges:
+                    continue
+
+                metrics = _compute_stripe_payment_metrics(
+                    matched_charges, float(deal.monetary_value or 0)
+                )
+                if not metrics:
+                    continue
+
+                is_unmatched = (
+                    not existing
+                    or existing.match_confidence == "unmatched"
+                )
+
+                if is_unmatched:
+                    # Full match — previously unmatched, now matched via Stripe
+                    close_dt = deal.close_date
+                    close_date = close_dt.date() if hasattr(close_dt, "date") else close_dt
+
+                    stripe_email = next(
+                        (ch["_resolved_email"] for ch in matched_charges
+                         if ch.get("_resolved_email")),
+                        "",
+                    )
+                    stripe_name = next(
+                        (ch.get("_resolved_customer", {}).get("name", "")
+                         for ch in matched_charges
+                         if ch.get("_resolved_customer", {}).get("name")),
+                        "",
+                    )
+
+                    record: dict = {
+                        "ghl_opportunity_id": deal.ghl_opportunity_id,
+                        "ghl_close_date": close_date,
+                        "ghl_opportunity_name": deal.opportunity_name,
+                        "ghl_owner_name": deal.opportunity_owner_name,
+                        "ghl_contact_id": deal.ghl_contact_id,
+                        "ghl_contact_email": ghl_email or None,
+                        "ghl_contact_name": ghl_name or None,
+                        "ghl_monetary_value": (
+                            float(deal.monetary_value) if deal.monetary_value else None
+                        ),
+                        "ghl_cash_collected": (
+                            float(deal.cash_collected) if deal.cash_collected else None
+                        ),
+                        "match_confidence": "high",
+                        "match_score": (
+                            1.0 if match_method_stripe == "stripe_contactid" else 0.95
+                        ),
+                        "match_method": match_method_stripe,
+                        # Stripe customer email/name — displayed in whop_email/name columns
+                        "whop_email": stripe_email or None,
+                        "whop_name": stripe_name or None,
+                    }
+                    record.update(metrics)
+                    await upsert_deal_match(session, record)
+                    stats["stripe_matched"] += 1
+                    logger.info(
+                        f"Stripe MATCHED {deal.ghl_opportunity_id} via "
+                        f"{match_method_stripe}: {len(matched_charges)} charges, "
+                        f"total=${metrics.get('total_paid', 0)}"
+                    )
+                else:
+                    # Enrichment — fill missing payment data from Stripe
+                    enriched = await enrich_deal_match_payments(
+                        session, deal.ghl_opportunity_id, metrics
+                    )
+                    if enriched:
+                        stats["stripe_enriched"] += 1
+                        logger.info(
+                            f"Stripe ENRICHED {deal.ghl_opportunity_id}: "
+                            f"filled from {len(matched_charges)} charges"
+                        )
+
+            except Exception as exc:
+                logger.error(
+                    f"Stripe error on {deal.ghl_opportunity_id}: {exc}",
+                    exc_info=True,
+                )
+                stats["stripe_errors"] += 1
+
+    logger.info(f"=== Stripe pass complete: {stats} ===")
+    return stats
+
+
 # ── Main engine ──────────────────────────────────────────────────────────────
 
 async def run_matching() -> dict:
@@ -415,6 +719,10 @@ async def run_matching() -> dict:
                         f"Error matching {deal.ghl_opportunity_id}: {exc}", exc_info=True
                     )
                     stats["errors"] += 1
+
+        # ── Step 5: Stripe enrichment pass ─────────────────────────────
+        stripe_stats = await _run_stripe_pass(session, won_deals, contact_cache)
+        stats.update(stripe_stats)
 
     logger.info(f"=== Matching complete: {stats} ===")
     return stats
