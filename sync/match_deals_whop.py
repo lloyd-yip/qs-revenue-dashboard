@@ -256,7 +256,16 @@ def _compute_payment_metrics(payments: list[dict], ghl_monetary_value: float) ->
     """Derive payment summary from raw Whop payment objects.
 
     Returns:
-        upfront_cash, total_paid, payment_count, is_financing, remaining_ar
+        upfront_cash, total_paid, payment_count, is_financing, remaining_ar,
+        is_splitit, first_payment_date, total_installments
+
+    total_installments = len(ALL payment records, all statuses).
+    This assumes Whop pre-creates future payment records at signup (so the
+    full plan length is visible immediately). The debug log below confirms
+    this on the first Run Match — look for lines starting with
+    "[payment-debug]" in Railway logs after triggering Run Match.
+    If total_installments == payment_count for all deals, Whop does NOT
+    pre-create future records and we need a different source (plan object).
     """
     paid = [
         p for p in payments
@@ -271,21 +280,55 @@ def _compute_payment_metrics(payments: list[dict], ghl_monetary_value: float) ->
     remaining_ar = max(contract_value - total_paid, 0.0) if contract_value else None
     is_financing = payment_count > 1 and bool(remaining_ar and remaining_ar > 1)
 
+    # total_installments: count ALL payment records (paid + pending/future).
+    # If Whop pre-creates future records, this equals the full plan length.
+    total_installments = len(payments) if payments else None
+
+    # Debug log — remove after first Run Match confirms Whop pre-creates future records.
+    # Look for [payment-debug] lines in Railway logs.
+    if payments:
+        all_statuses = [p.get("status", "unknown") for p in payments]
+        logger.info(
+            f"[payment-debug] total={len(payments)} paid={payment_count} "
+            f"statuses={all_statuses[:20]}"
+        )
+
     # Upfront cash: Splitit = 100% cash collect (QS receives full amount
     # upfront regardless of customer installment schedule). Otherwise, first
     # payment amount.
     upfront_cash = None
+    is_splitit = False
+    first_payment_date = None
+
     if paid:
+        splitit_payments = [
+            p for p in paid
+            if (p.get("payment_processor") or "").lower() == "splitit"
+        ]
         splitit_total = sum(
             float(p.get("final_amount") or p.get("total") or 0)
-            for p in paid
-            if (p.get("payment_processor") or "").lower() == "splitit"
+            for p in splitit_payments
         )
         if splitit_total > 0:
             upfront_cash = splitit_total
+            is_splitit = True
         else:
             first = min(paid, key=lambda p: p.get("created_at") or p.get("paid_at") or 0)
             upfront_cash = float(first.get("final_amount") or first.get("total") or 0)
+
+        # first_payment_date: earliest paid payment — used as canonical close date.
+        earliest = min(paid, key=lambda p: p.get("created_at") or p.get("paid_at") or 0)
+        raw_ts = earliest.get("created_at") or earliest.get("paid_at")
+        if raw_ts:
+            try:
+                if isinstance(raw_ts, (int, float)):
+                    first_payment_date = datetime.fromtimestamp(raw_ts, tz=timezone.utc).date()
+                else:
+                    first_payment_date = datetime.fromisoformat(
+                        str(raw_ts).replace("Z", "+00:00")
+                    ).date()
+            except (ValueError, AttributeError, OSError):
+                first_payment_date = None
 
     return {
         "upfront_cash": round(upfront_cash, 2) if upfront_cash else None,
@@ -294,6 +337,9 @@ def _compute_payment_metrics(payments: list[dict], ghl_monetary_value: float) ->
         "is_financing": is_financing,
         "total_contract_value": round(contract_value, 2) if contract_value else None,
         "remaining_ar": round(remaining_ar, 2) if remaining_ar is not None else None,
+        "is_splitit": is_splitit,
+        "first_payment_date": first_payment_date,
+        "total_installments": total_installments,
     }
 
 

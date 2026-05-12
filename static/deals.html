@@ -147,7 +147,8 @@
       border-radius: var(--radius);
       overflow-x: auto;
     }
-    table { width: 100%; border-collapse: collapse; }
+    table { width: 100%; border-collapse: collapse; min-width: 960px; }
+    thead th { white-space: nowrap; }
     thead th {
       padding: 10px 14px;
       text-align: left;
@@ -202,7 +203,7 @@
     .pill-low       { background: #f9731622; color: var(--orange); border: 1px solid #f9731644; }
     .pill-unmatched { background: #ef444422; color: var(--red);    border: 1px solid #ef444444; }
 
-    /* ── Financing badge ───────────────────────────────────────────────── */
+    /* ── Financing / Splitit badges ────────────────────────────────────── */
     .badge-fin {
       display: inline-block;
       padding: 1px 7px;
@@ -211,6 +212,17 @@
       background: #3b82f622;
       color: var(--blue);
       border: 1px solid #3b82f644;
+    }
+    .badge-splitit {
+      display: inline-block;
+      padding: 1px 7px;
+      border-radius: 999px;
+      font-size: 11px;
+      background: #8b5cf622;
+      color: #a78bfa;
+      border: 1px solid #8b5cf644;
+      font-weight: 600;
+      letter-spacing: 0.02em;
     }
 
     /* ── Empty / loading states ────────────────────────────────────────── */
@@ -348,14 +360,14 @@
         <tr>
           <th onclick="sortBy('ghl_opportunity_name')">Deal <span class="sort-arrow">↕</span></th>
           <th onclick="sortBy('ghl_owner_name')">Closed By <span class="sort-arrow">↕</span></th>
-          <th onclick="sortBy('ghl_close_date')">Close Date <span class="sort-arrow">↕</span></th>
+          <th onclick="sortBy('first_payment_date')">Close Date <span class="sort-arrow">↕</span></th>
           <th onclick="sortBy('match_confidence')">Match <span class="sort-arrow">↕</span></th>
           <th>Whop Email</th>
           <th onclick="sortBy('upfront_cash')" style="text-align:right">Upfront Cash <span class="sort-arrow">↕</span></th>
           <th onclick="sortBy('total_paid')" style="text-align:right">Total Paid <span class="sort-arrow">↕</span></th>
           <th onclick="sortBy('total_contract_value')" style="text-align:right">Contract Value <span class="sort-arrow">↕</span></th>
           <th onclick="sortBy('remaining_ar')" style="text-align:right">Remaining AR <span class="sort-arrow">↕</span></th>
-          <th style="text-align:center">Financing</th>
+          <th style="text-align:center">Plan</th>
         </tr>
       </thead>
       <tbody id="tableBody">
@@ -372,7 +384,7 @@ const API = '/api/dashboard';
 const BEARER = 'RAILWAY_BEARER_REMOVED';
 
 let allRows = [];
-let sortKey = 'ghl_close_date';
+let sortKey = 'first_payment_date';
 let sortDir = -1; // -1 = desc
 
 // ── Boot ───────────────────────────────────────────────────────────────────
@@ -449,8 +461,12 @@ async function runMatch() {
 
 // ── Filters ─────────────────────────────────────────────────────────────────
 function populateFilters(rows) {
+  // Use first_payment_date (authoritative) when available, fall back to ghl_close_date
   const months = [...new Set(
-    rows.map(r => r.ghl_close_date ? r.ghl_close_date.slice(0, 7) : null).filter(Boolean)
+    rows.map(r => {
+      const d = r.first_payment_date || r.ghl_close_date;
+      return d ? d.slice(0, 7) : null;
+    }).filter(Boolean)
   )].sort().reverse();
   const reps = [...new Set(rows.map(r => r.ghl_owner_name).filter(Boolean))].sort();
 
@@ -478,7 +494,10 @@ function applyFilters() {
   const conf  = el('filterConf').value;
 
   let filtered = allRows;
-  if (month) filtered = filtered.filter(r => r.ghl_close_date && r.ghl_close_date.startsWith(month));
+  if (month) filtered = filtered.filter(r => {
+    const d = r.first_payment_date || r.ghl_close_date;
+    return d && d.startsWith(month);
+  });
   if (rep)   filtered = filtered.filter(r => r.ghl_owner_name === rep);
   if (conf)  filtered = filtered.filter(r => r.match_confidence === conf);
 
@@ -514,17 +533,48 @@ function renderTable(rows) {
     const ar = row.remaining_ar;
     const arClass = ar && ar > 0 ? 'num pos' : 'num dim';
 
+    // Close date: use first_payment_date (Whop) when available — can't be set
+    // to a future date since it's a real payment timestamp. Fall back to
+    // ghl_close_date for unmatched deals; flag with ⚠️ if that date is future.
+    const today = new Date().toISOString().slice(0, 10);
+    let closeDateHtml;
+    if (row.first_payment_date) {
+      closeDateHtml = `<span>${fmtDate(row.first_payment_date)}</span>`;
+    } else if (row.ghl_close_date) {
+      const isFuture = row.ghl_close_date > today;
+      closeDateHtml = isFuture
+        ? `<span title="Close date is in the future — check GHL automation" style="color:var(--yellow)">⚠️ ${fmtDate(row.ghl_close_date)}</span>`
+        : `<span>${fmtDate(row.ghl_close_date)}</span>`;
+    } else {
+      closeDateHtml = `<span style="color:var(--muted)">—</span>`;
+    }
+
+    // Plan column: Splitit badge / installment progress / Upfront
+    let planHtml;
+    if (row.is_splitit) {
+      planHtml = `<span class="badge-splitit">SPLITIT</span>`;
+    } else if (row.is_financing && row.total_installments) {
+      const paid = row.payment_count || 0;
+      const total = row.total_installments;
+      planHtml = `<span class="badge-fin">${paid} / ${total} mo</span>`;
+    } else if (row.is_financing) {
+      // Has multiple payments but total_installments not yet populated (pre-backfill)
+      planHtml = `<span class="badge-fin">Install</span>`;
+    } else {
+      planHtml = `<span style="color:var(--muted);font-size:12px">Upfront</span>`;
+    }
+
     return `<tr>
       <td class="deal-name" title="${esc(row.ghl_opportunity_name || '')}">${esc(truncate(row.ghl_opportunity_name || '—', 36))}</td>
       <td class="dim">${esc(row.ghl_owner_name || '—')}</td>
-      <td class="dim">${fmtDate(row.ghl_close_date)}</td>
+      <td class="dim">${closeDateHtml}</td>
       <td><span class="pill ${pillClass}">${conf}</span></td>
       <td class="dim" style="font-size:12px">${whopEmail}</td>
       <td class="num">${fmtUSD(row.upfront_cash)}</td>
       <td class="num ${row.total_paid ? 'pos' : 'dim'}">${fmtUSD(row.total_paid)}</td>
       <td class="num">${fmtUSD(row.total_contract_value || row.ghl_monetary_value)}</td>
       <td class="${arClass}">${ar != null ? fmtUSD(ar) : '—'}</td>
-      <td style="text-align:center">${row.is_financing ? '<span class="badge-fin">Install</span>' : '<span style="color:var(--muted);font-size:12px">Upfront</span>'}</td>
+      <td style="text-align:center">${planHtml}</td>
     </tr>`;
   }).join('');
 }

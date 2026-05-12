@@ -353,6 +353,14 @@ class DealWhopMatch(Base):
     remaining_ar: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
     is_financing: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     payment_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Splitit: customer pays installments to Splitit, QS receives 100% upfront.
+    is_splitit: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # first_payment_date: canonical close date — earliest paid Whop payment.
+    # More reliable than ghl_close_date (can't be manually set to future dates).
+    first_payment_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # total_installments: len(all Whop payment records) as plan-length proxy.
+    # Assumes Whop pre-creates future payment records at signup. Confirmed on first Run Match.
+    total_installments: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Operational timestamps
     matched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

@@ -81,6 +81,9 @@ async def upsert_deal_match(session: AsyncSession, data: dict) -> None:
             remaining_ar=data.get("remaining_ar"),
             is_financing=data.get("is_financing"),
             payment_count=data.get("payment_count"),
+            is_splitit=data.get("is_splitit"),
+            first_payment_date=data.get("first_payment_date"),
+            total_installments=data.get("total_installments"),
             matched_at=func.now(),
             metrics_updated_at=func.now() if data.get("total_paid") is not None else None,
         )
@@ -112,6 +115,9 @@ async def upsert_deal_match(session: AsyncSession, data: dict) -> None:
                 "remaining_ar": data.get("remaining_ar"),
                 "is_financing": data.get("is_financing"),
                 "payment_count": data.get("payment_count"),
+                "is_splitit": data.get("is_splitit"),
+                "first_payment_date": data.get("first_payment_date"),
+                "total_installments": data.get("total_installments"),
                 "matched_at": func.now(),
                 "metrics_updated_at": func.now() if data.get("total_paid") is not None else None,
                 "updated_at": func.now(),
@@ -133,7 +139,12 @@ async def get_deal_matches(
 
     Returns list of dicts ready for JSON serialisation.
     """
-    query = select(DealWhopMatch).order_by(DealWhopMatch.ghl_close_date.desc().nullslast())
+    # Sort by first_payment_date (authoritative Whop date) when available,
+    # fall back to ghl_close_date for unmatched deals.
+    from sqlalchemy import func as sa_func
+    query = select(DealWhopMatch).order_by(
+        sa_func.coalesce(DealWhopMatch.first_payment_date, DealWhopMatch.ghl_close_date).desc().nullslast()
+    )
 
     if month_start:
         query = query.where(DealWhopMatch.ghl_close_date >= month_start)
@@ -172,6 +183,9 @@ async def get_deal_matches(
             "remaining_ar": float(r.remaining_ar) if r.remaining_ar else None,
             "is_financing": r.is_financing,
             "payment_count": r.payment_count,
+            "is_splitit": r.is_splitit,
+            "first_payment_date": str(r.first_payment_date) if r.first_payment_date else None,
+            "total_installments": r.total_installments,
             "matched_at": r.matched_at.isoformat() if r.matched_at else None,
         }
         for r in rows
