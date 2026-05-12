@@ -549,17 +549,15 @@ function renderTable(rows) {
       closeDateHtml = `<span style="color:var(--muted)">—</span>`;
     }
 
-    // Plan column: Splitit badge / installment progress / Upfront
+    // Plan column: Splitit badge / installment count / Upfront
+    // Note: Whop only creates payment records when payments are collected (not upfront),
+    // so we show payments received rather than X/Y (which would always be X/X).
     let planHtml;
     if (row.is_splitit) {
       planHtml = `<span class="badge-splitit">SPLITIT</span>`;
-    } else if (row.is_financing && row.total_installments) {
-      const paid = row.payment_count || 0;
-      const total = row.total_installments;
-      planHtml = `<span class="badge-fin">${paid} / ${total} mo</span>`;
     } else if (row.is_financing) {
-      // Has multiple payments but total_installments not yet populated (pre-backfill)
-      planHtml = `<span class="badge-fin">Install</span>`;
+      const paid = row.payment_count || 0;
+      planHtml = `<span class="badge-fin">${paid} mo paid</span>`;
     } else {
       planHtml = `<span style="color:var(--muted);font-size:12px">Upfront</span>`;
     }
