@@ -1,7 +1,7 @@
 """Add xero_bank_transfers table for Wise wire reconciliation.
 
 Revision ID: wise001
-Revises: (latest)
+Revises: deals001
 Create Date: 2026-05-12
 
 Plain English: This creates a new table to store incoming wire transfers
@@ -14,7 +14,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 revision = "wise001"
-down_revision = "upsell001"
+down_revision = "deals001"
 branch_labels = None
 depends_on = None
 
