@@ -130,10 +130,12 @@ async def get_auto_funnel_economics(
     within the dashboard date range — expense periods must be *fully inside* the range.
     """
     # ── 1. Expense data ───────────────────────────────────────────────────────
-    # Periods must be fully inside [start, end] so we don't double-count partial months.
+    # Overlap semantics: include any expense period that touches [start, end].
+    # A period overlaps if it starts before end AND ends after start.
+    # This handles multi-month ranges correctly and works with month-picker inputs.
     expense_filter = and_(
-        ExpenseLineItem.period_start >= start,
-        ExpenseLineItem.period_end <= end,
+        ExpenseLineItem.period_start <= end,
+        ExpenseLineItem.period_end >= start,
     )
 
     # Marketing spend: marketing_salaries + tech_tools combined
@@ -250,10 +252,12 @@ async def get_auto_funnel_economics(
         round(marketing_spend / qual_shows, 2)
         if marketing_spend is not None and qual_shows > 0 else None
     )
-    # Cost/Acquisition uses marketing + sales comp combined
+    # Cost/Acquisition uses marketing + sales comp combined.
+    # sales_comp is treated as $0 if absent — shows a floor number rather than blanking out.
+    # (Sales comp apportionment per channel deferred until Whop is configured.)
     cost_per_acquisition = (
         round(((marketing_spend or 0) + (sales_comp or 0)) / closed, 2)
-        if marketing_spend is not None and sales_comp is not None and closed > 0 else None
+        if marketing_spend is not None and closed > 0 else None
     )
 
     return {

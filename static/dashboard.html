@@ -427,6 +427,19 @@
     </div>
   </details>
 
+  <!-- Funnel Economics period picker — independent of global date filter -->
+  <div style="display:flex; align-items:center; gap:10px; margin-bottom:20px; padding:10px 16px; background:var(--surface2); border:1px solid var(--border); border-radius:8px; flex-wrap:wrap;">
+    <span style="font-size:11px; color:var(--text2); font-weight:600; text-transform:uppercase; letter-spacing:0.5px; white-space:nowrap;">Cost Period</span>
+    <input type="month" id="fe-month-start"
+      style="background:var(--surface); border:1px solid var(--border); color:var(--text); padding:5px 10px; border-radius:6px; font-size:13px; cursor:pointer;"
+      onchange="renderCostAnalysis()" />
+    <span style="color:var(--text2); font-size:13px;">→</span>
+    <input type="month" id="fe-month-end"
+      style="background:var(--surface); border:1px solid var(--border); color:var(--text); padding:5px 10px; border-radius:6px; font-size:13px; cursor:pointer;"
+      onchange="renderCostAnalysis()" />
+    <span style="font-size:11px; color:var(--text2); margin-left:4px;">Separate from global filter · aligns expense data to calendar months</span>
+  </div>
+
   <!-- Webinar Invite Funnel — auto-populated from Xero expense data -->
   <div style="margin-bottom:28px;">
     <div style="display:flex; align-items:baseline; gap:12px; margin-bottom:14px;">
@@ -1648,6 +1661,31 @@ async function renderPipelineIntelligence() {
 
 // ─── Tab 4: Cost Analysis ─────────────────────────────────────────────────────
 
+/** Initialize the Cost Period month pickers to the current calendar month if unset. */
+function initFunnelEcoMonths() {
+  const now = new Date();
+  const cur = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const s = document.getElementById('fe-month-start');
+  const e = document.getElementById('fe-month-end');
+  if (s && !s.value) s.value = cur;
+  if (e && !e.value) e.value = cur;
+}
+
+/** Convert the month picker values to {start, end} YYYY-MM-DD strings. */
+function funnelEcoDateRange() {
+  initFunnelEcoMonths();
+  const startMonth = document.getElementById('fe-month-start').value || (() => {
+    const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`;
+  })();
+  const endMonth = document.getElementById('fe-month-end').value || startMonth;
+  const [ey, em] = endMonth.split('-').map(Number);
+  const lastDay = new Date(ey, em, 0).getDate(); // day-0 of next month = last day of em
+  return {
+    start: `${startMonth}-01`,
+    end:   `${endMonth}-${String(lastDay).padStart(2, '0')}`,
+  };
+}
+
 /** Format a dollar value for cost cards — "$1,234" style. */
 function fmtCost(v) {
   if (v === null || v === undefined) return '<span style="color:var(--text2);">—</span>';
@@ -1685,12 +1723,14 @@ function populateFunnelEconomicsCards(fe) {
 
 async function renderCostAnalysis() {
   const repParam = AppState.repId ? `&rep_id=${AppState.repId}` : '';
+  // Cost period uses its own month pickers — independent of the global date filter
+  const feRange = funnelEcoDateRange();
   try {
     const [channels, byRep, inputs, funnelEco] = await Promise.all([
       apiFetch(`/api/dashboard/channels?${qs()}${repParam}`),
       apiFetch(`/api/dashboard/by-rep?${qs()}`),
       apiFetch(`/api/dashboard/funnel-inputs?start=${AppState.dateStart}&end=${AppState.dateEnd}`),
-      apiFetch(`/api/dashboard/funnel-economics?${qs()}`),
+      apiFetch(`/api/dashboard/funnel-economics?start=${feRange.start}&end=${feRange.end}&date_by=appointment`),
     ]);
 
     // ── Webinar Invite Funnel cost cards ─────────────────────────────────────
