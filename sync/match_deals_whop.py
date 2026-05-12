@@ -271,11 +271,21 @@ def _compute_payment_metrics(payments: list[dict], ghl_monetary_value: float) ->
     remaining_ar = max(contract_value - total_paid, 0.0) if contract_value else None
     is_financing = payment_count > 1 and bool(remaining_ar and remaining_ar > 1)
 
-    # Upfront cash = first payment amount (sorted by created_at/paid_at)
+    # Upfront cash: Splitit = 100% cash collect (QS receives full amount
+    # upfront regardless of customer installment schedule). Otherwise, first
+    # payment amount.
     upfront_cash = None
     if paid:
-        first = min(paid, key=lambda p: p.get("created_at") or p.get("paid_at") or 0)
-        upfront_cash = float(first.get("final_amount") or first.get("total") or 0)
+        splitit_total = sum(
+            float(p.get("final_amount") or p.get("total") or 0)
+            for p in paid
+            if (p.get("payment_processor") or "").lower() == "splitit"
+        )
+        if splitit_total > 0:
+            upfront_cash = splitit_total
+        else:
+            first = min(paid, key=lambda p: p.get("created_at") or p.get("paid_at") or 0)
+            upfront_cash = float(first.get("final_amount") or first.get("total") or 0)
 
     return {
         "upfront_cash": round(upfront_cash, 2) if upfront_cash else None,
