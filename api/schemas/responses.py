@@ -58,6 +58,23 @@ class RepMetrics(BaseModel):
     compliance_failures: int
     outcome_not_logged_count: int
     avg_cycle_days: float | None = None
+    # Lead quality counts
+    lq_great: int = 0
+    lq_ok: int = 0
+    lq_barely: int = 0
+    lq_bad: int = 0
+    lq_missing: int = 0
+    # Payment averages (from deal_whop_matches)
+    avg_contract_value: float | None = None
+    avg_cash_collected: float | None = None
+    avg_cash_pct_upfront: float | None = None
+    # Cost & RORI (from expense_line_items)
+    rep_comp: float | None = None
+    lead_cost_alloc: float | None = None
+    total_invested: float | None = None
+    cost_per_close: float | None = None
+    cash_rori: float | None = None
+    contract_rori: float | None = None
 
 
 class ByRepResponse(BaseModel):
