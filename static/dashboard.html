@@ -203,7 +203,7 @@
     }
 
     /* ── Metric tooltips ──────────────────────────────────────────── */
-    th[data-tip], .kpi-label[data-tip] { cursor: help; }
+    th[data-tip], .kpi-label[data-tip], .kpi-card[data-tip] { cursor: help; }
     #metric-tooltip {
       position: fixed;
       background: #13131f;
@@ -945,6 +945,22 @@ function _positionTip(e) {
   _ttDiv.style.top  = y + 'px';
 }
 function _hideTip() { _ttDiv.style.display = 'none'; }
+
+/** Wire a dynamic tooltip onto the .kpi-card that contains valueElId.
+ *  Safe to call on every re-render — removes old listeners before re-adding. */
+function _tipCard(valueElId, tipText) {
+  const valueEl = document.getElementById(valueElId);
+  if (!valueEl) return;
+  const card = valueEl.closest('.kpi-card') || valueEl.parentElement;
+  card.removeEventListener('mouseenter', _showTip);
+  card.removeEventListener('mousemove',  _positionTip);
+  card.removeEventListener('mouseleave', _hideTip);
+  card.setAttribute('data-tip', tipText);
+  card.style.cursor = 'help';
+  card.addEventListener('mouseenter', _showTip);
+  card.addEventListener('mousemove',  _positionTip);
+  card.addEventListener('mouseleave', _hideTip);
+}
 
 function injectTooltips() {
   document.querySelectorAll('th, .kpi-label').forEach(el => {
@@ -1737,6 +1753,35 @@ function populateFunnelEconomicsCards(fe) {
   document.getElementById('fe-avg-pct-cash').innerHTML  = fe.avg_pct_cash_upfront !== null
     ? `<span style="color:var(--text);">${fe.avg_pct_cash_upfront.toFixed(1)}%</span>`
     : '<span style="color:var(--text2);">—</span>';
+
+  // ── Hover tooltips: show formula + raw numbers ───────────────────────────
+  const $ = v => v !== null && v !== undefined ? '$' + Math.round(v).toLocaleString() : '—';
+  const n = v => v !== null && v !== undefined ? Number(v).toLocaleString() : '—';
+  const mktg = $(fe.marketing_spend);
+  const comp = $(fe.sales_comp ?? 0);
+  const total = fe.marketing_spend !== null
+    ? '$' + Math.round((fe.marketing_spend || 0) + (fe.sales_comp || 0)).toLocaleString() : '—';
+
+  _tipCard('fe-cost-per-call',
+    `${mktg} marketing spend\n÷ ${n(fe.calls_booked)} calls booked (Webinar Live)\n= ${$(fe.cost_per_call_booked)} per call booked`);
+
+  _tipCard('fe-cost-per-show',
+    `${mktg} marketing spend\n÷ ${n(fe.shows)} shows (Webinar Live)\n= ${$(fe.cost_per_show)} per show`);
+
+  _tipCard('fe-cost-per-qual-show',
+    `${mktg} marketing spend\n÷ ${n(fe.qual_shows)} qualified shows (Webinar Live)\n= ${$(fe.cost_per_qual_show)} per qual show`);
+
+  _tipCard('fe-cost-per-acq',
+    `${mktg} marketing spend\n+ ${comp} sales comp\n= ${total} total invested\n÷ ${n(fe.closed)} closed (Webinar Live)\n= ${$(fe.cost_per_acquisition)} per acquisition`);
+
+  _tipCard('fe-avg-contract',
+    `Average contract value (monetary_value)\nacross ${n(fe.closed)} closed Webinar Live deals`);
+
+  _tipCard('fe-avg-cash',
+    `Average cash collected upfront\nacross ${n(fe.closed)} closed Webinar Live deals\n(from cash_collected field in GHL)`);
+
+  _tipCard('fe-avg-pct-cash',
+    `Average (cash collected ÷ contract value)\nacross closed Webinar Live deals\n= what % of total contract was paid upfront`);
 }
 
 async function renderCostAnalysis() {
