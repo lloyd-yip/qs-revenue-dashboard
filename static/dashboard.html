@@ -430,14 +430,12 @@
   <!-- Funnel Economics period picker — independent of global date filter -->
   <div style="display:flex; align-items:center; gap:10px; margin-bottom:20px; padding:10px 16px; background:var(--surface2); border:1px solid var(--border); border-radius:8px; flex-wrap:wrap;">
     <span style="font-size:11px; color:var(--text2); font-weight:600; text-transform:uppercase; letter-spacing:0.5px; white-space:nowrap;">Cost Period</span>
-    <input type="month" id="fe-month-start"
-      style="background:var(--surface); border:1px solid var(--border); color:var(--text); padding:5px 10px; border-radius:6px; font-size:13px; cursor:pointer;"
-      onchange="renderCostAnalysis()" />
+    <select id="fe-month-start" onchange="renderCostAnalysis()"
+      style="background:var(--surface); border:1px solid var(--border); color:var(--text); padding:5px 10px; border-radius:6px; font-size:13px; cursor:pointer; min-width:140px;"></select>
     <span style="color:var(--text2); font-size:13px;">→</span>
-    <input type="month" id="fe-month-end"
-      style="background:var(--surface); border:1px solid var(--border); color:var(--text); padding:5px 10px; border-radius:6px; font-size:13px; cursor:pointer;"
-      onchange="renderCostAnalysis()" />
-    <span style="font-size:11px; color:var(--text2); margin-left:4px;">Separate from global filter · aligns expense data to calendar months</span>
+    <select id="fe-month-end" onchange="renderCostAnalysis()"
+      style="background:var(--surface); border:1px solid var(--border); color:var(--text); padding:5px 10px; border-radius:6px; font-size:13px; cursor:pointer; min-width:140px;"></select>
+    <span style="font-size:11px; color:var(--text2); margin-left:4px;">Separate from global filter · aligns to calendar months</span>
   </div>
 
   <!-- Webinar Invite Funnel — auto-populated from Xero expense data -->
@@ -1661,14 +1659,34 @@ async function renderPipelineIntelligence() {
 
 // ─── Tab 4: Cost Analysis ─────────────────────────────────────────────────────
 
-/** Initialize the Cost Period month pickers to the current calendar month if unset. */
+/** Build and populate the Cost Period dropdowns with the last 24 months.
+ *  Defaults both selects to the current calendar month on first call.
+ *  Safe to call repeatedly — only populates if the select is empty. */
 function initFunnelEcoMonths() {
-  const now = new Date();
-  const cur = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  const s = document.getElementById('fe-month-start');
-  const e = document.getElementById('fe-month-end');
-  if (s && !s.value) s.value = cur;
-  if (e && !e.value) e.value = cur;
+  const startEl = document.getElementById('fe-month-start');
+  const endEl   = document.getElementById('fe-month-end');
+  if (!startEl || !endEl) return;
+
+  // Only build options once
+  if (startEl.options.length === 0) {
+    const now = new Date();
+    const MONTH_NAMES = ['January','February','March','April','May','June',
+                         'July','August','September','October','November','December'];
+    let html = '';
+    for (let i = 0; i < 24; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      html += `<option value="${y}-${m}">${MONTH_NAMES[d.getMonth()]} ${y}</option>`;
+    }
+    startEl.innerHTML = html;
+    endEl.innerHTML   = html;
+
+    // Default: start = current month, end = current month
+    const cur = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    startEl.value = cur;
+    endEl.value   = cur;
+  }
 }
 
 /** Convert the month picker values to {start, end} YYYY-MM-DD strings. */
