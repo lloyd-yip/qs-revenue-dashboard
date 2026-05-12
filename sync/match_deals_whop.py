@@ -445,12 +445,16 @@ async def _match_one_deal(
 
     if best_m:
         w_email, w_name = _extract_whop_identity(best_m)
+        # Whop v2: "product" and "plan" are string IDs, not embedded dicts.
+        # Guard: if they happen to be dicts in a future API version, extract .get("id").
+        _plan = best_m.get("plan")
+        _product = best_m.get("product")
         record.update({
             "whop_membership_id": best_m.get("id"),
             "whop_email": w_email or None,
             "whop_name": w_name or None,
-            "whop_product_id": best_m.get("product_id"),
-            "whop_plan_name": (best_m.get("plan") or {}).get("name"),
+            "whop_product_id": _product if isinstance(_product, str) else (_product or {}).get("id"),
+            "whop_plan_name": _plan if isinstance(_plan, str) else (_plan or {}).get("name"),
             "whop_created_at": best_m.get("created_at"),
         })
 
