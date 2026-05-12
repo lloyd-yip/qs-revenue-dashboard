@@ -278,7 +278,10 @@ def _compute_payment_metrics(payments: list[dict], ghl_monetary_value: float) ->
     payment_count = len(paid)
     contract_value = ghl_monetary_value or 0.0
     remaining_ar = max(contract_value - total_paid, 0.0) if contract_value else None
-    is_financing = payment_count > 1 and bool(remaining_ar and remaining_ar > 1)
+    # is_financing = any deal with remaining AR outstanding, regardless of
+    # how many payments have been collected so far. A deal with 1 payment
+    # made and $14k still owed is absolutely a financed deal.
+    is_financing = bool(remaining_ar and remaining_ar > 0)
 
     # total_installments: count ALL payment records (paid + pending/future).
     # If Whop pre-creates future records, this equals the full plan length.
@@ -559,6 +562,19 @@ async def _match_one_deal(
                 payments, float(deal.monetary_value or 0)
             )
             record.update(metrics)
+
+            # Override total_installments with the authoritative Whop field.
+            # split_pay_required_payments = total # of payments the deal requires
+            # (set at membership creation for QS's internal financing plans).
+            # Whop does NOT always pre-create future payment records, so counting
+            # len(payments) can under-count. This membership-level field is correct.
+            split_pay_count = best_m.get("split_pay_required_payments")
+            if split_pay_count:
+                record["total_installments"] = split_pay_count
+                logger.info(
+                    f"  split_pay_required_payments={split_pay_count} "
+                    f"→ total_installments override for {best_m.get('id')}"
+                )
 
     await upsert_deal_match(session, record)
 

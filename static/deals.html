@@ -549,17 +549,23 @@ function renderTable(rows) {
       closeDateHtml = `<span style="color:var(--muted)">—</span>`;
     }
 
-    // Plan column: Splitit badge / installment count / Upfront
-    // Note: Whop only creates payment records when payments are collected (not upfront),
-    // so we show payments received rather than X/Y (which would always be X/X).
+    // Plan column:
+    //   SPLITIT   → purple badge (QS receives 100% upfront; customer's installment
+    //               count lives in Splitit's system, not Whop, so no number shown)
+    //   X-pay     → blue badge using total_installments (= split_pay_required_payments
+    //               from Whop membership object — the authoritative installment count)
+    //   Installment → blue badge when AR > 0 but Whop has no structured plan
+    //               (manual arrangement — count unknown)
+    //   Pay in Full → no badge; deal was paid in full with no remaining AR
     let planHtml;
     if (row.is_splitit) {
       planHtml = `<span class="badge-splitit">SPLITIT</span>`;
-    } else if (row.is_financing) {
-      const paid = row.payment_count || 0;
-      planHtml = `<span class="badge-fin">${paid} mo paid</span>`;
+    } else if (row.total_installments && row.total_installments >= 2) {
+      planHtml = `<span class="badge-fin">${row.total_installments}-pay</span>`;
+    } else if (row.remaining_ar && row.remaining_ar > 0) {
+      planHtml = `<span class="badge-fin">Installment</span>`;
     } else {
-      planHtml = `<span style="color:var(--muted);font-size:12px">Upfront</span>`;
+      planHtml = `<span style="color:var(--muted);font-size:12px">Pay in Full</span>`;
     }
 
     return `<tr>
