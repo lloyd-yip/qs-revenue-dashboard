@@ -1294,6 +1294,8 @@ function renderRepBreakdown(reps) {
     document.getElementById('rep-table-view').innerHTML = '<div class="empty">No rep data for this period.</div>';
     return;
   }
+  const dash = '<span style="color:var(--text2);">—</span>';
+  const roriStyle = v => v === null || v === undefined ? dash : `<span style="color:var(--green); font-weight:600;">${v.toFixed(2)}x</span>`;
   const rows = reps.map(r => {
     const n = r.rep_name.replace(/'/g, "\\'");
     const rid = r.rep_id;
@@ -1319,8 +1321,15 @@ function renderRepBreakdown(reps) {
       <td class="num clickable" onclick="window.open(debugUrl('close_rate','${rid}'),'_blank')" style="cursor:pointer;" title="↗ Debug">${pct(r.close_rate)}</td>
       <td class="num">${closedCell}</td>
       <td class="num" style="color:var(--text2);">${r.avg_cycle_days !== null && r.avg_cycle_days !== undefined ? r.avg_cycle_days + 'd' : '—'}</td>
-      <td class="num" style="color:var(--green);">${r.contract_value ? money(r.contract_value) : '—'}</td>
-      <td class="num" style="color:var(--green);">${r.cash_collected ? money(r.cash_collected) : '—'}</td>
+      <td class="num" style="color:var(--green);">${r.contract_value ? money(r.contract_value) : dash}</td>
+      <td class="num" style="color:var(--green);">${r.cash_collected ? money(r.cash_collected) : dash}</td>
+      <td class="num" style="color:var(--green);">${r.avg_contract_value ? money(r.avg_contract_value) : dash}</td>
+      <td class="num" style="color:var(--green);">${r.avg_cash_collected ? money(r.avg_cash_collected) : dash}</td>
+      <td class="num" style="color:var(--green);">${r.avg_cash_pct_upfront !== null && r.avg_cash_pct_upfront !== undefined ? r.avg_cash_pct_upfront + '%' : dash}</td>
+      <td class="num">${r.total_invested !== null && r.total_invested !== undefined ? money(r.total_invested) : dash}</td>
+      <td class="num">${r.cost_per_close !== null && r.cost_per_close !== undefined ? money(r.cost_per_close) : dash}</td>
+      <td class="num">${roriStyle(r.cash_rori)}</td>
+      <td class="num">${roriStyle(r.contract_rori)}</td>
       <td class="num ${r.outcome_not_logged_count > 0 ? 'rate-warn' : ''}">${notLoggedCell}</td>
       <td class="num" style="color:#22c55e;">${num(r.lq_great)}</td>
       <td class="num" style="color:#84cc16;">${num(r.lq_ok)}</td>
@@ -1339,9 +1348,16 @@ function renderRepBreakdown(reps) {
         <th class="num">Qual Rate</th>
         <th class="num">Close Rate</th>
         <th class="num">Closed</th>
-        <th class="num" title="Avg days from lead creation to won deal">Avg Cycle</th>
-        <th class="num" style="color:var(--green);" title="Coming soon — awaiting financial data">Contract Value</th>
-        <th class="num" style="color:var(--green);" title="Coming soon — awaiting financial data">Cash Collected</th>
+        <th class="num" title="Avg days from first call to close">Avg Cycle</th>
+        <th class="num" style="color:var(--green);" title="Total contract value from Whop/Stripe/Wise matched deals">Contract Value</th>
+        <th class="num" style="color:var(--green);" title="Upfront cash collected from Whop/Stripe/Wise matched deals">Cash Collected</th>
+        <th class="num" style="color:var(--green);" title="Contract Value ÷ Units Closed">Avg Contract</th>
+        <th class="num" style="color:var(--green);" title="Cash Collected ÷ Units Closed">Avg Cash</th>
+        <th class="num" style="color:var(--green);" title="Cash Collected ÷ Contract Value">% Upfront</th>
+        <th class="num" title="Rep compensation + allocated lead cost (marketing spend proportional to calls booked)">Total Invested</th>
+        <th class="num" title="Total Invested ÷ Units Closed">Cost/Close</th>
+        <th class="num" style="color:var(--green);" title="Cash Collected ÷ Total Invested">Cash RORI</th>
+        <th class="num" style="color:var(--green);" title="Contract Value ÷ Total Invested">Contract RORI</th>
         <th class="num">Not Logged</th>
         <th class="num" style="color:#22c55e;">Great</th>
         <th class="num" style="color:#84cc16;">Ok</th>
@@ -1846,21 +1862,19 @@ async function renderCostAnalysis() {
     document.getElementById('cost-channel-body').innerHTML = chRows || '<tr><td colspan="10" class="empty">No data.</td></tr>';
 
     // ── Rep rows with RORI ───────────────────────────────────────────────
-    const mktgSpend = fi?.marketing_spend ?? null;
-    const totalShows = byRep.data.reduce((s, r) => s + (r.shows_1st || 0), 0);
-    const costPerShow = (mktgSpend !== null && totalShows > 0) ? mktgSpend / totalShows : null;
-
+    // Cost data now comes pre-computed from the by-rep API (expense_line_items)
+    // instead of relying on manual rep_compensation inputs.
     const repRows = byRep.data.map(r => {
-      const repComp = fi ? (compMap[r.rep_id] ?? null) : null;
-      const mktgAlloc = costPerShow !== null ? costPerShow * (r.shows_1st || 0) : null;
-      const totalInvested = (repComp !== null && mktgAlloc !== null) ? repComp + mktgAlloc : null;
+      const repComp = r.rep_comp ?? null;
+      const mktgAlloc = r.lead_cost_alloc ?? null;
+      const totalInvested = r.total_invested ?? null;
       const qualShows = (r.shows_1st && r.qualification_rate !== null) ? Math.round(r.shows_1st * r.qualification_rate) : 0;
 
       const costPerShowRep  = totalInvested !== null && r.shows_1st > 0   ? totalInvested / r.shows_1st    : null;
       const costPerQual     = totalInvested !== null && qualShows > 0      ? totalInvested / qualShows       : null;
-      const costPerClose    = totalInvested !== null && r.units_closed > 0 ? totalInvested / r.units_closed  : null;
-      const contractRori    = totalInvested !== null && totalInvested > 0 && r.contract_value > 0 ? r.contract_value / totalInvested : null;
-      const cashRori        = totalInvested !== null && totalInvested > 0 && r.cash_collected > 0 ? r.cash_collected / totalInvested : null;
+      const costPerClose    = r.cost_per_close ?? null;
+      const contractRori    = r.contract_rori ?? null;
+      const cashRori        = r.cash_rori ?? null;
 
       const dash = `<span style="color:var(--text2);">—</span>`;
       const roriStyle = v => v === null ? dash : `<span style="color:var(--green); font-weight:600;">${v.toFixed(2)}x</span>`;

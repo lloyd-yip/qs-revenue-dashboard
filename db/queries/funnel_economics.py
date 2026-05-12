@@ -11,7 +11,7 @@ from sqlalchemy import and_, case, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from db.models import ExpenseLineItem, Opportunity, PeriodMarketingSpend, RepCompensation, SourceNormalization
+from db.models import DealWhopMatch, ExpenseLineItem, Opportunity, PeriodMarketingSpend, RepCompensation, SourceNormalization
 from db.queries.common import (
     QUALIFIED_LEAD_QUALITY,
     base_filter,
@@ -202,29 +202,34 @@ async def get_auto_funnel_economics(
     qual_show = and_(showed, Opportunity.lead_quality.in_(list(QUALIFIED_LEAD_QUALITY)))
 
     # Single aggregation query — one DB round trip for all 7 metrics
+    # Payment data (avg_contract_value, avg_cash_collected) comes from
+    # deal_whop_matches (Whop/Stripe/Wise reconciled) via LEFT JOIN.
     agg = await session.execute(
         select(
             func.sum(case((has_call, 1), else_=0)).label("calls_booked"),
             func.sum(case((showed, 1), else_=0)).label("shows"),
             func.sum(case((qual_show, 1), else_=0)).label("qual_shows"),
             func.sum(case((closed_won, 1), else_=0)).label("closed"),
-            # avg() on a case with no else_ returns NULL when condition is false —
-            # this means the average is only over closed-won rows (correct behaviour)
-            func.avg(case((closed_won, Opportunity.monetary_value))).label("avg_contract_value"),
-            func.avg(case((closed_won, Opportunity.cash_collected))).label("avg_cash_collected"),
+            # avg from deal_whop_matches — only over closed-won rows with matched payment data
+            func.avg(case((closed_won, DealWhopMatch.total_contract_value))).label("avg_contract_value"),
+            func.avg(case((closed_won, DealWhopMatch.upfront_cash))).label("avg_cash_collected"),
             func.avg(
                 case(
                     (
                         and_(
                             closed_won,
-                            Opportunity.monetary_value > 0,
-                            Opportunity.cash_collected.isnot(None),
-                            Opportunity.cash_collected > 0,
+                            DealWhopMatch.total_contract_value > 0,
+                            DealWhopMatch.upfront_cash.isnot(None),
+                            DealWhopMatch.upfront_cash > 0,
                         ),
-                        Opportunity.cash_collected / Opportunity.monetary_value * 100,
+                        DealWhopMatch.upfront_cash / DealWhopMatch.total_contract_value * 100,
                     )
                 )
             ).label("avg_pct_cash_upfront"),
+        )
+        .outerjoin(
+            DealWhopMatch,
+            Opportunity.ghl_opportunity_id == DealWhopMatch.ghl_opportunity_id,
         )
         .where(ghl_filter)
     )

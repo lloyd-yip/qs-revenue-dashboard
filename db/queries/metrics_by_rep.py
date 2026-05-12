@@ -5,7 +5,7 @@ from datetime import date, timedelta
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.models import Opportunity
+from db.models import DealWhopMatch, ExpenseLineItem, Opportunity
 from db.queries.common import (
     ALL_TEAM_SENTINEL,
     QUALIFIED_LEAD_QUALITY,
@@ -117,13 +117,22 @@ async def get_by_rep(
     end: date,
     date_by: str,
 ) -> list[dict]:
-    """All KPIs broken down per rep in a single aggregated query."""
+    """All KPIs broken down per rep in a single aggregated query.
+
+    Payment data (contract_value, cash_collected) comes from deal_whop_matches
+    (Whop/Stripe/Wise reconciled) rather than GHL's monetary_value/cash_collected.
+    Cost metrics (rep_comp, lead_cost, total_invested, RORI) pulled from
+    expense_line_items and allocated proportionally by calls booked.
+    """
 
     bf = base_filter(start, end, date_by)
     is_1st = has_1st_call(start, end, date_by)
     is_2nd = has_2nd_call(start, end, date_by)
     showed_1st = showed_1st_call_expr()
     showed_2nd = showed_2nd_call_expr()
+
+    # Won-deal condition for payment aggregation via deal_matches
+    is_won = Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID
 
     result = await session.execute(
         select(
@@ -166,11 +175,11 @@ async def get_by_rep(
             func.count(case((and_(is_1st, showed_1st, Opportunity.lead_quality == "Bad"), 1))).label("lq_bad"),
             func.count(case((and_(is_1st, showed_1st, Opportunity.lead_quality.is_(None)), 1))).label("lq_missing"),
             func.count(
-                case((Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID, 1))
+                case((is_won, 1))
             ).label("units_closed"),
             func.coalesce(
                 func.sum(
-                    case((Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID, Opportunity.projected_deal_size))
+                    case((is_won, Opportunity.projected_deal_size))
                 ),
                 0,
             ).label("projected_contract_value"),
@@ -203,11 +212,10 @@ async def get_by_rep(
                 case((and_(is_1st, Opportunity.outcome_unfilled.is_(True)), 1))
             ).label("outcome_not_logged_count"),
             # Avg deal cycle: first call date → close date, won deals only.
-            # Both dates must be non-null — no proxy substitution.
             func.avg(
                 case((
                     and_(
-                        Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID,
+                        is_won,
                         Opportunity.close_date.isnot(None),
                         Opportunity.call1_appointment_date.isnot(None),
                     ),
@@ -217,31 +225,96 @@ async def get_by_rep(
                     ) / 86400.0,
                 ))
             ).label("avg_cycle_days"),
-            # Contract value (monetaryValue from GHL) — won deals only
+            # Payment data from deal_whop_matches (Whop/Stripe/Wise reconciled)
             func.coalesce(
-                func.sum(
-                    case((Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID, Opportunity.monetary_value))
-                ),
+                func.sum(case((is_won, DealWhopMatch.total_contract_value))),
                 0,
             ).label("contract_value"),
-            # Cash collected (rep-entered projection) — won deals only
             func.coalesce(
-                func.sum(
-                    case((Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID, Opportunity.cash_collected))
-                ),
+                func.sum(case((is_won, DealWhopMatch.upfront_cash))),
                 0,
             ).label("cash_collected_sum"),
+        )
+        .outerjoin(
+            DealWhopMatch,
+            Opportunity.ghl_opportunity_id == DealWhopMatch.ghl_opportunity_id,
         )
         .where(bf)
         .group_by(Opportunity.opportunity_owner_id, Opportunity.opportunity_owner_name)
         .order_by(Opportunity.opportunity_owner_name)
     )
 
+    rows = result.all()
+
+    # ── Expense-based cost data ───────────────────────────────────────────
+    # Pull per-rep sales comp and total lead gen spend for the same period.
+    # Lead cost is allocated proportionally by calls booked per rep.
+    expense_overlap = and_(
+        ExpenseLineItem.period_start <= end,
+        ExpenseLineItem.period_end >= start,
+    )
+
+    # Per-rep sales compensation (bucket='sales', vendor = rep name)
+    comp_result = await session.execute(
+        select(
+            ExpenseLineItem.vendor.label("rep_name"),
+            func.sum(ExpenseLineItem.amount).label("comp"),
+        )
+        .where(expense_overlap, ExpenseLineItem.bucket == "sales")
+        .group_by(ExpenseLineItem.vendor)
+    )
+    comp_by_name: dict[str, float] = {
+        r.rep_name: float(r.comp) for r in comp_result.all()
+    }
+
+    # Total lead gen spend (marketing_salaries + tech_tools + paid_ads)
+    lead_spend_result = await session.execute(
+        select(func.sum(ExpenseLineItem.amount))
+        .where(
+            expense_overlap,
+            ExpenseLineItem.bucket.in_(["marketing_salaries", "tech_tools", "paid_ads"]),
+        )
+    )
+    total_lead_spend = lead_spend_result.scalar()
+    total_lead_spend = float(total_lead_spend) if total_lead_spend is not None else None
+
+    # Total calls booked across all reps (for proportional lead cost allocation)
+    total_calls_all_reps = sum(r.calls_booked_1st for r in rows)
+
     def safe_rate(num: int, den: int) -> float | None:
         return round(num / den, 4) if den else None  # type: ignore[call-overload]
 
-    return [
-        {
+    def safe_div(num: float | None, den: float | int | None) -> float | None:
+        if num is None or den is None or den == 0:
+            return None
+        return round(num / den, 2)
+
+    rep_list = []
+    for row in rows:
+        contract_val = float(row.contract_value)
+        cash_val = float(row.cash_collected_sum)
+        units = row.units_closed
+
+        # Cost allocation
+        rep_name_norm = (row.rep_name or "").strip()
+        rep_comp = comp_by_name.get(rep_name_norm)
+        # Allocate lead spend proportional to calls booked
+        if total_lead_spend is not None and total_calls_all_reps > 0 and row.calls_booked_1st > 0:
+            lead_cost_alloc = round(total_lead_spend * row.calls_booked_1st / total_calls_all_reps, 2)
+        else:
+            lead_cost_alloc = None
+
+        # Total invested = rep comp + allocated lead cost
+        if rep_comp is not None and lead_cost_alloc is not None:
+            total_invested = round(rep_comp + lead_cost_alloc, 2)
+        elif rep_comp is not None:
+            total_invested = rep_comp
+        elif lead_cost_alloc is not None:
+            total_invested = lead_cost_alloc
+        else:
+            total_invested = None
+
+        rep_list.append({
             "rep_id": row.rep_id,
             "rep_name": row.rep_name or "Unassigned",
             "calls_booked_1st": row.calls_booked_1st,
@@ -255,10 +328,10 @@ async def get_by_rep(
             "dq_rate": safe_rate(row.dq_count, row.shows_1st),
             "dq_after_call2_rate": safe_rate(row.dq_after_call2_count, row.shows_1st),
             "close_rate": safe_rate(row.units_closed, row.total_shows),
-            "units_closed": row.units_closed,
+            "units_closed": units,
             "projected_contract_value": float(row.projected_contract_value),
-            "contract_value": float(row.contract_value),
-            "cash_collected": float(row.cash_collected_sum),
+            "contract_value": contract_val,
+            "cash_collected": cash_val,
             "total_shows": row.total_shows,
             "compliance_failures": row.compliance_failures,
             "outcome_not_logged_count": row.outcome_not_logged_count,
@@ -268,9 +341,20 @@ async def get_by_rep(
             "lq_barely": row.lq_barely,
             "lq_bad": row.lq_bad,
             "lq_missing": row.lq_missing,
-        }
-        for row in result.all()
-    ]
+            # New: averages per close
+            "avg_contract_value": safe_div(contract_val, units) if contract_val > 0 else None,
+            "avg_cash_collected": safe_div(cash_val, units) if cash_val > 0 else None,
+            "avg_cash_pct_upfront": round(cash_val / contract_val * 100, 1) if contract_val > 0 and cash_val > 0 else None,
+            # New: cost & RORI
+            "rep_comp": rep_comp,
+            "lead_cost_alloc": lead_cost_alloc,
+            "total_invested": total_invested,
+            "cost_per_close": safe_div(total_invested, units),
+            "cash_rori": safe_div(cash_val, total_invested) if cash_val > 0 else None,
+            "contract_rori": safe_div(contract_val, total_invested) if contract_val > 0 else None,
+        })
+
+    return rep_list
 
 
 async def get_daily_activity(
