@@ -162,6 +162,8 @@ async def _fetch_whop_memberships(client: httpx.AsyncClient) -> list[dict]:
 
     Notes:
     - Whop v2 uses per_page (not limit) with a max of 50.
+    - Whop v2 pagination: {"current_page": N, "total_page": M, "total_count": X}
+      (NOT next_page — we must compare current_page vs total_page).
     - We fetch all statuses (omit status filter) so historical/expired members
       are included — we need to match against past close dates.
     """
@@ -178,14 +180,15 @@ async def _fetch_whop_memberships(client: httpx.AsyncClient) -> list[dict]:
         items = data.get("data", [])
         memberships.extend(items)
         pagination = data.get("pagination", {})
-        next_page = pagination.get("next_page")
+        current_page = pagination.get("current_page", page)
+        total_pages = pagination.get("total_page", 1)
         logger.info(
-            f"Whop memberships page {page}: got {len(items)} items, "
-            f"pagination={pagination}, total so far={len(memberships)}"
+            f"Whop memberships page {current_page}/{total_pages}: got {len(items)} items, "
+            f"total so far={len(memberships)}"
         )
-        if not next_page or not items:
+        if not items or current_page >= total_pages:
             break
-        page = next_page
+        page = current_page + 1
     # Log a sample item shape for debugging
     if memberships:
         sample = memberships[0]
@@ -200,7 +203,10 @@ async def _fetch_whop_memberships(client: httpx.AsyncClient) -> list[dict]:
 async def _fetch_membership_payments(
     client: httpx.AsyncClient, membership_id: str
 ) -> list[dict]:
-    """Fetch all payment records for one Whop membership."""
+    """Fetch all payment records for one Whop membership.
+
+    Note: Whop v2 pagination uses current_page/total_page, not next_page.
+    """
     payments: list[dict] = []
     page = 1
     while True:
@@ -216,10 +222,11 @@ async def _fetch_membership_payments(
         items = data.get("data", [])
         payments.extend(items)
         pagination = data.get("pagination", {})
-        next_page = pagination.get("next_page")
-        if not next_page or not items:
+        current_page = pagination.get("current_page", page)
+        total_pages = pagination.get("total_page", 1)
+        if not items or current_page >= total_pages:
             break
-        page = next_page
+        page = current_page + 1
     return payments
 
 
@@ -396,9 +403,10 @@ async def _match_one_deal(
         if window_start <= m_date <= window_end:
             candidates.append((m, (m_date - close_date).days))
 
-    logger.debug(
-        f"Deal {deal.ghl_opportunity_id}: close={close_date}, "
-        f"window=[{window_start}→{window_end}], candidates={len(candidates)}"
+    logger.info(
+        f"Deal {deal.ghl_opportunity_id} ({ghl_email or 'no-email'}): "
+        f"close={close_date}, window=[{window_start}→{window_end}], "
+        f"candidates={len(candidates)}"
     )
 
     # ── Score all candidates and pick the best ────────────────────────────
@@ -409,6 +417,9 @@ async def _match_one_deal(
     for m, _days_diff in candidates:
         w_email, w_name = _extract_whop_identity(m)
         score, method = score_match(ghl_email, ghl_name, w_email, w_name)
+        logger.info(
+            f"  candidate {m.get('id')} ({w_email}): score={score:.2f} method={method}"
+        )
         if score > best_score:
             best_score = score
             best_m = m
