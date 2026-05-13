@@ -238,10 +238,53 @@ async def get_auto_funnel_economics(
     calls_booked      = int(row.calls_booked or 0)
     shows             = int(row.shows or 0)
     qual_shows        = int(row.qual_shows or 0)
-    closed            = int(row.closed or 0)
     avg_contract_value  = float(row.avg_contract_value)  if row.avg_contract_value  is not None else None
     avg_cash_collected  = float(row.avg_cash_collected)   if row.avg_cash_collected   is not None else None
     avg_pct_cash_upfront = float(row.avg_pct_cash_upfront) if row.avg_pct_cash_upfront is not None else None
+
+    # Closes counted by CLOSE DATE — not appointment date — so deals that
+    # closed in this period are counted even if their first call was earlier.
+    close_date_filter = and_(
+        Opportunity.is_excluded.is_(False),
+        Opportunity.close_date.isnot(None),
+        func.date(Opportunity.close_date) >= start,
+        func.date(Opportunity.close_date) <= end,
+        Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID,
+        Opportunity.canonical_channel.in_(primary_channels),
+    )
+    close_agg = await session.execute(
+        select(
+            func.count().label("closed"),
+            func.avg(DealWhopMatch.total_contract_value).label("avg_cv"),
+            func.avg(DealWhopMatch.upfront_cash).label("avg_cc"),
+            func.avg(
+                case(
+                    (
+                        and_(
+                            DealWhopMatch.total_contract_value > 0,
+                            DealWhopMatch.upfront_cash.isnot(None),
+                            DealWhopMatch.upfront_cash > 0,
+                        ),
+                        DealWhopMatch.upfront_cash / DealWhopMatch.total_contract_value * 100,
+                    )
+                )
+            ).label("avg_pct"),
+        )
+        .outerjoin(
+            DealWhopMatch,
+            Opportunity.ghl_opportunity_id == DealWhopMatch.ghl_opportunity_id,
+        )
+        .where(close_date_filter)
+    )
+    close_row = close_agg.one()
+    closed = int(close_row.closed or 0)
+    # Override payment averages with close-date-filtered values if available
+    if close_row.avg_cv is not None:
+        avg_contract_value = float(close_row.avg_cv)
+    if close_row.avg_cc is not None:
+        avg_cash_collected = float(close_row.avg_cc)
+    if close_row.avg_pct is not None:
+        avg_pct_cash_upfront = float(close_row.avg_pct)
 
     # ── 4. Derive cost cards ──────────────────────────────────────────────────
     # Each card returns None if its required inputs are missing (no expense data loaded)
