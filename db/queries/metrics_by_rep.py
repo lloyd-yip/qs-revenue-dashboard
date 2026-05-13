@@ -264,7 +264,7 @@ async def get_by_rep(
         .group_by(ExpenseLineItem.vendor)
     )
     comp_by_name: dict[str, float] = {
-        r.rep_name: float(r.comp) for r in comp_result.all()
+        " ".join(r.rep_name.split()): float(r.comp) for r in comp_result.all()
     }
 
     # Total lead gen spend (marketing_salaries + tech_tools + paid_ads)
@@ -296,7 +296,7 @@ async def get_by_rep(
         units = row.units_closed
 
         # Cost allocation
-        rep_name_norm = (row.rep_name or "").strip()
+        rep_name_norm = " ".join((row.rep_name or "").split())
         rep_comp = comp_by_name.get(rep_name_norm)
         # Allocate lead spend proportional to calls booked
         if total_lead_spend is not None and total_calls_all_reps > 0 and row.calls_booked_1st > 0:
