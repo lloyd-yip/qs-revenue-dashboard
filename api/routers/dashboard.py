@@ -860,6 +860,14 @@ class ManualDealMatchInput(BaseModel):
     stripe_customer_email: Optional[str] = None
     match_method: str = "manual"
     notes: Optional[str] = None
+    # Optional payment metrics — fill these to populate numbers directly
+    upfront_cash: Optional[float] = None
+    total_paid: Optional[float] = None
+    total_contract_value: Optional[float] = None
+    remaining_ar: Optional[float] = None
+    payment_count: Optional[int] = None
+    is_financing: Optional[bool] = None
+    first_payment_date: Optional[str] = None
 
 
 class ManualDealMatchResult(BaseModel):
@@ -907,6 +915,23 @@ async def manual_deal_match(body: ManualDealMatchInput):
             row.whop_email = body.stripe_customer_email
             row.match_method = body.match_method or "manual_stripe"
 
+        # Payment metrics (optional — fill directly without waiting for matcher)
+        if body.upfront_cash is not None:
+            row.upfront_cash = body.upfront_cash
+        if body.total_paid is not None:
+            row.total_paid = body.total_paid
+        if body.total_contract_value is not None:
+            row.total_contract_value = body.total_contract_value
+        if body.remaining_ar is not None:
+            row.remaining_ar = body.remaining_ar
+        if body.payment_count is not None:
+            row.payment_count = body.payment_count
+        if body.is_financing is not None:
+            row.is_financing = body.is_financing
+        if body.first_payment_date:
+            row.first_payment_date = date.fromisoformat(body.first_payment_date)
+        row.metrics_updated_at = datetime.now(timezone.utc)
+
         await session.commit()
 
         return ManualDealMatchResult(
@@ -952,6 +977,23 @@ async def manual_deal_match_batch(links: list[ManualDealMatchInput]):
                 row.whop_email = body.stripe_customer_email
                 if body.match_method == "manual":
                     row.match_method = "manual_stripe"
+
+            # Payment metrics
+            if body.upfront_cash is not None:
+                row.upfront_cash = body.upfront_cash
+            if body.total_paid is not None:
+                row.total_paid = body.total_paid
+            if body.total_contract_value is not None:
+                row.total_contract_value = body.total_contract_value
+            if body.remaining_ar is not None:
+                row.remaining_ar = body.remaining_ar
+            if body.payment_count is not None:
+                row.payment_count = body.payment_count
+            if body.is_financing is not None:
+                row.is_financing = body.is_financing
+            if body.first_payment_date:
+                row.first_payment_date = date.fromisoformat(body.first_payment_date)
+            row.metrics_updated_at = datetime.now(timezone.utc)
 
             results.append(ManualDealMatchResult(
                 updated=1,
