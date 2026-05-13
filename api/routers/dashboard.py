@@ -1007,3 +1007,19 @@ async def manual_deal_match_batch(links: list[ManualDealMatchInput]):
         await session.commit()
 
     return {"results": results, "total_updated": sum(r.updated for r in results)}
+
+
+@router.delete("/deals/match/{ghl_opportunity_id}")
+async def delete_deal_match(ghl_opportunity_id: str):
+    """Delete a duplicate deal_whop_matches row. Use only for cleaning up duplicates."""
+    async with AsyncSessionLocal() as session:
+        row = (await session.execute(
+            select(DealWhopMatch)
+            .where(DealWhopMatch.ghl_opportunity_id == ghl_opportunity_id)
+        )).scalar_one_or_none()
+        if not row:
+            raise HTTPException(404, f"Deal {ghl_opportunity_id} not found")
+        name = row.ghl_opportunity_name
+        await session.delete(row)
+        await session.commit()
+        return {"deleted": True, "ghl_opportunity_id": ghl_opportunity_id, "name": name}
