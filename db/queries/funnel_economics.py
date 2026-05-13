@@ -270,6 +270,7 @@ async def get_auto_funnel_economics(
                 )
             ).label("avg_pct"),
         )
+        .select_from(Opportunity)
         .outerjoin(
             DealWhopMatch,
             Opportunity.ghl_opportunity_id == DealWhopMatch.ghl_opportunity_id,
