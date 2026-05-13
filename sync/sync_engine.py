@@ -184,8 +184,14 @@ async def _build_opportunity_row(
 
     # close_date: automation-set custom field wonlostabandoned_date (vzU9IqXPuwAYkKrJ3I3F).
     # Written by GHL automation when deal status changes to won/lost/abandoned — stable and precise.
-    # Do not substitute lastStatusChangeAt — that field changes on any status update post-win.
+    # Fallback: if the custom field is missing but the deal IS won, use lastStatusChangeAt.
+    # This handles cases where the GHL automation didn't fire (e.g. deals created before the
+    # automation existed, or workflow failures). lastStatusChangeAt can drift if status is
+    # toggled post-win, but a slightly imprecise date is far better than NULL — which would
+    # silently drop the deal from all close-date queries and cost card calculations.
     close_date: datetime | None = parse_ghl_datetime(custom.get("wonlostabandoned_date"))
+    if close_date is None and opp.get("status") == "won":
+        close_date = parse_ghl_datetime(opp.get("lastStatusChangeAt"))
 
     # Legacy compliance flag (stage-specific — kept for backward compat)
     compliance_failure = compute_compliance_failure(
