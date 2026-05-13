@@ -8,9 +8,11 @@ Protected endpoints (/api/metrics/*, /api/sync/*) remain unchanged.
 """
 
 from datetime import date, datetime, timezone
+from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.schemas.responses import (
@@ -842,3 +844,124 @@ async def get_deals_wise_transfers(
     else:
         rows = await get_all_wise_transfers(db)
     return {"transfers": rows, "count": len(rows)}
+
+
+# ── Manual Deal Match (Whop / Stripe) ────────────────────────────────────────
+
+from db.models import DealWhopMatch
+from db.session import AsyncSessionLocal
+
+
+class ManualDealMatchInput(BaseModel):
+    """Manually link a GHL deal to a Whop membership or Stripe customer."""
+    ghl_opportunity_id: str
+    whop_membership_id: Optional[str] = None
+    whop_email: Optional[str] = None
+    stripe_customer_email: Optional[str] = None
+    match_method: str = "manual"
+    notes: Optional[str] = None
+
+
+class ManualDealMatchResult(BaseModel):
+    updated: int
+    ghl_opportunity_id: str
+    ghl_opportunity_name: Optional[str] = None
+    match_confidence: str = "high"
+    whop_membership_id: Optional[str] = None
+    whop_email: Optional[str] = None
+    error: Optional[str] = None
+
+
+@router.post("/deals/manual-match")
+async def manual_deal_match(body: ManualDealMatchInput):
+    """Manually link a GHL deal to a Whop membership or Stripe customer.
+
+    Updates the existing deal_whop_matches row (created by the auto-matcher)
+    with match_confidence='high', is_confirmed=True so the auto-matcher
+    never overwrites it.
+
+    Verification: POST with a known ghl_opportunity_id → response.updated=1.
+    Then GET /deals/matches?confidence=high → the deal should appear.
+    """
+    async with AsyncSessionLocal() as session:
+        row = (await session.execute(
+            select(DealWhopMatch)
+            .where(DealWhopMatch.ghl_opportunity_id == body.ghl_opportunity_id)
+        )).scalar_one_or_none()
+
+        if not row:
+            raise HTTPException(404, f"Deal {body.ghl_opportunity_id} not found in deal_whop_matches")
+
+        row.match_confidence = "high"
+        row.match_method = body.match_method
+        row.is_confirmed = True
+        row.confirmed_by = "claude-manual"
+        row.confirmed_at = datetime.now(timezone.utc)
+
+        if body.whop_membership_id:
+            row.whop_membership_id = body.whop_membership_id
+        if body.whop_email:
+            row.whop_email = body.whop_email
+        if body.stripe_customer_email:
+            # Store Stripe email in whop_email field (shared payment email field)
+            row.whop_email = body.stripe_customer_email
+            row.match_method = body.match_method or "manual_stripe"
+
+        await session.commit()
+
+        return ManualDealMatchResult(
+            updated=1,
+            ghl_opportunity_id=body.ghl_opportunity_id,
+            ghl_opportunity_name=row.ghl_opportunity_name,
+            match_confidence="high",
+            whop_membership_id=row.whop_membership_id,
+            whop_email=row.whop_email,
+        )
+
+
+@router.post("/deals/manual-match-batch")
+async def manual_deal_match_batch(links: list[ManualDealMatchInput]):
+    """Batch-link multiple GHL deals to Whop/Stripe. Same logic as /deals/manual-match."""
+    results = []
+    async with AsyncSessionLocal() as session:
+        for body in links:
+            row = (await session.execute(
+                select(DealWhopMatch)
+                .where(DealWhopMatch.ghl_opportunity_id == body.ghl_opportunity_id)
+            )).scalar_one_or_none()
+
+            if not row:
+                results.append(ManualDealMatchResult(
+                    updated=0,
+                    ghl_opportunity_id=body.ghl_opportunity_id,
+                    error=f"Deal {body.ghl_opportunity_id} not found",
+                ))
+                continue
+
+            row.match_confidence = "high"
+            row.match_method = body.match_method
+            row.is_confirmed = True
+            row.confirmed_by = "claude-manual"
+            row.confirmed_at = datetime.now(timezone.utc)
+
+            if body.whop_membership_id:
+                row.whop_membership_id = body.whop_membership_id
+            if body.whop_email:
+                row.whop_email = body.whop_email
+            if body.stripe_customer_email:
+                row.whop_email = body.stripe_customer_email
+                if body.match_method == "manual":
+                    row.match_method = "manual_stripe"
+
+            results.append(ManualDealMatchResult(
+                updated=1,
+                ghl_opportunity_id=body.ghl_opportunity_id,
+                ghl_opportunity_name=row.ghl_opportunity_name,
+                match_confidence="high",
+                whop_membership_id=row.whop_membership_id,
+                whop_email=row.whop_email,
+            ))
+
+        await session.commit()
+
+    return {"results": results, "total_updated": sum(r.updated for r in results)}
