@@ -1015,3 +1015,93 @@ async def xero_import_wise_transfers(
         matched_low=counters["low"],
         unmatched=counters["unmatched"],
     )
+
+
+# ── Manual link: wire transfer → GHL deal ──────────────────────────────────
+
+
+class ManualLinkInput(BaseModel):
+    """Link one Wise/Xero transfer to a GHL deal by hand."""
+    xero_transaction_id: str
+    ghl_opportunity_id: str
+
+
+class ManualLinkResult(BaseModel):
+    updated: int
+    xero_transaction_id: str
+    ghl_opportunity_id: str
+    contact_name: str | None = None
+    amount: float | None = None
+
+
+@router.post(
+    "/xero/link-transfer",
+    response_model=ManualLinkResult,
+    dependencies=[Depends(_verify_token)],
+)
+async def xero_link_transfer(link: ManualLinkInput):
+    """Manually link a Wise bank transfer record to a GHL opportunity.
+
+    Sets match_method='manual', match_confidence='high', is_confirmed=True.
+    """
+    async with AsyncSessionLocal() as session:
+        row = (await session.execute(
+            select(XeroBankTransfer)
+            .where(XeroBankTransfer.xero_transaction_id == link.xero_transaction_id)
+        )).scalar_one_or_none()
+
+        if not row:
+            raise HTTPException(404, f"Transfer {link.xero_transaction_id} not found")
+
+        row.ghl_opportunity_id = link.ghl_opportunity_id
+        row.match_method = "manual"
+        row.match_confidence = "high"
+        row.is_confirmed = True
+        await session.commit()
+
+        return ManualLinkResult(
+            updated=1,
+            xero_transaction_id=link.xero_transaction_id,
+            ghl_opportunity_id=link.ghl_opportunity_id,
+            contact_name=row.contact_name,
+            amount=float(row.amount) if row.amount else None,
+        )
+
+
+@router.post(
+    "/xero/link-transfers-batch",
+    response_model=list[ManualLinkResult],
+    dependencies=[Depends(_verify_token)],
+)
+async def xero_link_transfers_batch(links: list[ManualLinkInput]):
+    """Batch-link multiple Wise transfers to GHL deals."""
+    results = []
+    async with AsyncSessionLocal() as session:
+        for link in links:
+            row = (await session.execute(
+                select(XeroBankTransfer)
+                .where(XeroBankTransfer.xero_transaction_id == link.xero_transaction_id)
+            )).scalar_one_or_none()
+
+            if not row:
+                results.append(ManualLinkResult(
+                    updated=0,
+                    xero_transaction_id=link.xero_transaction_id,
+                    ghl_opportunity_id=link.ghl_opportunity_id,
+                ))
+                continue
+
+            row.ghl_opportunity_id = link.ghl_opportunity_id
+            row.match_method = "manual"
+            row.match_confidence = "high"
+            row.is_confirmed = True
+            results.append(ManualLinkResult(
+                updated=1,
+                xero_transaction_id=link.xero_transaction_id,
+                ghl_opportunity_id=link.ghl_opportunity_id,
+                contact_name=row.contact_name,
+                amount=float(row.amount) if row.amount else None,
+            ))
+        await session.commit()
+
+    return results
