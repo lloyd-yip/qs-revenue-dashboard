@@ -847,3 +847,171 @@ async def xero_sync_wise_transfers(
         matched_low=counters["low"],
         unmatched=counters["unmatched"],
     )
+
+
+# ── Bulk import (bypasses Xero OAuth — uses pre-fetched data) ────────────
+
+
+class WiseTransferInput(BaseModel):
+    """One Wise bank transfer record for bulk import.
+
+    Plain English: this is the shape of data you get from Xero API Explorer
+    after querying BankTransactions filtered to Wise USD/EUR accounts.
+    """
+    xero_transaction_id: str
+    xero_account_id: str = ""
+    account_name: str = ""
+    date: str = ""
+    amount: float = 0.0
+    currency: str = "USD"
+    contact_name: str = ""
+    reference: str = ""
+    description: str = ""
+    is_reconciled: bool = False
+
+
+class WiseImportResult(BaseModel):
+    total_received: int
+    total_upserted: int
+    matched_high: int
+    matched_medium: int
+    matched_low: int
+    unmatched: int
+
+
+@router.post(
+    "/xero/import-wise-transfers",
+    response_model=WiseImportResult,
+    dependencies=[Depends(_verify_token)],
+)
+async def xero_import_wise_transfers(
+    transfers: list[WiseTransferInput],
+    run_matcher: bool = Query(
+        default=True,
+        description="Run deal-matching pass after import (default: true)",
+    ),
+):
+    """
+    Bulk-import Wise bank transfers from pre-fetched data (e.g. Xero API Explorer).
+
+    Bypasses Xero OAuth entirely — accepts an array of transfer records in the
+    request body and upserts them into xero_bank_transfers.
+
+    Plain English: when Xero OAuth is broken or you prefer the API Explorer,
+    copy the transaction data and POST it here instead.
+
+    Steps:
+      1. Upsert all transfers (idempotent — safe to run repeatedly)
+      2. Optionally run matching pass to link transfers to GHL deals
+
+    Verification: GET /api/dashboard/deals/wise-transfers → check count.
+    Requires bearer token.
+    """
+    if not transfers:
+        return WiseImportResult(
+            total_received=0, total_upserted=0,
+            matched_high=0, matched_medium=0, matched_low=0, unmatched=0,
+        )
+
+    # 1. Upsert into DB
+    upserted = 0
+    async with AsyncSessionLocal() as session:
+        for txn in transfers:
+            if not txn.xero_transaction_id:
+                continue
+            # Parse date string to date object
+            txn_date = None
+            if txn.date:
+                try:
+                    txn_date = date.fromisoformat(txn.date)
+                except ValueError:
+                    txn_date = None
+
+            stmt = pg_insert(XeroBankTransfer).values(
+                xero_transaction_id=txn.xero_transaction_id,
+                xero_account_id=txn.xero_account_id,
+                account_name=txn.account_name,
+                date=txn_date,
+                amount=txn.amount,
+                currency=txn.currency,
+                contact_name=txn.contact_name,
+                reference=txn.reference,
+                description=txn.description,
+                is_reconciled=txn.is_reconciled,
+            ).on_conflict_do_update(
+                index_elements=["xero_transaction_id"],
+                set_={
+                    "account_name":  txn.account_name,
+                    "date":          txn_date,
+                    "amount":        txn.amount,
+                    "currency":      txn.currency,
+                    "contact_name":  txn.contact_name,
+                    "reference":     txn.reference,
+                    "description":   txn.description,
+                    "is_reconciled": txn.is_reconciled,
+                    "synced_at":     datetime.now(timezone.utc),
+                },
+                where=XeroBankTransfer.is_confirmed == False,  # noqa: E712
+            )
+            await session.execute(stmt)
+            upserted += 1
+        await session.commit()
+
+    # 2. Matching pass (optional)
+    counters = {"high": 0, "medium": 0, "low": 0, "unmatched": 0}
+
+    if run_matcher:
+        async with AsyncSessionLocal() as session:
+            unmatched_transfers = (await session.execute(
+                select(XeroBankTransfer)
+                .where(XeroBankTransfer.is_confirmed == False)  # noqa: E712
+                .where(XeroBankTransfer.match_confidence.in_(["unmatched", "low"]))
+            )).scalars().all()
+
+            all_deals = (await session.execute(
+                select(DealWhopMatch)
+                .where(DealWhopMatch.ghl_close_date.isnot(None))
+            )).scalars().all()
+
+        async with AsyncSessionLocal() as session:
+            for transfer in unmatched_transfers:
+                ghl_id, method, confidence, score = _match_transfer_to_deal(
+                    {
+                        "contact_name": transfer.contact_name,
+                        "amount":       float(transfer.amount or 0),
+                        "date":         transfer.date,
+                    },
+                    list(all_deals),
+                )
+                counters[confidence] = counters.get(confidence, 0) + 1
+
+                await session.execute(
+                    pg_insert(XeroBankTransfer)
+                    .values(xero_transaction_id=transfer.xero_transaction_id)
+                    .on_conflict_do_update(
+                        index_elements=["xero_transaction_id"],
+                        set_={
+                            "ghl_opportunity_id": ghl_id,
+                            "match_method":       method,
+                            "match_confidence":   confidence,
+                            "match_score":        score,
+                        },
+                        where=XeroBankTransfer.is_confirmed == False,  # noqa: E712
+                    )
+                )
+            await session.commit()
+
+    logger.info(
+        "Wise import done: %d received, %d upserted, matched high=%d medium=%d low=%d unmatched=%d",
+        len(transfers), upserted,
+        counters["high"], counters["medium"], counters["low"], counters["unmatched"],
+    )
+
+    return WiseImportResult(
+        total_received=len(transfers),
+        total_upserted=upserted,
+        matched_high=counters["high"],
+        matched_medium=counters["medium"],
+        matched_low=counters["low"],
+        unmatched=counters["unmatched"],
+    )
