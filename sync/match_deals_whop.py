@@ -543,13 +543,48 @@ async def _run_stripe_pass(
         for deal in won_deals:
             try:
                 existing = await get_existing_match(session, deal.ghl_opportunity_id)
-                if existing and existing.is_confirmed:
-                    continue
 
                 contact = contact_cache.get(deal.ghl_contact_id or "") or {}
                 ghl_email = contact.get("email", "").lower().strip()
                 ghl_name = contact.get("name") or deal.opportunity_name or ""
                 ghl_cid = deal.ghl_contact_id or ""
+
+                # For confirmed rows, only proceed if payment metrics are missing
+                if existing and existing.is_confirmed:
+                    if existing.total_paid is not None and float(existing.total_paid or 0) > 0:
+                        continue  # Already has payment data — skip entirely
+
+                    # Try to find Stripe charges using the stored whop_email
+                    # (which holds the Stripe customer email for manual_stripe matches)
+                    confirmed_email = (existing.whop_email or "").lower().strip()
+                    matched_charges: list[dict] = []
+                    match_method_stripe = ""
+
+                    if ghl_cid and ghl_cid in ghl_map:
+                        matched_charges = ghl_map[ghl_cid]
+                        match_method_stripe = "stripe_contactid"
+                    if not matched_charges and confirmed_email and confirmed_email in email_map:
+                        matched_charges = email_map[confirmed_email]
+                        match_method_stripe = "stripe_email_confirmed"
+                    if not matched_charges and ghl_email and ghl_email in email_map:
+                        matched_charges = email_map[ghl_email]
+                        match_method_stripe = "stripe_email_exact"
+
+                    if matched_charges:
+                        metrics = _compute_stripe_payment_metrics(
+                            matched_charges, float(deal.monetary_value or 0)
+                        )
+                        if metrics:
+                            enriched = await enrich_deal_match_payments(
+                                session, deal.ghl_opportunity_id, metrics
+                            )
+                            if enriched:
+                                stats["stripe_enriched"] += 1
+                                logger.info(
+                                    f"Stripe ENRICHED confirmed match {deal.ghl_opportunity_id}: "
+                                    f"filled from {len(matched_charges)} charges"
+                                )
+                    continue
 
                 # Find Stripe charges for this deal
                 matched_charges: list[dict] = []
@@ -738,9 +773,35 @@ async def _match_one_deal(
     """Match a single deal and upsert result. Returns stats key."""
     from db.queries.deal_matches import get_existing_match  # local to avoid circular
 
-    # Idempotency gate — never touch a confirmed match
+    # Idempotency gate — never overwrite a confirmed match's identity,
+    # but still enrich payment metrics if they're missing.
     existing = await get_existing_match(session, deal.ghl_opportunity_id)
     if existing and existing.is_confirmed:
+        # Enrich payment metrics for confirmed Whop matches
+        if existing.whop_membership_id and (
+            existing.total_paid is None or float(existing.total_paid or 0) == 0
+        ):
+            from db.queries.deal_matches import enrich_deal_match_payments
+            try:
+                payments = await _fetch_membership_payments(
+                    whop_client, existing.whop_membership_id
+                )
+                if payments:
+                    metrics = _compute_payment_metrics(
+                        payments, float(deal.monetary_value or 0)
+                    )
+                    enriched = await enrich_deal_match_payments(
+                        session, deal.ghl_opportunity_id, metrics
+                    )
+                    if enriched:
+                        logger.info(
+                            f"Enriched confirmed Whop match {deal.ghl_opportunity_id} "
+                            f"({existing.whop_membership_id}): {metrics.get('total_paid')}"
+                        )
+            except Exception as exc:
+                logger.warning(
+                    f"Failed to enrich confirmed match {deal.ghl_opportunity_id}: {exc}"
+                )
         return "skipped_confirmed"
 
     contact = contact_cache.get(deal.ghl_contact_id or "") or {}

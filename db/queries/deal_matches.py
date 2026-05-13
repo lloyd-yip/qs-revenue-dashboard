@@ -142,7 +142,7 @@ async def enrich_deal_match_payments(
     Returns True if any field was actually updated.
     """
     existing = await get_existing_match(session, ghl_opportunity_id)
-    if not existing or existing.is_confirmed:
+    if not existing:
         return False
 
     updates: dict = {}
