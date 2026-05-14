@@ -1330,12 +1330,12 @@ function renderRepBreakdown(reps) {
       <td class="num">${r.cost_per_close !== null && r.cost_per_close !== undefined ? money(r.cost_per_close) : dash}</td>
       <td class="num">${roriStyle(r.cash_rori)}</td>
       <td class="num">${roriStyle(r.contract_rori)}</td>
-      <td class="num ${r.outcome_not_logged_count > 0 ? 'rate-warn' : ''}">${notLoggedCell}</td>
       <td class="num" style="color:#22c55e;">${num(r.lq_great)}</td>
       <td class="num" style="color:#84cc16;">${num(r.lq_ok)}</td>
       <td class="num" style="color:var(--yellow);">${num(r.lq_barely)}</td>
       <td class="num" style="color:var(--red);">${num(r.lq_bad)}</td>
-      <td class="num" style="color:var(--text2);">${num(r.lq_missing)}</td>
+      <td class="num ${r.lq_missing > 0 ? 'rate-warn' : ''}" style="color:var(--text2);">${num(r.lq_missing)}</td>
+      <td class="num ${r.outcome_not_logged_count > 0 ? 'rate-warn' : ''}">${notLoggedCell}</td>
     </tr>`;
   }).join('');
   document.getElementById('rep-table-view').innerHTML = `
@@ -1358,12 +1358,12 @@ function renderRepBreakdown(reps) {
         <th class="num" title="Total Invested ÷ Units Closed">Cost/Close</th>
         <th class="num" style="color:var(--green);" title="Cash Collected ÷ Total Invested">Cash RORI</th>
         <th class="num" style="color:var(--green);" title="Contract Value ÷ Total Invested">Contract RORI</th>
-        <th class="num">Not Logged</th>
         <th class="num" style="color:#22c55e;">Great</th>
         <th class="num" style="color:#84cc16;">Ok</th>
         <th class="num" style="color:var(--yellow);">Barely Pass.</th>
         <th class="num" style="color:var(--red);">Bad</th>
-        <th class="num" style="color:var(--text2);">Missing</th>
+        <th class="num" style="color:var(--text2);" title="Showed but lead quality never graded by rep">Not Graded</th>
+        <th class="num" title="Appointment outcome (show/no-show) never logged by rep">No Outcome</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
