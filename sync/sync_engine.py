@@ -198,6 +198,19 @@ async def _build_opportunity_row(
             or parse_ghl_datetime(opp.get("updatedAt"))
         )
 
+    # DEBUG: trace close_date resolution for specific opp (remove after fix verified)
+    opp_id_raw = opp.get("id", "")
+    if opp_id_raw == "hmY7ixWyJ8Cxf4WbLk9z":
+        logger.warning(
+            "DEBUG Judith: stage_id=%r, DEAL_WON=%r, match=%s, "
+            "custom_wla=%r, lastStatusChangeAt=%r, updatedAt=%r, close_date=%r, "
+            "status_field=%r, pipelineStage=%r, pipelineStageId=%r",
+            stage_id, DEAL_WON_STAGE_ID, stage_id == DEAL_WON_STAGE_ID,
+            custom.get("wonlostabandoned_date"),
+            opp.get("lastStatusChangeAt"), opp.get("updatedAt"), close_date,
+            opp.get("status"), opp.get("pipelineStage"), opp.get("pipelineStageId"),
+        )
+
     # Legacy compliance flag (stage-specific — kept for backward compat)
     compliance_failure = compute_compliance_failure(
         pipeline_stage_id=stage_id,
