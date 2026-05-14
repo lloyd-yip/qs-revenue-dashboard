@@ -18,12 +18,13 @@ from config import settings
 from db.models import Appointment, Opportunity, SourceNormalization, SyncRun
 from db.session import AsyncSessionLocal
 from sync.ghl_client import (
+    DEAL_WON_STAGE_ID,
     FOLLOW_UP_CALENDAR_IDS,
     GHLClient,
+    SHOWED_STAGE_IDS,
     extract_attributions,
     extract_custom_fields,
 )
-from sync.ghl_client import SHOWED_STAGE_IDS
 
 # Pipeline IDs — used to loop over both pipelines in run_sync
 SALES_PIPELINE_ID  = "zbI8YxmB9qhk1h4cInnq"
@@ -184,14 +185,18 @@ async def _build_opportunity_row(
 
     # close_date: automation-set custom field wonlostabandoned_date (vzU9IqXPuwAYkKrJ3I3F).
     # Written by GHL automation when deal status changes to won/lost/abandoned — stable and precise.
-    # Fallback: if the custom field is missing but the deal IS won, use lastStatusChangeAt.
-    # This handles cases where the GHL automation didn't fire (e.g. deals created before the
-    # automation existed, or workflow failures). lastStatusChangeAt can drift if status is
-    # toggled post-win, but a slightly imprecise date is far better than NULL — which would
-    # silently drop the deal from all close-date queries and cost card calculations.
+    # Fallback: if the custom field is missing but the deal IS at the won stage, use
+    # lastStatusChangeAt (or updatedAt as a last resort).
+    # Uses stage_id instead of opp["status"] because the GHL /opportunities/search endpoint
+    # does not reliably return the "status" field — only the single-opp GET does.
+    # A slightly imprecise date is far better than NULL — which would silently drop the
+    # deal from all close-date queries and cost card calculations.
     close_date: datetime | None = parse_ghl_datetime(custom.get("wonlostabandoned_date"))
-    if close_date is None and opp.get("status") == "won":
-        close_date = parse_ghl_datetime(opp.get("lastStatusChangeAt"))
+    if close_date is None and stage_id == DEAL_WON_STAGE_ID:
+        close_date = (
+            parse_ghl_datetime(opp.get("lastStatusChangeAt"))
+            or parse_ghl_datetime(opp.get("updatedAt"))
+        )
 
     # Legacy compliance flag (stage-specific — kept for backward compat)
     compliance_failure = compute_compliance_failure(
