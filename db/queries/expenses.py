@@ -12,12 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import ExpenseLineItem
 
-BUCKET_ORDER = ["sales", "marketing_salaries", "tech_tools", "paid_ads", "experiments"]
+BUCKET_ORDER = ["sales", "marketing_salaries", "tech_tools", "advertising", "paid_ads", "experiments"]
 
 BUCKET_LABELS = {
     "sales": "Sales",
     "marketing_salaries": "Marketing Salaries",
     "tech_tools": "Tech & Tools",
+    "advertising": "Digital Advertising",
     "paid_ads": "Paid Ads",
     "experiments": "Experiments",
 }
@@ -50,6 +51,8 @@ async def get_expenses_for_period(
 
     buckets: dict[str, list] = {b: [] for b in BUCKET_ORDER}
     for row in rows:
+        if row.bucket not in buckets:
+            buckets[row.bucket] = []
         buckets[row.bucket].append({
             "vendor": row.vendor,
             "amount": float(row.amount),
