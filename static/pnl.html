@@ -237,8 +237,6 @@
   };
   // Vendors to hide — not part of revenue team expenses
   const VENDOR_HIDE = new Set(["SendinBlue", "MAKE.COM", "LITEMAIL AI", "APPS.EMTA.EE"]);
-  // Ad spend vendors — split out of tech_tools into their own bucket
-  const AD_SPEND_VENDORS = new Set(["TROPEX MARKETING", "Facebook"]);
   function displayVendor(v) { return VENDOR_DISPLAY[v] || v; }
 
   const periodEl = document.getElementById("period-select");
@@ -388,26 +386,15 @@
     // ── Expenses section ──
     html += `<div class="section-header">Expense Breakdown</div>`;
     if (exp && exp.buckets && exp.buckets.length > 0) {
-      // Collect ad spend items from tech_tools to render as a separate bucket
-      let adSpendItems = [];
       exp.buckets.forEach((bucket, i) => {
         const visibleItems = bucket.items.filter(item => !VENDOR_HIDE.has(item.vendor));
-        // Split ad spend out of tech_tools
-        let bucketItems, adItems;
-        if (bucket.bucket === "tech_tools") {
-          adItems = visibleItems.filter(item => AD_SPEND_VENDORS.has(item.vendor));
-          bucketItems = visibleItems.filter(item => !AD_SPEND_VENDORS.has(item.vendor));
-          adSpendItems = adItems;
-        } else {
-          bucketItems = visibleItems;
-        }
-        const visibleTotal = bucketItems.reduce((s, item) => s + item.amount, 0);
-        if (bucketItems.length === 0) return;
+        const visibleTotal = visibleItems.reduce((s, item) => s + item.amount, 0);
+        if (visibleItems.length === 0) return;
         html += renderBucket(
           `exp-${bucket.bucket}`,
           bucket.label,
           visibleTotal,
-          bucketItems.map(item => ({
+          visibleItems.map(item => ({
             name: displayVendor(item.vendor),
             amount: item.amount,
             is_approximate: item.is_approximate,
@@ -418,24 +405,6 @@
           bucket.has_approximate,
         );
       });
-      // Render ad spend as its own bucket
-      if (adSpendItems.length > 0) {
-        const adTotal = adSpendItems.reduce((s, item) => s + item.amount, 0);
-        html += renderBucket(
-          "exp-ad_spend",
-          "Digital Advertising",
-          adTotal,
-          adSpendItems.map(item => ({
-            name: displayVendor(item.vendor),
-            amount: item.amount,
-            is_approximate: item.is_approximate,
-            notes: item.notes,
-          })),
-          false,
-          null,
-          adSpendItems.some(item => item.is_approximate),
-        );
-      }
     } else {
       html += `<div class="no-data-inline">No expense data for this period</div>`;
     }
