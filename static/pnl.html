@@ -238,7 +238,7 @@
   // Vendors to hide — not part of revenue team expenses
   const VENDOR_HIDE = new Set(["SendinBlue", "MAKE.COM", "LITEMAIL AI", "APPS.EMTA.EE"]);
   // Ad spend vendors — split out of tech_tools into their own bucket
-  const AD_SPEND_VENDORS = new Set(["TROPEX MARKETING", "Facebook", "Google"]);
+  const AD_SPEND_VENDORS = new Set(["TROPEX MARKETING", "Facebook"]);
   function displayVendor(v) { return VENDOR_DISPLAY[v] || v; }
 
   const periodEl = document.getElementById("period-select");
