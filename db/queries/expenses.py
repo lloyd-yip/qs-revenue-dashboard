@@ -20,7 +20,7 @@ from db.queries.vendor_classification import classify_vendor
 # Only buckets listed here appear in the API response and grand_total.
 # non_revenue is intentionally excluded — those items are stored but hidden.
 
-BUCKET_ORDER = ["sales", "marketing_salaries", "tech_tools", "advertising", "paid_ads", "experiments"]
+BUCKET_ORDER = ["sales", "marketing_salaries", "tech_tools", "advertising", "paid_ads", "experiments", "unclassified"]
 
 BUCKET_LABELS = {
     "sales": "Sales",
@@ -29,6 +29,7 @@ BUCKET_LABELS = {
     "advertising": "Digital Advertising",
     "paid_ads": "Paid Ads",
     "experiments": "Experiments",
+    "unclassified": "Unclassified — Needs Review",
 }
 
 

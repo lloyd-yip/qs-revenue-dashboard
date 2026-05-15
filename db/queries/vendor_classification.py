@@ -160,6 +160,10 @@ _register("non_revenue", [
 
 # ── Public API ───────────────────────────────────────────────────────────────
 
-def classify_vendor(vendor: str, fallback_bucket: str) -> str:
-    """Return the correct bucket for a vendor, or fallback_bucket if unknown."""
-    return VENDOR_BUCKET_MAP.get(_normalise_vendor(vendor), fallback_bucket)
+def classify_vendor(vendor: str, fallback_bucket: str | None = None) -> str:
+    """Return the correct bucket for a vendor.
+
+    Known vendors get their mapped bucket. Unknown vendors go to 'unclassified'
+    so they show up on the P&L for Lloyd to review and assign.
+    """
+    return VENDOR_BUCKET_MAP.get(_normalise_vendor(vendor), "unclassified")
