@@ -215,6 +215,28 @@
 <script>
   const API = "";  // same origin
 
+  // Vendor display names — adds bracketed context for unclear Xero vendor names
+  const VENDOR_DISPLAY = {
+    "TROPEX MARKETING":    "TROPEX MARKETING (Juan — Media Buyer)",
+    "Cheapcom":            "Cheapcom (Namecheap)",
+    "Zoetermeer":          "Zoetermeer (Webinar Geek — Old Test Acct)",
+    "CLICKSEND":           "CLICKSEND (SMS Tool)",
+    "DSC":                 "DSC (Descript)",
+    "SIGNOW":              "SIGNOW (E-Signature Tool)",
+    "Skarpe":              "Skarpe (Scraping Tool)",
+    "Nicholas Goulart":    "Nicholas Goulart (Nick — Contractor)",
+    "LITEMAIL AI":         "LITEMAIL AI (Email Tool)",
+    "TRUSTMARY":           "TRUSTMARY (Review Widget)",
+    "Gojiberry Ai":        "Gojiberry Ai (Scott's Project)",
+    "SLIGHTEDGE PARTNERS": "SLIGHTEDGE PARTNERS (Gary — COO)",
+    "Lemsqzy* Corsproxy":  "Lemsqzy* Corsproxy (Lem Proxy — Enrichment)",
+    "VIDALYTICS":          "VIDALYTICS (Video Analytics)",
+    "WEBSHARE":            "WEBSHARE (Proxy Provider)",
+    "Testimonia.io":       "Testimonia.io (Testimonial Tool)",
+    "APPOINTWISE.IO":      "APPOINTWISE.IO (Booking Tool)",
+  };
+  function displayVendor(v) { return VENDOR_DISPLAY[v] || v; }
+
   const periodEl = document.getElementById("period-select");
   const mainEl   = document.getElementById("main-content");
 
@@ -365,7 +387,7 @@
           bucket.label,
           bucket.total,
           bucket.items.map(item => ({
-            name: item.vendor,
+            name: displayVendor(item.vendor),
             amount: item.amount,
             is_approximate: item.is_approximate,
             notes: item.notes,
