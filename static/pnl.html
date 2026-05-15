@@ -235,8 +235,6 @@
     "Testimonia.io":       "Testimonia.io (Testimonial Tool)",
     "APPOINTWISE.IO":      "APPOINTWISE.IO (Booking Tool)",
   };
-  // Vendors to hide — not part of revenue team expenses
-  const VENDOR_HIDE = new Set(["SendinBlue", "MAKE.COM", "LITEMAIL AI", "APPS.EMTA.EE"]);
   function displayVendor(v) { return VENDOR_DISPLAY[v] || v; }
 
   const periodEl = document.getElementById("period-select");
@@ -315,10 +313,7 @@
 
     const cashCollected  = rev ? rev.total_cash_collected : 0;
     const splititAR      = rev ? rev.total_splitit_ar     : 0;
-    // Subtract hidden vendors from total so summary cards stay consistent with line items
-    const hiddenTotal    = exp ? (exp.buckets || []).reduce((s, b) =>
-      s + b.items.filter(i => VENDOR_HIDE.has(i.vendor)).reduce((s2, i) => s2 + i.amount, 0), 0) : 0;
-    const totalExpenses  = exp ? exp.grand_total - hiddenTotal : 0;
+    const totalExpenses  = exp ? exp.grand_total : 0;
     const netMargin      = cashCollected - totalExpenses;
     const netPositive    = netMargin >= 0;
 
@@ -387,14 +382,11 @@
     html += `<div class="section-header">Expense Breakdown</div>`;
     if (exp && exp.buckets && exp.buckets.length > 0) {
       exp.buckets.forEach((bucket, i) => {
-        const visibleItems = bucket.items.filter(item => !VENDOR_HIDE.has(item.vendor));
-        const visibleTotal = visibleItems.reduce((s, item) => s + item.amount, 0);
-        if (visibleItems.length === 0) return;
         html += renderBucket(
           `exp-${bucket.bucket}`,
           bucket.label,
-          visibleTotal,
-          visibleItems.map(item => ({
+          bucket.total,
+          bucket.items.map(item => ({
             name: displayVendor(item.vendor),
             amount: item.amount,
             is_approximate: item.is_approximate,
