@@ -20,6 +20,8 @@ from email.mime.text import MIMEText
 
 import requests
 
+from compliance_email import send_compliance_emails
+
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 API_BASE    = "https://qs-revenue-dashboard-production.up.railway.app"
 SMTP_USER   = "lloyd@quantum-scaling.com"
@@ -34,16 +36,6 @@ RECIPIENTS  = [
     # "geri@quantum-scaling.com",
 ]
 
-# Rep email map — used for individual compliance reminder emails
-REP_EMAILS = {
-    "Ryan Matsumori":     "ryan@quantum-scaling.com",
-    "Melissa Fredericks": "melissa@quantum-scaling.com",
-    "Armando Valencia":   "armando@quantum-scaling.com",
-    "Alex Amor Gesell":   "alex@quantum-scaling.com",
-    "Lloyd Yip":          "lloyd@attractandscale.com",
-}
-
-GHL_LOCATION_ID = "G7ZOWCq78JrzUjlLMCxt"
 REQUEST_TIMEOUT = 30  # seconds
 
 # ── STYLES ────────────────────────────────────────────────────────────────────
@@ -140,7 +132,10 @@ def api_get(path: str, params: dict) -> dict | list:
 
 
 def fetch_all(start: date, end: date) -> dict:
-    base = {"start": start.isoformat(), "end": end.isoformat(), "date_by": "appointment"}
+    # appointment window — "calls date passed": shows, show rate, qual/DQ, compliance
+    base        = {"start": start.isoformat(), "end": end.isoformat(), "date_by": "appointment"}
+    # booked window — "generation": calls booked, lead quality sourced
+    booked_base = {"start": start.isoformat(), "end": end.isoformat(), "date_by": "booked"}
 
     # Closes: wide 90-day window — deal cycles are weeks long, so filtering closes
     # by a 7-day call date misses deals whose 1st call was weeks ago but closed this week.
@@ -167,17 +162,27 @@ def fetch_all(start: date, end: date) -> dict:
         "date_by": "appointment",
     }
 
-    print("  summary...")
+    # ── Appointment window (performance: shows, rates, compliance) ────────────
+    print("  summary (appointment)...")
     summary    = api_get("/api/dashboard/summary", base)
 
-    print("  by-rep...")
+    print("  by-rep (appointment)...")
     by_rep     = api_get("/api/dashboard/by-rep", base)
 
-    # /channels returns show rates + qual/DQ rates + LQ breakdown per lead source
-    print("  channels...")
+    print("  channels (appointment)...")
     channels   = api_get("/api/dashboard/channels", base)
 
-    # Closes: 90-day wide window
+    # ── Booked window (generation: calls booked, LQ sourced) ─────────────────
+    print("  summary (booked)...")
+    summary_booked  = api_get("/api/dashboard/summary",  booked_base)
+
+    print("  by-rep (booked)...")
+    by_rep_booked   = api_get("/api/dashboard/by-rep",   booked_base)
+
+    print("  channels (booked)...")
+    channels_booked = api_get("/api/dashboard/channels", booked_base)
+
+    # ── Other fetches (unchanged) ─────────────────────────────────────────────
     print("  closes (90-day window)...")
     closes_raw = api_get("/api/dashboard/closes", wide_90)
 
@@ -205,25 +210,33 @@ def fetch_all(start: date, end: date) -> dict:
     if isinstance(by_rep_list, dict):
         by_rep_list = by_rep_list.get("reps", [])
 
+    by_rep_booked_list = unwrap(by_rep_booked)
+    if isinstance(by_rep_booked_list, dict):
+        by_rep_booked_list = by_rep_booked_list.get("reps", [])
+
     stage_snap_data = stage_snap_raw.get("data", {}) if isinstance(stage_snap_raw, dict) else {}
 
-    # Per-rep LQ breakdown: call pipeline-intelligence?group_by=lead_quality per rep
-    # so Section 2 can show Great/Ok/Barely/Bad mix per rep.
+    # Per-rep LQ breakdown using BOOKED window — quality of what was generated this week
+    # Collect unique rep_ids across both windows
+    all_rep_ids: dict[str, str] = {}  # rep_id → rep_name
+    for r in (by_rep_booked_list if isinstance(by_rep_booked_list, list) else []):
+        if r.get("rep_id"):
+            all_rep_ids[r["rep_id"]] = r.get("rep_name", "?")
+    for r in (by_rep_list if isinstance(by_rep_list, list) else []):
+        if r.get("rep_id") and r["rep_id"] not in all_rep_ids:
+            all_rep_ids[r["rep_id"]] = r.get("rep_name", "?")
+
     lq_by_rep_id: dict[str, dict] = {}
-    if isinstance(by_rep_list, list):
-        print("  per-rep LQ breakdown...")
-        for r in by_rep_list:
-            rep_id   = r.get("rep_id")
-            rep_name = r.get("rep_name", "?")
-            if not rep_id:
-                continue
+    if all_rep_ids:
+        print("  per-rep LQ breakdown (booked)...")
+        for rep_id, rep_name in all_rep_ids.items():
             try:
                 lq_raw  = api_get("/api/dashboard/pipeline-intelligence",
-                                  {**base, "group_by": "lead_quality", "rep_id": rep_id})
+                                  {**booked_base, "group_by": "lead_quality", "rep_id": rep_id})
                 lq_data = lq_raw.get("data", lq_raw) if isinstance(lq_raw, dict) else {}
                 lq_rows = lq_data.get("rows", []) if isinstance(lq_data, dict) else []
                 lq_by_rep_id[rep_id] = {
-                    (row.get("segment") or "(Not Set)"): row.get("shows_1st", 0)
+                    (row.get("segment") or "(Not Set)"): row.get("calls_booked_1st", 0)
                     for row in lq_rows
                     if isinstance(row, dict)
                 }
@@ -232,9 +245,15 @@ def fetch_all(start: date, end: date) -> dict:
                 lq_by_rep_id[rep_id] = {}
 
     return {
+        # Appointment window (performance)
         "summary":            unwrap(summary),
         "by_rep":             by_rep_list,
         "channels":           unwrap(channels),
+        # Booked window (generation)
+        "summary_booked":     unwrap(summary_booked),
+        "by_rep_booked":      by_rep_booked_list,
+        "channels_booked":    unwrap(channels_booked),
+        # Other
         "closes":             unwrap(closes_raw),
         "compliance":         unwrap(compliance),
         "this_week_pipeline": unwrap(this_week_pipeline),
@@ -298,9 +317,15 @@ def detect_anomalies(s: dict, reps: list, stage_snapshot: dict | None = None) ->
 # ── BUILD HTML ────────────────────────────────────────────────────────────────
 def build_html(start: date, end: date, data: dict, anomalies: list, generated_at: str) -> str:
     period_label        = f"{start.strftime('%b %d')} – {end.strftime('%b %d, %Y')}"
+    # Appointment window — performance (shows, rates, compliance)
     s                   = data.get("summary") or {}
     reps                = data.get("by_rep") or []
     channels            = data.get("channels") or []
+    # Booked window — generation (calls booked, LQ sourced)
+    s_booked            = data.get("summary_booked") or {}
+    reps_booked         = data.get("by_rep_booked") or []
+    channels_booked     = data.get("channels_booked") or []
+    # Other
     closes              = data.get("closes") or []
     this_week_pipeline  = data.get("this_week_pipeline") or {}
     upcoming_pipeline   = data.get("upcoming_pipeline") or {}
@@ -309,6 +334,14 @@ def build_html(start: date, end: date, data: dict, anomalies: list, generated_at
     week_monday         = data.get("week_monday") or date.today()
     week_sunday         = data.get("week_sunday") or (date.today() + timedelta(days=6))
     compliance_data     = data.get("compliance") or {}
+
+    # Rep lookup maps for both windows (normalize whitespace for key)
+    rep_appt_map   = {" ".join((r.get("rep_name") or "").split()): r
+                      for r in (reps if isinstance(reps, list) else [])}
+    rep_booked_map = {" ".join((r.get("rep_name") or "").split()): r
+                      for r in (reps_booked if isinstance(reps_booked, list) else [])}
+    all_rep_names  = sorted(set(list(rep_appt_map.keys()) + list(rep_booked_map.keys()))
+                            - {""})
 
     tw_rows   = this_week_pipeline.get("rows", []) if isinstance(this_week_pipeline, dict) else []
     up_rows   = upcoming_pipeline.get("rows",  []) if isinstance(upcoming_pipeline, dict) else []
@@ -332,150 +365,188 @@ def build_html(start: date, end: date, data: dict, anomalies: list, generated_at
         )
 
     # ── SECTION 1: Team overview ─────────────────────────────────────────────
-    sh1     = s.get("shows_1st") or 0
-    b1      = s.get("calls_booked_1st") or 0
-    sh2     = s.get("shows_2nd") or 0
-    b2      = s.get("calls_booked_2nd") or 0
-    ts      = s.get("total_shows") or 0
-    cl_won  = s.get("units_closed") or 0
-    comp_f  = s.get("compliance_failures") or 0
-    sr1     = s.get("show_rate_1st")       # pre-computed 0.0–1.0
-    sr2     = s.get("show_rate_2nd")
-    qual_r  = s.get("qualification_rate")
-    dq_r    = s.get("dq_rate")
+    # Booked window — generation
+    b1_booked = s_booked.get("calls_booked_1st") or 0
+    b2_booked = s_booked.get("calls_booked_2nd") or 0
+    # Appointment window — performance
+    b1_passed = s.get("calls_booked_1st") or 0   # appointments whose date passed
+    b2_passed = s.get("calls_booked_2nd") or 0
+    sh1       = s.get("shows_1st") or 0
+    sh2       = s.get("shows_2nd") or 0
+    ts        = s.get("total_shows") or 0
+    comp_f    = s.get("compliance_failures") or 0
+    sr1       = s.get("show_rate_1st")
+    sr2       = s.get("show_rate_2nd")
+    qual_r    = s.get("qualification_rate")
+    dq_r      = s.get("dq_rate")
 
-    # 2nd call compliance: count team outcome_unfilled on 2nd calls this period.
-    # The compliance endpoint flags outcome_unfilled for any appointment (incl. call2)
-    # so if b2 > 0 and shows_2nd = 0 we surface how many are outcome_unfilled.
     team_outcome_unfilled = (compliance_data.get("summary") or {}).get("outcome_unfilled_count") or 0
-    # We show a note on the 2nd call row when there are b2 calls and zero shows,
-    # to make clear it may be a logging gap rather than all genuine no-shows.
-    c2_sub = f"{sh2}/{b2} showed"
-    if b2 > 0 and sh2 == 0 and team_outcome_unfilled > 0:
+    c2_sub = f"{sh2}/{b2_passed} showed"
+    if b2_passed > 0 and sh2 == 0 and team_outcome_unfilled > 0:
         c2_sub += f" · {team_outcome_unfilled} outcome unfilled"
 
-    # Note: close_rate is excluded — not meaningful on a weekly basis.
-    # A close this week likely came from a call made 2–4 weeks ago; the weekly window misleads.
     overview = (
-        row_html("1st Calls Booked (this week)", str(b1)) +
+        row_html("1st Calls Booked Last Week",   str(b1_booked)) +
+        row_html("1st Calls Date Passed",         str(b1_passed),  sub=f"{sh1} showed") +
         row_html("1st Call Show Rate",
                  fmt_rate(sr1),
-                 color=rate_color_from_decimal(sr1, 0.70, 0.55),
-                 sub=f"{sh1} showed") +
-        row_html("2nd Calls Added to Calendar (this week)", str(b2)) +
-        row_html("2nd Call Show Rate (of previously scheduled)",
+                 color=rate_color_from_decimal(sr1, 0.70, 0.55)) +
+        row_html("2nd Calls Booked Last Week",   str(b2_booked)) +
+        row_html("2nd Calls Date Passed",         str(b2_passed),  sub=c2_sub) +
+        row_html("2nd Call Show Rate",
                  fmt_rate(sr2),
-                 color=rate_color_from_decimal(sr2, 0.75, 0.60),
-                 sub=c2_sub) +
+                 color=rate_color_from_decimal(sr2, 0.75, 0.60)) +
         row_html("Qual Rate (of 1st-call shows)",
                  fmt_rate(qual_r),
                  color=rate_color_from_decimal(qual_r, 0.60, 0.45)) +
-        row_html("DQ Rate",
-                 fmt_rate(dq_r),
-                 color=C["muted"]) +
+        row_html("DQ Rate",    fmt_rate(dq_r), color=C["muted"]) +
         row_html("Total Shows (1st + 2nd)", str(ts)) +
         row_html("Compliance Failures",
                  str(comp_f),
                  color=C["red"] if comp_f > 0 else C["green"])
     )
 
-    # ── SECTION 2: Rep breakdown ─────────────────────────────────────────────
-    # Columns: Rep, Booked, Show%, Qual%, C2 Show%, Closed, LQ Mix, Not Logged, Comp
-    rep_rows_html = ""
-    for r in (reps if isinstance(reps, list) else []):
-        name    = (r.get("rep_name") or "?").split()[0]
-        rep_id  = r.get("rep_id") or ""
-        rsr1    = r.get("show_rate_1st")
-        rqr     = r.get("qualification_rate")
-        rsr2    = r.get("show_rate_2nd")
-        rcomp   = r.get("compliance_failures") or 0
-        rnotl   = r.get("outcome_not_logged_count") or 0
-
-        # LQ mini-breakdown for this rep
-        lq_data = lq_by_rep_id.get(rep_id, {})
+    # ── SECTION 2: Rep breakdown — two sub-tables (generation / performance) ────
+    def _lq_cell(rep_id: str) -> str:
+        lq_data  = lq_by_rep_id.get(rep_id, {})
         lq_great = lq_data.get("Great", 0)
         lq_ok    = lq_data.get("Ok", 0)
         lq_bare  = lq_data.get("Barely Passable", 0)
         lq_bad   = lq_data.get("Bad", 0)
         lq_ns    = lq_data.get("(Not Set)", 0)
-        if lq_data:
-            lq_cell = (
-                f'<span style="color:{C["green"]};font-size:11px;">{lq_great}G</span> '
-                f'<span style="color:{C["accent"]};font-size:11px;">{lq_ok}Ok</span> '
-                f'<span style="color:{C["yellow"]};font-size:11px;">{lq_bare}B</span>'
-                + (f' <span style="color:{C["red"]};font-size:10px;">{lq_bad}✗</span>' if lq_bad else '')
-                + (f' <span style="color:{C["muted"]};font-size:10px;">{lq_ns}∅</span>' if lq_ns else '')
-            )
-        else:
-            lq_cell = f'<span style="color:{C["muted"]};">—</span>'
+        if not lq_data:
+            return f'<span style="color:{C["muted"]};">—</span>'
+        return (
+            f'<span style="color:{C["green"]};font-size:11px;">{lq_great}G</span> '
+            f'<span style="color:{C["accent"]};font-size:11px;">{lq_ok}Ok</span> '
+            f'<span style="color:{C["yellow"]};font-size:11px;">{lq_bare}B</span>'
+            + (f' <span style="color:{C["red"]};font-size:10px;">{lq_bad}✗</span>' if lq_bad else '')
+            + (f' <span style="color:{C["muted"]};font-size:10px;">{lq_ns}∅</span>' if lq_ns else '')
+        )
 
+    gen_rows  = ""
+    perf_rows = ""
+    for rname in all_rep_names:
+        rb    = rep_booked_map.get(rname, {})
+        ra    = rep_appt_map.get(rname, {})
+        first = rname.split()[0]
+        rep_id = rb.get("rep_id") or ra.get("rep_id") or ""
+
+        # Generation sub-table
+        gen_rows += tr_html([
+            first,
+            str(rb.get("calls_booked_1st") or 0),
+            str(rb.get("calls_booked_2nd") or 0),
+            _lq_cell(rep_id),
+        ])
+
+        # Performance sub-table
+        rsr1  = ra.get("show_rate_1st")
+        rsr2  = ra.get("show_rate_2nd")
+        rqr   = ra.get("qualification_rate")
+        rcomp = ra.get("compliance_failures") or 0
+        rnotl = ra.get("outcome_not_logged_count") or 0
         comp_cell = (
             f'<span style="color:{C["red"]};">{rcomp}⚠</span>'
             if rcomp else f'<span style="color:{C["green"]};">✓</span>'
         )
-        notlogged_cell = (
-            f'<span style="color:{C["yellow"]};">{rnotl}</span>'
-            if rnotl else f'<span style="color:{C["muted"]};">0</span>'
-        )
-        rep_rows_html += tr_html([
-            name,
-            str(r.get("calls_booked_1st") or 0),
+        perf_rows += tr_html([
+            first,
+            str(ra.get("calls_booked_1st") or 0),
             f'<span style="color:{rate_color_from_decimal(rsr1, 0.70, 0.55)};font-weight:700;">{fmt_rate(rsr1)}</span>',
-            f'<span style="color:{rate_color_from_decimal(rqr, 0.60, 0.45)};font-weight:700;">{fmt_rate(rqr)}</span>',
+            str(ra.get("calls_booked_2nd") or 0),
             f'<span style="color:{rate_color_from_decimal(rsr2, 0.75, 0.60)};font-weight:700;">{fmt_rate(rsr2)}</span>',
-            str(r.get("units_closed") or 0),
-            lq_cell,
-            notlogged_cell,
+            f'<span style="color:{rate_color_from_decimal(rqr, 0.60, 0.45)};font-weight:700;">{fmt_rate(rqr)}</span>',
             comp_cell,
         ])
 
-    rep_table = (
-        f'<table style="width:100%;border-collapse:collapse;">'
-        + th(["Rep", "Booked", "Show%", "Qual%", "C2 Show%", "Closed", "LQ Mix", "Not Logged", "Comp"])
-        + rep_rows_html
-        + "</table>"
-    ) if rep_rows_html else f'<div style="color:{C["muted"]};">No rep data for this period.</div>'
+    sub_label = (
+        f'<div style="font-size:10px;font-weight:700;letter-spacing:1.5px;'
+        f'text-transform:uppercase;color:{C["muted"]};margin:0 0 8px;">'
+    )
+    if gen_rows:
+        gen_table = (
+            sub_label + "GENERATION (Booked Last Week)</div>"
+            + f'<table style="width:100%;border-collapse:collapse;">'
+            + th(["Rep", "C1 Booked", "C2 Booked", "Lead Quality"])
+            + gen_rows + "</table>"
+        )
+        perf_table = (
+            sub_label + "PERFORMANCE (Appointment Date Passed)</div>"
+            + f'<table style="width:100%;border-collapse:collapse;margin-top:18px;">'
+            + th(["Rep", "C1 Date Passed", "C1 Show%", "C2 Date Passed", "C2 Show%", "Qual%", "Comp"])
+            + perf_rows + "</table>"
+        )
+        rep_table = gen_table + perf_table
+    else:
+        rep_table = f'<div style="color:{C["muted"]};">No rep data for this period.</div>'
 
-    # ── SECTION 3: Channel breakdown ─────────────────────────────────────────
-    # /channels fields: channel, total_ops, shows, qual_rate, dq_rate,
-    #                   great_count, ok_count, barely_passable_count, bad_count, missing_data_count
-    ch_rows_html = ""
-    for ch in (channels if isinstance(channels, list) else []):
-        cname  = ch.get("channel") or "Unknown"
-        ctotal = ch.get("total_ops") or 0
-        csh    = ch.get("shows") or 0
-        cqr    = ch.get("qual_rate")
-        cdqr   = ch.get("dq_rate")
-        ccl    = ch.get("units_closed") or 0
+    # ── SECTION 3: Channel breakdown — generation (booked) + performance (appt) ─
+    def _ch_lq_mini(ch: dict) -> str:
         cgreat = ch.get("great_count") or 0
         cok    = ch.get("ok_count") or 0
         cbare  = ch.get("barely_passable_count") or 0
         cbad   = ch.get("bad_count") or 0
         cmiss  = ch.get("missing_data_count") or 0
-        if not ctotal:
-            continue
-        lq_mini = (
+        return (
             f'<span style="color:{C["green"]};font-size:11px;">{cgreat}G</span> '
             f'<span style="color:{C["accent"]};font-size:11px;">{cok}Ok</span> '
             f'<span style="color:{C["yellow"]};font-size:11px;">{cbare}B</span>'
+            + (f' <span style="color:{C["red"]};font-size:10px;">{cbad}✗</span>' if cbad else '')
             + (f' <span style="color:{C["muted"]};font-size:10px;">{cmiss}∅</span>' if cmiss else '')
         )
-        ch_rows_html += tr_html([
-            cname,
-            str(ctotal),
-            str(csh),
-            f'<span style="color:{rate_color_from_decimal(cqr, 0.60, 0.45)};font-weight:700;">{fmt_rate(cqr)}</span>',
-            fmt_rate(cdqr),
-            lq_mini,
-            str(ccl),
+
+    # Generation sub-table — booked window
+    ch_gen_rows = ""
+    for ch in sorted(
+        (r for r in (channels_booked if isinstance(channels_booked, list) else [])
+         if (r.get("total_ops") or 0) > 0),
+        key=lambda r: r.get("total_ops") or 0, reverse=True,
+    ):
+        ch_gen_rows += tr_html([
+            ch.get("channel") or "Unknown",
+            str(ch.get("total_ops") or 0),
+            _ch_lq_mini(ch),
         ])
 
-    channel_table = (
-        f'<table style="width:100%;border-collapse:collapse;">'
-        + th(["Channel", "Opps", "Shows", "Qual%", "DQ%", "Lead Quality", "Closed"])
-        + ch_rows_html
-        + "</table>"
-    ) if ch_rows_html else f'<div style="color:{C["muted"]};">No channel data for this period.</div>'
+    # Performance sub-table — appointment window
+    ch_perf_rows = ""
+    for ch in sorted(
+        (r for r in (channels if isinstance(channels, list) else [])
+         if (r.get("total_ops") or 0) > 0),
+        key=lambda r: r.get("total_ops") or 0, reverse=True,
+    ):
+        cqr  = ch.get("qual_rate")
+        cdqr = ch.get("dq_rate")
+        ch_perf_rows += tr_html([
+            ch.get("channel") or "Unknown",
+            str(ch.get("total_ops") or 0),
+            str(ch.get("shows") or 0),
+            f'<span style="color:{rate_color_from_decimal(ch.get("show_rate_1st"), 0.70, 0.55)};font-weight:700;">{fmt_rate(ch.get("show_rate_1st"))}</span>',
+            f'<span style="color:{rate_color_from_decimal(cqr, 0.60, 0.45)};font-weight:700;">{fmt_rate(cqr)}</span>',
+            fmt_rate(cdqr),
+        ])
+
+    sub_label_ch = (
+        f'<div style="font-size:10px;font-weight:700;letter-spacing:1.5px;'
+        f'text-transform:uppercase;color:{C["muted"]};margin:0 0 8px;">'
+    )
+    if ch_gen_rows or ch_perf_rows:
+        ch_gen_tbl = (
+            sub_label_ch + "GENERATION (Booked Last Week)</div>"
+            + f'<table style="width:100%;border-collapse:collapse;">'
+            + th(["Channel", "Leads Booked", "Lead Quality"])
+            + ch_gen_rows + "</table>"
+        ) if ch_gen_rows else ""
+        ch_perf_tbl = (
+            sub_label_ch + "PERFORMANCE (Appointment Date Passed)</div>"
+            + f'<table style="width:100%;border-collapse:collapse;margin-top:18px;">'
+            + th(["Channel", "Calls Date Passed", "Showed", "Show%", "Qual%", "DQ%"])
+            + ch_perf_rows + "</table>"
+        ) if ch_perf_rows else ""
+        channel_table = ch_gen_tbl + ch_perf_tbl
+    else:
+        channel_table = f'<div style="color:{C["muted"]};">No channel data for this period.</div>'
 
     # ── SECTION 4: Pipeline — this week + forward calendar + hot/warm value ──────
     today = date.today()
@@ -670,13 +741,13 @@ def build_html(start: date, end: date, data: dict, anomalies: list, generated_at
   {card(anomaly_html, "ALERTS", C["green"] if anomalies[0].startswith("✅") else C["yellow"])}
 
   {section_header("Section 1 — Team Overview", C["accent"])}
-  {card(overview, "WEEK AT A GLANCE · Appointment Date Mode", C["accent"])}
+  {card(overview, "WEEK AT A GLANCE", C["accent"])}
 
   {section_header("Section 2 — Rep Breakdown", C["blue"])}
-  {card(rep_table, "PERFORMANCE BY REP · LQ Mix = shows per lead quality tier", C["blue"])}
+  {card(rep_table, "BY REP · Generation (Booked) + Performance (Date Passed)", C["blue"])}
 
-  {section_header("Section 3 — Lead Quality by Channel", C["purple"])}
-  {card(channel_table, "CHANNEL ATTRIBUTION + QUALITY SIGNAL", C["purple"])}
+  {section_header("Section 3 — Channel Breakdown", C["purple"])}
+  {card(channel_table, "BY CHANNEL · Generation (Booked) + Performance (Date Passed)", C["purple"])}
 
   {section_header("Section 4 — Upcoming Pipeline (Next 35 Days)", C["yellow"])}
   {card(upcoming_html, "SCHEDULED CALLS PER REP · FORWARD-LOOKING", C["yellow"])}
@@ -692,211 +763,6 @@ def build_html(start: date, end: date, data: dict, anomalies: list, generated_at
 </div></body></html>"""
 
     return html
-
-
-# ── COMPLIANCE EMAILS ─────────────────────────────────────────────────────────
-def build_compliance_email_html(rep_first_name: str, failures: list, period_label: str,
-                                missing_value_opps: list | None = None) -> str:
-    """Build per-rep HTML email listing outcomes that need to be logged."""
-    rows = ""
-    for f in failures:
-        prospect  = f.get("opportunity_name") or "Unknown"
-        appt_raw  = f.get("call1_appointment_date") or ""
-        violation = f.get("violations") or "Outcome not logged"
-
-        # Parse ISO date if present
-        try:
-            appt_dt      = datetime.fromisoformat(appt_raw.replace("Z", "+00:00"))
-            appt_display = appt_dt.strftime("%b %d, %Y")
-        except Exception:
-            appt_display = appt_raw or "—"
-
-        # GHL contact search URL using prospect name (no contact_id in compliance response)
-        q       = prospect.replace(" ", "+")
-        ghl_url = f"https://app.gohighlevel.com/v2/location/{GHL_LOCATION_ID}/contacts/?q={q}"
-
-        rows += f"""
-        <tr>
-          <td style="padding:10px 12px;border-bottom:1px solid #2a2a2a;color:#e8e8e8;font-size:13px;">{prospect}</td>
-          <td style="padding:10px 12px;border-bottom:1px solid #2a2a2a;color:#888;font-size:13px;">{appt_display}</td>
-          <td style="padding:10px 12px;border-bottom:1px solid #2a2a2a;color:#fbbf24;font-size:12px;">{violation}</td>
-          <td style="padding:10px 12px;border-bottom:1px solid #2a2a2a;">
-            <a href="{ghl_url}" style="color:#60a5fa;font-size:12px;text-decoration:none;">Open in GHL →</a>
-          </td>
-        </tr>"""
-
-    count = len(failures)
-
-    # Missing deal value section
-    if missing_value_opps:
-        mv_rows = ""
-        for opp in missing_value_opps:
-            opp_name = opp.get("opp_name") or "Unknown"
-            bucket   = opp.get("bucket") or "hot"
-            q        = opp_name.replace(" ", "+")
-            ghl_url  = f"https://app.gohighlevel.com/v2/location/{GHL_LOCATION_ID}/contacts/?q={q}"
-            badge_color = "#f87171" if bucket == "hot" else "#fbbf24"
-            mv_rows += f"""
-            <tr>
-              <td style="padding:9px 12px;border-bottom:1px solid #2a2a2a;color:#e8e8e8;font-size:13px;">{opp_name}</td>
-              <td style="padding:9px 12px;border-bottom:1px solid #2a2a2a;">
-                <span style="color:{badge_color};font-size:11px;font-weight:700;text-transform:uppercase;">{bucket} list</span>
-              </td>
-              <td style="padding:9px 12px;border-bottom:1px solid #2a2a2a;">
-                <a href="{ghl_url}" style="color:#60a5fa;font-size:12px;text-decoration:none;">Open in GHL →</a>
-              </td>
-            </tr>"""
-        missing_value_section = f"""
-  <div style="background:#1a1a1a;border:1px solid #fbbf24;border-radius:10px;overflow:hidden;margin-bottom:12px;">
-    <div style="padding:12px 16px;background:#1f1a0a;border-bottom:1px solid #fbbf24;">
-      <strong style="color:#fbbf24;font-size:13px;">⚠️ Deal value missing on {len(missing_value_opps)} Hot/Warm opp(s)</strong>
-      <p style="margin:4px 0 0;color:#888;font-size:12px;">Please add monetary value in GHL so pipeline projections are accurate.</p>
-    </div>
-    <table style="width:100%;border-collapse:collapse;">
-      <tr>
-        <td style="padding:7px 12px;color:#888;font-size:11px;font-weight:700;text-transform:uppercase;border-bottom:1px solid #2a2a2a;">Opportunity</td>
-        <td style="padding:7px 12px;color:#888;font-size:11px;font-weight:700;text-transform:uppercase;border-bottom:1px solid #2a2a2a;">List</td>
-        <td style="padding:7px 12px;color:#888;font-size:11px;font-weight:700;text-transform:uppercase;border-bottom:1px solid #2a2a2a;">Link</td>
-      </tr>
-      {mv_rows}
-    </table>
-  </div>"""
-    else:
-        missing_value_section = ""
-
-    return f"""<!DOCTYPE html>
-<html><head><meta charset="UTF-8"></head>
-<body style="margin:0;padding:0;background:#0f0f0f;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
-<div style="max-width:640px;margin:0 auto;padding:32px 16px;">
-
-  <div style="margin-bottom:24px;">
-    <div style="font-size:10px;font-weight:700;letter-spacing:2.5px;text-transform:uppercase;color:#888;margin-bottom:6px;">QUANTUM SCALING</div>
-    <h1 style="margin:0;font-size:20px;font-weight:800;color:#e8e8e8;">⚠️ Action Required: Outcomes Need Logging</h1>
-    <div style="font-size:13px;color:#888;margin-top:5px;">Week of {period_label}</div>
-  </div>
-
-  <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:20px 24px;margin-bottom:16px;">
-    <p style="margin:0 0 12px;color:#e8e8e8;font-size:14px;">
-      Hey {rep_first_name}, you have <strong style="color:#fbbf24;">{count} call outcome{'' if count == 1 else 's'}</strong> that still need to be logged in GHL.
-    </p>
-    <p style="margin:0;color:#888;font-size:13px;">
-      Please log the outcome, lead quality, and post-call notes for each call below. Click "Open in GHL" to go directly to the contact.
-    </p>
-  </div>
-
-  <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;overflow:hidden;margin-bottom:16px;">
-    <table style="width:100%;border-collapse:collapse;">
-      <tr>
-        <td style="padding:8px 12px;color:#888;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid #2a2a2a;">Prospect</td>
-        <td style="padding:8px 12px;color:#888;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid #2a2a2a;">Appt Date</td>
-        <td style="padding:8px 12px;color:#888;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid #2a2a2a;">Issue</td>
-        <td style="padding:8px 12px;color:#888;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid #2a2a2a;">Link</td>
-      </tr>
-      {rows}
-    </table>
-  </div>
-
-  <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:16px 20px;margin-bottom:12px;">
-    <p style="margin:0;color:#888;font-size:12px;">
-      <strong style="color:#e8e8e8;">Reminder:</strong> Every call needs: (1) outcome logged, (2) lead quality set, (3) post-call note with 50+ words. This data feeds the team dashboard and weekly report.
-    </p>
-  </div>
-
-  {missing_value_section}
-
-  <div style="text-align:center;padding:20px 0 8px;font-size:11px;color:#555;">
-    Quantum Scaling · Auto-generated compliance reminder
-  </div>
-
-</div></body></html>"""
-
-
-def send_compliance_emails(compliance_data: dict, start: date, end: date,
-                           stage_snapshot: dict | None = None) -> None:
-    """Send individual compliance reminder emails to each rep with outstanding outcomes.
-
-    Also attaches a missing-deal-value section for any rep who has Hot/Warm opps
-    without a monetary value filled in.
-    """
-    failures = compliance_data.get("failures", [])
-
-    # Build per-rep missing-value lookup from stage snapshot
-    # snap_reps is a list of {rep_name, hot_count, hot_missing_value, warm_count, ...}
-    # We don't have opp names here — just counts. We flag the count and tell them to check GHL.
-    # For the compliance email, we'll construct a synthetic list of "unknown opp name" placeholders
-    # based on counts so reps know exactly how many to fix.
-    mv_by_rep: dict[str, list] = {}
-    if stage_snapshot:
-        for sr in (stage_snapshot.get("by_rep") or []):
-            canonical = " ".join((sr.get("rep_name") or "").split())
-            items = []
-            for bucket, miss_key in [("hot", "hot_missing_value"), ("warm", "warm_missing_value")]:
-                miss_count = sr.get(miss_key) or 0
-                for _ in range(miss_count):
-                    items.append({"opp_name": f"(no deal value — check GHL {bucket} list)", "bucket": bucket})
-            if items:
-                mv_by_rep[canonical] = items
-
-    if not failures and not any(mv_by_rep.values()):
-        print("  No compliance failures or missing deal values — skipping rep emails.")
-        return
-
-    # Group failures by canonical rep name (normalize whitespace)
-    by_rep: dict[str, list] = {}
-    for f in failures:
-        raw = f.get("rep_name") or "Unknown"
-        canonical_rep = " ".join(raw.split())
-        by_rep.setdefault(canonical_rep, []).append(f)
-
-    # Also ensure reps with ONLY missing values (no call failures) get emailed
-    for rep_name in mv_by_rep:
-        if rep_name not in by_rep:
-            by_rep[rep_name] = []
-
-    period_label = f"{start.strftime('%b %d')} – {end.strftime('%b %d, %Y')}"
-
-    # Send all compliance emails in a single SMTP session
-    try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(SMTP_USER, SMTP_PASS)
-            for rep_name, rep_failures in by_rep.items():
-                # Normalize whitespace — DB sometimes stores "Melissa  Fredericks" (double space)
-                canonical = " ".join(rep_name.split())
-                email = REP_EMAILS.get(canonical)
-                if not email:
-                    print(f"  WARNING: No email for '{canonical}' — skipping compliance email",
-                          file=sys.stderr)
-                    continue
-
-                first_name   = canonical.split()[0]
-                count        = len(rep_failures)
-                missing_opps = mv_by_rep.get(canonical, [])
-                html         = build_compliance_email_html(
-                    first_name, rep_failures, period_label,
-                    missing_value_opps=missing_opps if missing_opps else None,
-                )
-                mv_count = len(missing_opps)
-                parts = []
-                if count:
-                    parts.append(f"{count} outcome{'s' if count != 1 else ''} to log")
-                if mv_count:
-                    parts.append(f"{mv_count} deal value{'s' if mv_count != 1 else ''} missing")
-                subject = f"⚠️ Action Required: {' · '.join(parts)} — {period_label}"
-
-                msg                = MIMEMultipart("alternative")
-                msg["Message-ID"]  = f"<{uuid.uuid4()}@quantum-scaling.com>"
-                msg["Subject"]     = subject
-                msg["From"]        = SMTP_USER
-                msg["To"]          = email
-                msg.attach(MIMEText(html, "html"))
-
-                server.sendmail(SMTP_USER, [email], msg.as_string())
-                summary_parts = []
-                if count:     summary_parts.append(f"{count} failures")
-                if mv_count:  summary_parts.append(f"{mv_count} missing values")
-                print(f"  ✅ Compliance email → {canonical} ({email}): {', '.join(summary_parts) or 'sent'}")
-    except smtplib.SMTPException as e:
-        print(f"  ERROR sending compliance emails: {e}", file=sys.stderr)
 
 
 # ── MAIN ──────────────────────────────────────────────────────────────────────
@@ -939,7 +805,9 @@ def main():
     print("Sending compliance emails...")
     compliance  = data.get("compliance") or {}
     stage_snap2 = data.get("stage_snapshot") or {}
-    send_compliance_emails(compliance, start, end, stage_snapshot=stage_snap2)
+    send_compliance_emails(compliance, start, end,
+                           smtp_user=SMTP_USER, smtp_pass=SMTP_PASS,
+                           stage_snapshot=stage_snap2)
 
     print("Done.")
 
