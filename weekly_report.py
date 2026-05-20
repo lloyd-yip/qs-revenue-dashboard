@@ -443,6 +443,8 @@ def build_html(start: date, end: date, data: dict, anomalies: list, generated_at
         # Performance sub-table
         rsr1  = ra.get("show_rate_1st")
         rsr2  = ra.get("show_rate_2nd")
+        rsh1  = ra.get("shows_1st") or 0
+        rsh2  = ra.get("shows_2nd") or 0
         rqr   = ra.get("qualification_rate")
         rcomp = ra.get("compliance_failures") or 0
         rnotl = ra.get("outcome_not_logged_count") or 0
@@ -450,12 +452,20 @@ def build_html(start: date, end: date, data: dict, anomalies: list, generated_at
             f'<span style="color:{C["red"]};">{rcomp}⚠</span>'
             if rcomp else f'<span style="color:{C["green"]};">✓</span>'
         )
+        c1_show_cell = (
+            f'<span style="color:{rate_color_from_decimal(rsr1, 0.70, 0.55)};font-weight:700;">'
+            f'{rsh1} · {fmt_rate(rsr1)}</span>'
+        )
+        c2_show_cell = (
+            f'<span style="color:{rate_color_from_decimal(rsr2, 0.75, 0.60)};font-weight:700;">'
+            f'{rsh2} · {fmt_rate(rsr2)}</span>'
+        )
         perf_rows += tr_html([
             first,
             str(ra.get("calls_booked_1st") or 0),
-            f'<span style="color:{rate_color_from_decimal(rsr1, 0.70, 0.55)};font-weight:700;">{fmt_rate(rsr1)}</span>',
+            c1_show_cell,
             str(ra.get("calls_booked_2nd") or 0),
-            f'<span style="color:{rate_color_from_decimal(rsr2, 0.75, 0.60)};font-weight:700;">{fmt_rate(rsr2)}</span>',
+            c2_show_cell,
             f'<span style="color:{rate_color_from_decimal(rqr, 0.60, 0.45)};font-weight:700;">{fmt_rate(rqr)}</span>',
             comp_cell,
         ])
@@ -474,7 +484,7 @@ def build_html(start: date, end: date, data: dict, anomalies: list, generated_at
         perf_table = (
             sub_label + "PERFORMANCE (Appointment Date Passed)</div>"
             + f'<table style="width:100%;border-collapse:collapse;margin-top:18px;">'
-            + th(["Rep", "C1 Date Passed", "C1 Show%", "C2 Date Passed", "C2 Show%", "Qual%", "Comp"])
+            + th(["Rep", "C1 Date Passed", "C1 Shows", "C2 Date Passed", "C2 Shows", "Qual%", "Comp"])
             + perf_rows + "</table>"
         )
         rep_table = gen_table + perf_table

@@ -57,10 +57,12 @@ XERO_CLIENT_ID    = "EE84B9CECE064FDFA44A9989AD8356AA"   # colleague's paid app 
 XERO_REDIRECT_URI  = "https://qs-revenue-dashboard-production.up.railway.app/xero/callback"
 XERO_TENANT_ID     = "3bead22e-28ff-4eb1-92cd-9b9d648e188a"
 # Scopes: P&L reports + bank transactions (for Wise wire reconciliation) + contacts (sender name lookup)
+# Using broad scopes (accounting.reports.read etc.) — the granular scope names
+# (e.g. accounting.reports.profitandloss.read) are not valid and return invalid_scope.
 XERO_SCOPES = (
     "openid profile email offline_access "
-    "accounting.reports.profitandloss.read "
-    "accounting.banktransactions.read "
+    "accounting.reports.read "
+    "accounting.transactions "
     "accounting.contacts.read"
 )
 
