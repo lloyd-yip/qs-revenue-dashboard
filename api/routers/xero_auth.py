@@ -50,16 +50,19 @@ router = APIRouter(tags=["xero"])
 
 # ── Xero OAuth constants ──────────────────────────────────────────────────────
 
-XERO_CLIENT_ID    = "EE84B9CECE064FDFA44A9989AD8356AA"   # colleague's paid app (50 connections, full scopes)
+XERO_CLIENT_ID    = "05523DA543B246E78CA8FAF2457F8C91"   # "Revenue Team" app — uncertified web app, works with granular scopes
+# NOTE: "Automate accounting" app (EE84B9CECE064FDFA44A9989AD8356AA) is Xero App Store Certified,
+# which locks its allowed scopes to what was declared during certification — accounting report
+# scopes weren't declared, so they return invalid_scope. Revenue Team is a plain web app with no
+# such restriction. 5-connection Starter plan is fine — we only need 1 (quantumSCALE).
+#
 # Secret loaded from XERO_CLIENT_SECRET Railway env var — never hardcoded.
 # Set it in Railway → qs-revenue-dashboard → Variables → XERO_CLIENT_SECRET
-# (Get the value from Xero developer portal → "Automate accounting" → Configuration → Client secret 2)
+# Value: Revenue Team app client secret (from Xero developer portal → "Revenue Team" → Configuration)
 XERO_REDIRECT_URI  = "https://qs-revenue-dashboard-production.up.railway.app/xero/callback"
 XERO_TENANT_ID     = "3bead22e-28ff-4eb1-92cd-9b9d648e188a"
-# Scopes: P&L reports + bank transactions (for Wise wire reconciliation) + contacts (sender name lookup)
-# This app was created 2026-05-06 (post-March 2026), so Xero only grants granular
-# scopes — broad scopes like accounting.reports.read return invalid_scope.
-# Use the new granular scope names instead.
+# Revenue Team app created 2026-05-07 (post-March 2026) — must use granular scopes.
+# accounting.reports.profitandloss.read = the correct granular scope for P&L reports.
 XERO_SCOPES = (
     "openid profile email offline_access "
     "accounting.reports.profitandloss.read"
