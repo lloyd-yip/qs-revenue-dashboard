@@ -128,7 +128,6 @@ _register("tech_tools", [
     "WEBINARGEEK",
     "WEBSHARE",
     "Webflow",
-    "Wise",
     "Zapier",
     "Zenrows",
     "Zoetermeer",
@@ -155,6 +154,7 @@ _register("non_revenue", [
     "LITEMAIL AI",
     "APPS.EMTA.EE",
     "COLUMN NATIONAL ASSOCIATION",  # Doug — delivery team, not sales/marketing
+    "Wise",                          # Bank transfer account — not an expense; confirmed not in Xero P&L
 ])
 
 
