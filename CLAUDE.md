@@ -1,5 +1,11 @@
 # QS Revenue Dashboard — Claude Code Context
 
+## Always-Load Context
+
+@project-control/project_state.json
+
+---
+
 ## What This Project Is
 
 Sales performance analytics dashboard for Quantum Scaling. Syncs deal data from GHL,
