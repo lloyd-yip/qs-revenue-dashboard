@@ -866,6 +866,111 @@ async def xero_sync_wise_transfers(
     )
 
 
+# ── P&L bulk import (bypasses Xero OAuth — uses pre-fetched income rows) ─
+
+
+class PnlLineItemInput(BaseModel):
+    """One income line item from Xero P&L report.
+
+    Plain English: copy the income rows you see in Xero API Explorer
+    (ProfitAndLoss report → Income section) and POST them here.
+    The endpoint converts EUR → USD using the hardcoded ECB monthly rate
+    and upserts into revenue_line_items (replace=True — idempotent).
+    """
+    name: str
+    amount_eur: float
+
+
+class PnlImportResult(BaseModel):
+    month: str
+    period_start: str
+    period_end: str
+    rows_upserted: int
+    eur_usd_rate: float
+    items: list[dict]
+
+
+@router.post(
+    "/xero/import-pnl",
+    response_model=PnlImportResult,
+    dependencies=[Depends(_verify_token)],
+)
+async def xero_import_pnl(
+    month: str = Query(
+        ...,
+        description="Month to import in YYYY-MM format, e.g. 2026-04",
+        pattern=r"^\d{4}-\d{2}$",
+    ),
+    items: list[PnlLineItemInput] = ...,
+):
+    """
+    Import Xero P&L income rows that were pre-fetched (e.g. via API Explorer).
+
+    Bypasses Xero OAuth entirely — accepts an array of {name, amount_eur} objects
+    in the request body, converts EUR → USD using the ECB monthly rate, and upserts
+    into revenue_line_items (replace=True for idempotency).
+
+    Plain English: when Xero OAuth is broken, fetch the P&L from the API Explorer,
+    copy the income rows, and POST them here instead of using sync-revenue.
+
+    Example body:
+      [{"name": "High ticket - Upfront Pmt", "amount_eur": 61591.89}, ...]
+
+    Requires bearer token.
+    """
+    try:
+        year, mon = int(month[:4]), int(month[5:7])
+    except (ValueError, IndexError):
+        raise HTTPException(status_code=422, detail="month must be YYYY-MM format")
+
+    if not items:
+        raise HTTPException(status_code=422, detail="items list is empty")
+
+    last_day = calendar.monthrange(year, mon)[1]
+    period_start = date(year, mon, 1)
+    period_end   = date(year, mon, last_day)
+
+    eur_usd = await _get_eur_usd_rate(year, mon)
+
+    db_items = []
+    for row in items:
+        name = row.name
+        amount_eur = row.amount_eur
+        product_type = NAME_TO_TYPE.get(name, name.lower().replace(" ", "_"))
+        amount_usd = round(amount_eur * eur_usd, 2)
+        db_items.append({
+            "source":        "xero",
+            "category":      "cash_collected",
+            "product_type":  product_type,
+            "amount":        amount_usd,
+            "payment_count": 0,
+            "notes":         f"Xero P&L — EUR {amount_eur:,.2f} × {eur_usd} = USD {amount_usd:,.2f}",
+        })
+
+    async with AsyncSessionLocal() as session:
+        rows_upserted = await upsert_revenue_line_items(
+            session, period_start, period_end, db_items, replace=True
+        )
+
+    logger.info("Xero P&L import: %s — %d rows, EUR/USD %.4f", month, rows_upserted, eur_usd)
+
+    return PnlImportResult(
+        month=month,
+        period_start=str(period_start),
+        period_end=str(period_end),
+        rows_upserted=rows_upserted,
+        eur_usd_rate=eur_usd,
+        items=[
+            {
+                "product_type": i["product_type"],
+                "amount_usd":   i["amount"],
+                "notes":        i["notes"],
+            }
+            for i in db_items
+        ],
+    )
+
+
 # ── Bulk import (bypasses Xero OAuth — uses pre-fetched data) ────────────
 
 
