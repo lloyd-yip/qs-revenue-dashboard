@@ -63,7 +63,6 @@ _register("tech_tools", [
     "CLICKSEND",
     "CLICKUP (50%)",
     "CLIENTACQUISITIONIO",
-    "COLUMN NATIONAL ASSOCIATION",
     "Calendly",
     "Canva",
     "Cheapcom",
@@ -155,6 +154,7 @@ _register("non_revenue", [
     "MAKE.COM",
     "LITEMAIL AI",
     "APPS.EMTA.EE",
+    "COLUMN NATIONAL ASSOCIATION",  # Doug — delivery team, not sales/marketing
 ])
 
 
