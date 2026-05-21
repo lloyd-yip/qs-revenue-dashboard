@@ -28,6 +28,7 @@ def _register(bucket: str, vendors: list[str]) -> None:
 
 # ── Sales ────────────────────────────────────────────────────────────────────
 _register("sales", [
+    # Individual names (transaction-level loads)
     "Alexander Gessel",
     "James Caddick",
     "Jason Bern",
@@ -36,10 +37,13 @@ _register("sales", [
     "Princewill Chinedu Ejiogu",
     "Ryan Matsumori",
     "Ryan McNichol",
+    # Xero P&L account names
+    "Salaries - Sales",
 ])
 
 # ── Marketing Salaries ───────────────────────────────────────────────────────
 _register("marketing_salaries", [
+    # Individual names (transaction-level loads)
     "Angel Hernandez",
     "Brooks Golden",
     "Gergo Nagy",
@@ -47,6 +51,10 @@ _register("marketing_salaries", [
     "Maria Coutiño",
     "Santiago Acevedo",
     "Tatiana Herrera",
+    # Xero P&L account names
+    "Salaries - Management",
+    "Salaries - Marketing",
+    "Salaries - Assistant",
 ])
 
 # ── Tech & Tools ─────────────────────────────────────────────────────────────
@@ -134,12 +142,23 @@ _register("tech_tools", [
     "Zoom",
     "glocksoft",
     "zonkafeedback",
+    # Xero P&L account names
+    "Tool - AI",
+    "Tool - CRM",
+    "Tool - CyberSecurity",
+    "Tool - Marketing",
+    "Tool - Project Management",
+    "Tools - Automation",
+    "Tools - Funnel",
+    "Stripe Billing Usage Fee",
 ])
 
 # ── Digital Advertising ──────────────────────────────────────────────────────
 _register("advertising", [
     "Facebook",
     "TROPEX MARKETING",
+    # Xero P&L account names
+    "Paid Ads",
 ])
 
 # ── Experiments ──────────────────────────────────────────────────────────────
@@ -155,6 +174,15 @@ _register("non_revenue", [
     "APPS.EMTA.EE",
     "COLUMN NATIONAL ASSOCIATION",  # Doug — delivery team, not sales/marketing
     "Wise",                          # Bank transfer account — not an expense; confirmed not in Xero P&L
+    # Xero P&L account names — hidden from dashboard
+    "Salaries - Operations",         # Delivery team
+    "Salaries - Hermes",             # Lloyd OS server costs
+    "Bank Fees",
+    "Payoneer Bank Fees",
+    "Stripe Collection Fees",
+    "Whop Fees",                     # Payment processing
+    "Foreign Currency Gains and Losses",
+    "Consulting & Accounting",       # Accountant fees
 ])
 
 
