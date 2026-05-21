@@ -371,16 +371,26 @@ async def xero_sync_revenue(
         description="Month to sync in YYYY-MM format, e.g. 2026-04",
         pattern=r"^\d{4}-\d{2}$",
     ),
+    xero_token: str | None = Query(
+        default=None,
+        description=(
+            "Optional: pass a 30-min Xero access token directly (e.g. from API Explorer). "
+            "When provided, skips the stored refresh-token flow entirely."
+        ),
+    ),
 ):
     """
     Pull Xero P&L income data for the given month and upsert into revenue_line_items.
 
+    Two modes:
+      A) xero_token param supplied — use it directly as the bearer token (30-min API Explorer flow).
+      B) No xero_token — load stored refresh token from DB, exchange for access token (automated flow).
+
     Steps:
-      1. Load refresh token from DB
-      2. Exchange for a fresh access token (auto-refreshes; stores new refresh token)
-      3. Fetch Xero P&L report for the month
-      4. Fetch ECB EUR/USD rate for the month
-      5. Convert EUR → USD and upsert into revenue_line_items (replace=True for idempotency)
+      1. Resolve access token (direct or via refresh)
+      2. Fetch Xero P&L report for the month
+      3. Fetch ECB EUR/USD rate for the month
+      4. Convert EUR → USD and upsert into revenue_line_items (replace=True for idempotency)
 
     Requires bearer token. Called by the 'Sync from Xero' button on /pnl.
     """
@@ -394,25 +404,29 @@ async def xero_sync_revenue(
     period_start = date(year, mon, 1)
     period_end   = date(year, mon, last_day)
 
-    # 1. Load stored refresh token
-    async with AsyncSessionLocal() as session:
-        refresh_token = await get_setting(session, "xero_refresh_token")
+    # 1. Resolve access token
+    if xero_token:
+        # Direct token path — API Explorer / manual flow (30-min token, no DB lookup needed)
+        access_token = xero_token
+    else:
+        # Stored refresh token path — automated flow
+        async with AsyncSessionLocal() as session:
+            refresh_token = await get_setting(session, "xero_refresh_token")
 
-    if not refresh_token:
-        raise HTTPException(
-            status_code=400,
-            detail="No Xero refresh token stored. "
-                   "Visit /xero/auth first to connect your Xero account.",
-        )
+        if not refresh_token:
+            raise HTTPException(
+                status_code=400,
+                detail="No Xero refresh token stored. "
+                       "Either visit /xero/auth to connect, or pass xero_token=<token> directly.",
+            )
 
-    # 2. Refresh access token
-    tokens = await _refresh_access_token(refresh_token)
-    access_token     = tokens["access_token"]
-    new_refresh_token = tokens.get("refresh_token", refresh_token)
+        tokens = await _refresh_access_token(refresh_token)
+        access_token      = tokens["access_token"]
+        new_refresh_token = tokens.get("refresh_token", refresh_token)
 
-    # Store the new refresh token (Xero rotates it on each use)
-    async with AsyncSessionLocal() as session:
-        await set_setting(session, "xero_refresh_token", new_refresh_token)
+        # Store rotated refresh token
+        async with AsyncSessionLocal() as session:
+            await set_setting(session, "xero_refresh_token", new_refresh_token)
 
     # 3. Fetch Xero P&L income line items
     xero_items = await _fetch_xero_pnl(access_token, period_start, period_end)
