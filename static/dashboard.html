@@ -1319,6 +1319,7 @@ function renderRepBreakdown(reps) {
       <td class="num clickable" onclick="window.open(debugUrl('show_rate_1st','${rid}'),'_blank')" style="cursor:pointer;" title="↗ Debug">${pct(r.show_rate_1st)}</td>
       <td class="num clickable" onclick="window.open(debugUrl('qualification_rate','${rid}'),'_blank')" style="cursor:pointer;" title="↗ Debug">${pct(r.qualification_rate)}</td>
       <td class="num clickable" onclick="window.open(debugUrl('close_rate','${rid}'),'_blank')" style="cursor:pointer;" title="↗ Debug">${pct(r.close_rate)}</td>
+      <td class="num" title="Units Closed ÷ Qualified Shows">${pct(r.close_rate_qual)}</td>
       <td class="num">${closedCell}</td>
       <td class="num" style="color:var(--text2);">${r.avg_cycle_days !== null && r.avg_cycle_days !== undefined ? r.avg_cycle_days + 'd' : '—'}</td>
       <td class="num ${r.outcome_not_logged_count > 0 ? 'rate-warn' : ''}">${notLoggedCell}</td>
@@ -1347,6 +1348,7 @@ function renderRepBreakdown(reps) {
         <th class="num">Show Rate</th>
         <th class="num">Qual Rate</th>
         <th class="num">Close Rate</th>
+        <th class="num" title="Units Closed ÷ Qualified 1st Call Shows">Qual Close</th>
         <th class="num">Closed</th>
         <th class="num" title="Avg days from first call to close">Avg Cycle</th>
         <th class="num" title="Appointment outcome (show/no-show) never logged by rep">No Outcome</th>
@@ -1654,6 +1656,7 @@ async function renderPipelineIntelligence() {
         <td class="num">${num(r.calls_booked_2nd)}</td>
         <td class="num ${rateClass(r.show_rate_2nd)}">${pct(r.show_rate_2nd)}</td>
         <td class="num ${rateClass(r.close_rate)}">${pct(r.close_rate)}</td>
+        <td class="num ${rateClass(r.close_rate_qual)}">${pct(r.close_rate_qual)}</td>
         ${closedCell}
         <td class="num" style="color:var(--text2);">${cycleTxt}</td>
         <td class="num" style="color:var(--green);">${r.contract_value ? money(r.contract_value) : '—'}</td>
@@ -1673,6 +1676,7 @@ async function renderPipelineIntelligence() {
               <th class="num">C2 Booked</th>
               <th class="num">C2 Show%</th>
               <th class="num">Close%</th>
+              <th class="num" title="Units Closed ÷ Qualified 1st Call Shows">Qual Close%</th>
               <th class="num">Closed</th>
               <th class="num" title="Avg days from lead creation to won deal">Avg Cycle</th>
               <th class="num" style="color:var(--green);" title="Coming soon — awaiting financial data">Contract Value</th>

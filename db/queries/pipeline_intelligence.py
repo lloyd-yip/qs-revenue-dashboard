@@ -142,6 +142,7 @@ async def get_pipeline_intelligence(
             "total_shows": row.total_shows,
             "units_closed": row.units_closed,
             "close_rate": safe_rate(row.units_closed, row.shows_1st),
+            "close_rate_qual": safe_rate(row.units_closed, row.qualified_shows),
             "avg_cycle_days": round(float(row.avg_cycle_days), 1) if row.avg_cycle_days is not None else None,
             "contract_value": float(row.contract_value),
             "cash_collected": float(row.cash_collected_sum),
