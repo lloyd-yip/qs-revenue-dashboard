@@ -368,7 +368,7 @@ async def get_by_rep(
             "qualification_rate": safe_rate(row.qualified_shows, row.shows_1st),
             "dq_rate": safe_rate(row.dq_count, row.shows_1st),
             "dq_after_call2_rate": safe_rate(row.dq_after_call2_count, row.shows_1st),
-            "close_rate": safe_rate(row.units_closed, row.total_shows),
+            "close_rate": safe_rate(row.units_closed, row.shows_1st),
             "units_closed": units,
             "projected_contract_value": float(row.projected_contract_value),
             "contract_value": contract_val,
