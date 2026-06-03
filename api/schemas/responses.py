@@ -25,6 +25,7 @@ class SummaryData(BaseModel):
     dq_rate: float | None
     dq_after_call2_rate: float | None
     close_rate: float | None
+    close_rate_qual: float | None = None
     units_closed: int
     projected_contract_value: float
     total_shows: int
@@ -50,6 +51,7 @@ class RepMetrics(BaseModel):
     dq_rate: float | None
     dq_after_call2_rate: float | None
     close_rate: float | None
+    close_rate_qual: float | None = None
     units_closed: int
     projected_contract_value: float
     contract_value: float = 0
