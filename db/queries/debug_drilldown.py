@@ -19,6 +19,7 @@ from db.queries.common import (
     bookable_1st_call_expr,
     has_1st_call,
     has_2nd_call,
+    sales_rep_filter,
     showed_1st_call_expr,
     showed_2nd_call_expr,
 )
@@ -357,16 +358,38 @@ async def get_drilldown_opps(
     date_by: str,
     rep_id: str | None = None,
 ) -> list[dict]:
-    """Return the individual opportunity rows behind a dashboard KPI."""
+    """Return the individual opportunity rows behind a dashboard KPI.
 
-    bf = base_filter(start, end, date_by, rep_id)
-    metric_filter = _build_metric_filter(metric, start, end, date_by)
-
-    result = await session.execute(
-        select(*_DRILLDOWN_COLUMNS)
-        .where(and_(bf, metric_filter))
-        .order_by(Opportunity.call1_appointment_date.desc().nulls_last())
-    )
+    Most metrics use appointment-date base_filter to match the main query.
+    units_closed / close_rate use close-date filtering to match the CLOSED
+    column in the rep table (which counts by close_date, not appointment date).
+    """
+    # units_closed and close_rate are counted by close_date in get_by_rep —
+    # use the same filter here so the drilldown row count matches the column.
+    if metric in ("units_closed", "close_rate", "projected_contract_value"):
+        close_conditions = [
+            Opportunity.is_excluded.is_(False),
+            Opportunity.close_date.isnot(None),
+            Opportunity.close_date >= start,
+            Opportunity.close_date <= end,
+            Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID,
+            sales_rep_filter(),
+        ]
+        if rep_id:
+            close_conditions.append(Opportunity.opportunity_owner_id == rep_id)
+        result = await session.execute(
+            select(*_DRILLDOWN_COLUMNS)
+            .where(and_(*close_conditions))
+            .order_by(Opportunity.close_date.desc().nulls_last())
+        )
+    else:
+        bf = base_filter(start, end, date_by, rep_id)
+        metric_filter = _build_metric_filter(metric, start, end, date_by)
+        result = await session.execute(
+            select(*_DRILLDOWN_COLUMNS)
+            .where(and_(bf, metric_filter))
+            .order_by(Opportunity.call1_appointment_date.desc().nulls_last())
+        )
 
     is_data_quality = metric == "data_quality"
     rows = []
