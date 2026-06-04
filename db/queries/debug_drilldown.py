@@ -316,6 +316,15 @@ def _detect_anomalies(row: dict) -> list[dict]:
             "Update call 1 status to \"No Show\"",
         )
 
+    # 11. Deal Won but no call history (off-funnel close — CSV import or manual entry)
+    if stage_id == DEAL_WON_STAGE_ID and not row.get("call1_appointment_date"):
+        add(
+            "won_no_call_history",
+            "Deal Won but no 1st call appointment on record (off-funnel close)",
+            "medium",
+            "Verify in GHL — if a call occurred, add the appointment date. If direct/referral close, this is expected.",
+        )
+
     return anomalies
 
 
