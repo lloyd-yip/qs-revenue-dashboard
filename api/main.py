@@ -166,6 +166,9 @@ async def serve_deals():
     )
 
 
+# Serve static assets (favicon, CSS, JS) — must come after named routes
+app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
+
 # Health check is exempt from auth — Railway uses it without credentials
 @app.get("/api/health", response_model=HealthResponse, tags=["health"])
 async def health():
