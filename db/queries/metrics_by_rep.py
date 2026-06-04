@@ -30,11 +30,21 @@ async def get_rep_closes(
 ) -> list[dict]:
     """Closed deals for a specific rep (or all reps when rep_id is None).
 
-    Returns opportunity name, closer, close date (updated_at_ghl), and deal value.
+    Filters by close_date (when the deal was won), not appointment date —
+    so the drilldown matches the CLOSED column in the rep table, which also
+    counts by close date via the close_date_where sub-query in get_by_rep.
+
+    Returns opportunity name, closer, close date, and deal value.
     Ordered by close date descending.
     """
-    bf = base_filter(start, end, date_by)
-    conditions = [bf, Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID]
+    conditions = [
+        Opportunity.is_excluded.is_(False),
+        Opportunity.close_date.isnot(None),
+        func.date(Opportunity.close_date) >= start,
+        func.date(Opportunity.close_date) <= end,
+        Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID,
+        sales_rep_filter(),
+    ]
     if rep_id is not None:
         conditions.append(Opportunity.opportunity_owner_id == rep_id)
 
@@ -42,18 +52,18 @@ async def get_rep_closes(
         select(
             Opportunity.opportunity_name,
             Opportunity.opportunity_owner_name,
-            Opportunity.updated_at_ghl,
+            Opportunity.close_date,
             Opportunity.projected_deal_size,
         )
         .where(and_(*conditions))
-        .order_by(Opportunity.updated_at_ghl.desc())
+        .order_by(Opportunity.close_date.desc())
     )
 
     return [
         {
             "name": row.opportunity_name or "—",
             "rep": row.opportunity_owner_name or "Unassigned",
-            "close_date": row.updated_at_ghl.strftime("%b %d, %Y") if row.updated_at_ghl else "—",
+            "close_date": row.close_date.strftime("%b %d, %Y") if row.close_date else "—",
             "value": float(row.projected_deal_size) if row.projected_deal_size else None,
         }
         for row in result.all()
@@ -368,9 +378,9 @@ async def get_by_rep(
             "qualification_rate": safe_rate(row.qualified_shows, row.shows_1st),
             "dq_rate": safe_rate(row.dq_count, row.shows_1st),
             "dq_after_call2_rate": safe_rate(row.dq_after_call2_count, row.shows_1st),
-            "close_rate": safe_rate(row.units_closed, row.shows_1st),
-            "close_rate_qual": safe_rate(row.units_closed, row.qualified_shows),
-            "units_closed": row.units_closed,
+            "close_rate": safe_rate(units, row.shows_1st),
+            "close_rate_qual": safe_rate(units, row.qualified_shows),
+            "units_closed": units,
             "projected_contract_value": float(row.projected_contract_value),
             "contract_value": contract_val,
             "cash_collected": cash_val,
