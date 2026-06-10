@@ -2,7 +2,7 @@
   "project_name": "QS Revenue Dashboard",
   "description": "Internal sales performance dashboard \u2014 call volume, show rates, qualification, lead source attribution, compliance tracking, funnel economics",
   "business_entity": "quantum_scaling",
-  "last_updated": "2026-06-10T00:00:00Z",
+  "last_updated": "2026-06-10T20:51:24Z",
   "current_state": {
     "phase_name": "Phase 1 - Live & Iterating",
     "status": "live"
@@ -11,25 +11,22 @@
     "what": "The QS Revenue Dashboard pulls sales data from GoHighLevel (CRM) and turns it into a real-time performance dashboard. It tracks call volume, show rates, close rates, lead source attribution, rep-level performance, compliance, and funnel economics (RORI per rep once financial data is entered).",
     "why": "Lloyd needs to see exactly how each sales rep is performing, which lead sources are producing revenue, and where the pipeline is leaking \u2014 without manually pulling GHL reports. This is the operational nervous system for the sales org.",
     "end_state": "A comprehensive revenue intelligence platform with real-time KPIs, financial integration (Xero for actual revenue vs pipeline), automated anomaly detection, and API endpoints that feed the OpenClaw agent layer for cross-app synthesis.",
-    "current_summary": "Dashboard is live and in daily use across 5 tabs: Sales Performance, Lead Quality by Channel, Pipeline Intelligence, Funnel Economics, and Compliance. Funnel Economics tab has RORI infrastructure built \u2014 waiting on accounting data (marketing spend + rep comp) to go live. Show rate calculation was corrected this session. Tooltips on all KPI labels. Rep breakdown now shows lead quality distribution per rep."
+    "current_summary": "Dashboard is live and in daily use across 5 tabs: Sales Performance, Lead Quality by Channel, Pipeline Intelligence, Funnel Economics, and Compliance. Xero invoice sync shipped \u2014 Contract Value section visible on P&L page when data exists. RORI infrastructure live, awaiting automated pull of marketing spend + rep comp from Xero (Phase 2). Funnel Economics currently uses manual entry for financial inputs. Show rate calculation is correct. Tooltips on all KPI labels. Rep breakdown shows lead quality distribution per rep."
   },
-  "resume_here": "Active blueprint: blueprints/xero_invoice_sync_blueprint_v2.md \u2014 read it before building. Approved by Lloyd. Fill in function bodies only, structure is locked. 6 files to create/modify (see immediate_next_steps). After build: register router in api/main.py, deploy to Railway, verify with curl.",
+  "resume_here": "Xero invoice sync shipped and live. POST /xero/sync-invoices is live on Railway. Next: monitor for data accuracy issues. Then move to Phase 2 automation (pull marketing spend and rep comp from Xero automatically instead of manual entry).",
   "current_phase": {
     "name": "Phase 1 - Live & Iterating",
     "goal": "Full internal dashboard for Lloyd to monitor sales team performance: call volume per rep, show rates, qualification breakdowns, lead source attribution, compliance tracking, funnel economics with RORI",
     "current_focus": [
-      "Building Xero invoice sync \u2014 blueprint approved, filling in function bodies",
-      "Active blueprint: blueprints/xero_invoice_sync_blueprint_v2.md \u2014 read it before building. Structure is locked."
+      "Monitoring Xero invoice sync live performance",
+      "Next: Phase 2 financial automation \u2014 pull marketing spend and rep comp from Xero"
     ],
     "immediate_next_steps": [
-      "CREATE api/utils/xero_utils.py \u2014 shared XERO_TENANT_ID, EUR_USD_RATES, verify_bearer, get_eur_usd_rate",
-      "CREATE api/routers/xero_invoices.py \u2014 POST /xero/sync-invoices with _fetch_xero_invoices, _parse_invoice_totals, _to_revenue_item",
-      "MODIFY db/queries/revenue.py \u2014 add contract_value to CATEGORY_ORDER, CATEGORY_LABELS, get_revenue_for_period, get_all_revenue_periods_summary",
-      "MODIFY sync/xero_live_sync.py \u2014 add post_invoice_sync() + step 3 in main()",
-      "MODIFY static/pnl.html \u2014 render contract_value category section below cash_collected",
-      "MODIFY ~/.claude/commands/sync-pnl-month.md \u2014 add Step 6 note",
-      "Register xero_invoices router in api/main.py",
-      "Deploy and verify with curl + pnl.html"
+      "Monitor /xero/sync-invoices endpoint \u2014 check for EUR\u2192USD conversion accuracy, invoice count alignment with Xero",
+      "Phase 2a: Create Xero accounting queries for marketing spend + rep comp per period",
+      "Phase 2b: Build /xero/sync-financials endpoint \u2014 auto-pull marketing spend and rep comp from Xero",
+      "Phase 2c: Modify period_financial_inputs panel \u2014 auto-populate from Xero endpoint instead of manual entry",
+      "Phase 2d: Add Xero Contacts (AP) verification \u2014 ensure rep names in Xero match GHL rep names for matching"
     ],
     "known_issues": [
       {
@@ -73,6 +70,10 @@
     }
   ],
   "recent_milestones": [
+    {
+      "description": "Xero invoice sync shipped \u2014 POST /xero/sync-invoices now live on Railway. Contract Value section appears on P&L page when invoice data exists. EUR\u2192USD conversion automatic. Category-scoped delete ensures re-runs are safe and never touch cash_collected rows. Founders can now sync Xero invoices monthly to track actual contract value vs pipeline value.",
+      "date": "2026-06-10"
+    },
     {
       "description": "Show rate numerator bug fixed across all 5 query files \u2014 compliance flags (outcome_unfilled, rep_compliance_failure) no longer gate the show count. showed_1st_call_expr() is now the sole show signal, correctly counting stage-based shows where rep moved stage without updating appointment status field.",
       "date": "2026-04-15"
