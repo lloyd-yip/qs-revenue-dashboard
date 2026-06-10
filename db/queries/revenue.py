@@ -12,11 +12,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import RevenueLineItem
 
-CATEGORY_ORDER = ["cash_collected", "splitit_ar"]
+CATEGORY_ORDER = ["cash_collected", "splitit_ar", "contract_value"]
 
 CATEGORY_LABELS = {
     "cash_collected": "Cash Collected",
-    "splitit_ar": "Splitit AR (Outstanding)",
+    "splitit_ar":     "Splitit AR (Outstanding)",
+    "contract_value": "Contract Value (Invoiced)",
 }
 
 PRODUCT_TYPE_LABELS = {
@@ -86,10 +87,11 @@ async def get_revenue_for_period(
 
     result = []
     total_cash_collected = 0.0
-    total_splitit_ar = 0.0
+    total_splitit_ar     = 0.0
+    total_contract_value = 0.0
 
     for cat_key in CATEGORY_ORDER:
-        items = by_category[cat_key]
+        items = by_category.get(cat_key, [])
         if not items:
             continue
         cat_total = sum(i["amount"] for i in items)
@@ -98,6 +100,8 @@ async def get_revenue_for_period(
             total_cash_collected = cat_total
         elif cat_key == "splitit_ar":
             total_splitit_ar = cat_total
+        elif cat_key == "contract_value":
+            total_contract_value = cat_total
         result.append({
             "category": cat_key,
             "label": CATEGORY_LABELS[cat_key],
@@ -113,6 +117,7 @@ async def get_revenue_for_period(
         "grand_total": total_cash_collected,          # cash only — AR is future
         "total_cash_collected": total_cash_collected,
         "total_splitit_ar": total_splitit_ar,
+        "total_contract_value": total_contract_value,
     }
 
 
@@ -143,15 +148,18 @@ async def get_all_revenue_periods_summary(session: AsyncSession) -> list[dict]:
         key = (str(row.period_start), str(row.period_end))
         if key not in periods:
             periods[key] = {
-                "period_start": str(row.period_start),
-                "period_end": str(row.period_end),
-                "cash_collected": 0.0,
-                "splitit_ar": 0.0,
+                "period_start":    str(row.period_start),
+                "period_end":      str(row.period_end),
+                "cash_collected":  0.0,
+                "splitit_ar":      0.0,
+                "contract_value":  0.0,
             }
         if row.category == "cash_collected":
             periods[key]["cash_collected"] = float(row.total)
         elif row.category == "splitit_ar":
             periods[key]["splitit_ar"] = float(row.total)
+        elif row.category == "contract_value":
+            periods[key]["contract_value"] = float(row.total)
 
     return list(periods.values())
 

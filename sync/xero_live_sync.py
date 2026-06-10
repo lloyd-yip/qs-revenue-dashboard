@@ -267,6 +267,14 @@ def post_revenue_sync(month: str, xero_token: str) -> dict:
     return _railway_request(url)
 
 
+def post_invoice_sync(month: str, xero_token: str) -> dict:
+    """Trigger server-side invoice sync: POST /xero/sync-invoices?month=...&xero_token=..."""
+    params = urllib.parse.urlencode({"month": month, "xero_token": xero_token})
+    url    = f"{RAILWAY_BASE}/xero/sync-invoices?{params}"
+    print(f"  POST {url[:80]}...")
+    return _railway_request(url)
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 
@@ -317,14 +325,22 @@ def main() -> None:
     exp_rows    = exp_result.get("rows_upserted", exp_result)
     print(f"  ✅ Expenses: {exp_rows} rows upserted")
 
-    # Trigger revenue sync
+    # Trigger revenue sync (cash collected from P&L income accounts)
     print("Syncing revenue from Xero P&L...")
     rev_result  = post_revenue_sync(month, args.token)
     rev_rows    = rev_result.get("rows_upserted", "?")
     rev_rate    = rev_result.get("eur_usd_rate", eur_usd)
     print(f"  ✅ Revenue: {rev_rows} rows upserted (EUR/USD: {rev_rate:.4f})")
 
-    print(f"\n✅ {month} synced — expenses + revenue loaded to dashboard.\n")
+    # Trigger invoice sync (contract value from ACCREC invoices)
+    print("Syncing contract value from Xero invoices...")
+    inv_result   = post_invoice_sync(month, args.token)
+    inv_count    = inv_result.get("invoice_count", "?")
+    inv_eur      = inv_result.get("total_eur", 0)
+    inv_usd      = inv_result.get("total_usd", 0)
+    print(f"  ✅ Contract value: {inv_count} invoices — EUR {inv_eur:,.2f} = USD {inv_usd:,.2f}")
+
+    print(f"\n✅ {month} synced — expenses + revenue + contract value loaded to dashboard.\n")
 
 
 if __name__ == "__main__":

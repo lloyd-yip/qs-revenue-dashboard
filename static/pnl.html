@@ -354,29 +354,54 @@
       `;
     }
 
-    // ── Revenue section ──
+    // ── Revenue section (Cash Collected) ──
     html += `<div class="section-header">Revenue Breakdown</div>`;
-    if (rev && rev.categories && rev.categories.length > 0) {
-      rev.categories
-        .filter(c => c.category === "cash_collected")
-        .forEach((cat, i) => {
-          html += renderBucket(
-            `rev-${cat.category}`,
-            cat.label,
-            cat.total,
-            cat.items.map(item => ({
-              name: item.label,
-              amount: item.amount,
-              meta: `${item.payment_count} payment${item.payment_count !== 1 ? "s" : ""}`,
-              is_approximate: false,
-              notes: null,
-            })),
-            i === 0,
-            `${cat.payment_count} payment${cat.payment_count !== 1 ? "s" : ""}`,
-          );
-        });
+    const cashCollectedCats = rev && rev.categories
+      ? rev.categories.filter(c => c.category === "cash_collected")
+      : [];
+    if (cashCollectedCats.length > 0) {
+      cashCollectedCats.forEach((cat, i) => {
+        html += renderBucket(
+          `rev-${cat.category}`,
+          cat.label,
+          cat.total,
+          cat.items.map(item => ({
+            name: item.label,
+            amount: item.amount,
+            meta: `${item.payment_count} payment${item.payment_count !== 1 ? "s" : ""}`,
+            is_approximate: false,
+            notes: null,
+          })),
+          i === 0,
+          `${cat.payment_count} payment${cat.payment_count !== 1 ? "s" : ""}`,
+        );
+      });
     } else {
       html += `<div class="no-data-inline">No revenue data for this period</div>`;
+    }
+
+    // ── Contract Value section (Xero ACCREC invoices) ──
+    const contractValueCats = rev && rev.categories
+      ? rev.categories.filter(c => c.category === "contract_value")
+      : [];
+    if (contractValueCats.length > 0) {
+      html += `<div class="section-header">Contract Value</div>`;
+      contractValueCats.forEach((cat, i) => {
+        html += renderBucket(
+          `rev-${cat.category}`,
+          cat.label,
+          cat.total,
+          cat.items.map(item => ({
+            name: item.label,
+            amount: item.amount,
+            meta: `${item.payment_count} invoice${item.payment_count !== 1 ? "s" : ""}`,
+            is_approximate: false,
+            notes: item.notes,
+          })),
+          i === 0,
+          `${cat.payment_count} invoice${cat.payment_count !== 1 ? "s" : ""}`,
+        );
+      });
     }
 
     // ── Expenses section ──
