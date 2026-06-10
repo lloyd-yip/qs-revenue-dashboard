@@ -2,7 +2,7 @@
   "project_name": "QS Revenue Dashboard",
   "description": "Internal sales performance dashboard \u2014 call volume, show rates, qualification, lead source attribution, compliance tracking, funnel economics",
   "business_entity": "quantum_scaling",
-  "last_updated": "2026-05-21T00:00:00Z",
+  "last_updated": "2026-06-10T00:00:00Z",
   "current_state": {
     "phase_name": "Phase 1 - Live & Iterating",
     "status": "live"
@@ -13,19 +13,23 @@
     "end_state": "A comprehensive revenue intelligence platform with real-time KPIs, financial integration (Xero for actual revenue vs pipeline), automated anomaly detection, and API endpoints that feed the OpenClaw agent layer for cross-app synthesis.",
     "current_summary": "Dashboard is live and in daily use across 5 tabs: Sales Performance, Lead Quality by Channel, Pipeline Intelligence, Funnel Economics, and Compliance. Funnel Economics tab has RORI infrastructure built \u2014 waiting on accounting data (marketing spend + rep comp) to go live. Show rate calculation was corrected this session. Tooltips on all KPI labels. Rep breakdown now shows lead quality distribution per rep."
   },
-  "resume_here": "Dashboard is live. Show rate numerator bug was fixed (compliance flags no longer gate show counts). Funnel Economics tab is built but needs financial inputs to show numbers \u2014 need marketing spend + rep comp from accounting. Next priority: collect accounting data (Xero + WAP) and enter into dashboard. Railway deploy: `git push qs-dashboard $(git subtree split --prefix=qs-dashboard HEAD):main --force`.",
+  "resume_here": "Active blueprint: blueprints/xero_invoice_sync_blueprint_v2.md \u2014 read it before building. Approved by Lloyd. Fill in function bodies only, structure is locked. 6 files to create/modify (see immediate_next_steps). After build: register router in api/main.py, deploy to Railway, verify with curl.",
   "current_phase": {
     "name": "Phase 1 - Live & Iterating",
     "goal": "Full internal dashboard for Lloyd to monitor sales team performance: call volume per rep, show rates, qualification breakdowns, lead source attribution, compliance tracking, funnel economics with RORI",
     "current_focus": [
-      "Collecting accounting data (Xero + WAP) to populate Funnel Economics financial inputs",
-      "Show rate accuracy improvements shipped \u2014 monitoring for correctness"
+      "Building Xero invoice sync \u2014 blueprint approved, filling in function bodies",
+      "Active blueprint: blueprints/xero_invoice_sync_blueprint_v2.md \u2014 read it before building. Structure is locked."
     ],
     "immediate_next_steps": [
-      "Pull marketing spend per period from Xero / bookkeeper \u2014 enter into Funnel Economics panel",
-      "Pull per-rep compensation (base + commission) per period \u2014 enter into Funnel Economics panel",
-      "Pull actual contract values + cash collected per deal from WAP \u2014 these populate Contract RORI and Cash RORI",
-      "Update Hermes cron show rate alert query to use new IN ('Showed','No Show','Cancelled') denominator formula"
+      "CREATE api/utils/xero_utils.py \u2014 shared XERO_TENANT_ID, EUR_USD_RATES, verify_bearer, get_eur_usd_rate",
+      "CREATE api/routers/xero_invoices.py \u2014 POST /xero/sync-invoices with _fetch_xero_invoices, _parse_invoice_totals, _to_revenue_item",
+      "MODIFY db/queries/revenue.py \u2014 add contract_value to CATEGORY_ORDER, CATEGORY_LABELS, get_revenue_for_period, get_all_revenue_periods_summary",
+      "MODIFY sync/xero_live_sync.py \u2014 add post_invoice_sync() + step 3 in main()",
+      "MODIFY static/pnl.html \u2014 render contract_value category section below cash_collected",
+      "MODIFY ~/.claude/commands/sync-pnl-month.md \u2014 add Step 6 note",
+      "Register xero_invoices router in api/main.py",
+      "Deploy and verify with curl + pnl.html"
     ],
     "known_issues": [
       {
@@ -115,6 +119,26 @@
     }
   ],
   "decision_log": [
+    {
+      "decision": "Xero invoices are the authoritative source for contract value (not GHL projected_deal_size)",
+      "reasoning": "GHL projected_deal_size is unreliable — reps don't fill it in consistently. Xero ACCREC invoices reflect what was actually billed to clients.",
+      "phase": "Phase 2"
+    },
+    {
+      "decision": "Contract value stored as one aggregate row per month in revenue_line_items (source=xero, category=contract_value, product_type=invoiced_total)",
+      "reasoning": "Monthly aggregate is sufficient for RORI calculation. Per-deal invoice matching deferred to Phase 3 — adds fuzzy name matching complexity without changing the RORI formula.",
+      "phase": "Phase 2"
+    },
+    {
+      "decision": "Category-scoped DELETE before invoice upsert (not replace=True in upsert_revenue_line_items)",
+      "reasoning": "replace=True would wipe cash_collected rows for the same period. Category-scoped delete is surgical — only removes contract_value rows, leaving other categories intact.",
+      "phase": "Phase 2"
+    },
+    {
+      "decision": "Shared Xero helpers extracted to api/utils/xero_utils.py instead of xero_auth.py",
+      "reasoning": "xero_auth.py is already 1,107 lines. Adding to it risks further growth and creates router→router import coupling. New shared utils file is the clean boundary.",
+      "phase": "Phase 2"
+    },
     {
       "decision": "Show count numerator uses showed_1st_call_expr() alone \u2014 no compliance flag filter",
       "reasoning": "compliance flags (outcome_unfilled, rep_compliance_failure) must never gate metric counts. A rep moving to the 'Call 1 Done' stage counts as a show regardless of whether appointment status field was also updated. Compliance flags are for separate compliance tab only.",
