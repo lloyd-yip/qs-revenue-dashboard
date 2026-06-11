@@ -2,7 +2,7 @@
   "project_name": "QS Revenue Dashboard",
   "description": "Internal sales performance dashboard — call volume, show rates, qualification, lead source attribution, compliance tracking, funnel economics",
   "business_entity": "quantum_scaling",
-  "last_updated": "2026-06-11T21:15:00Z",
+  "last_updated": "2026-06-11T21:45:00Z",
   "current_state": {
     "phase_name": "Phase 1 - Live & Iterating",
     "status": "live"
@@ -246,7 +246,7 @@
       "type": "feature",
       "status": "scoped",
       "title": "Relocate Live Whop view from P&L to Deals page",
-      "problem": "The live per-rep Whop cash view is buried at the bottom of the P&L (money-summary) page. To see live deal-level activity Lloyd has to open P&L, when it belongs alongside the historical deal reconciliation on the Deals page.",
+      "problem": "The live per-rep Whop cash view is buried at the bottom of the P&L (money-summary) page. To see live deal-level activity Lloyd has to open P&L, when it belongs alongside the historical deal reconciliation on the Deals page. CRITICAL UX FLAW (2026-06-11): the Live Whop section is chained to the P&L period dropdown, which is populated from months with P&L data loaded (revenue_line_items/expenses), NOT from months with Whop deals. The dropdown stops at Apr 2026; May/June Whop deals exist in the DB but are UNREACHABLE, and the live view cannot show the current month — undercutting its real-time purpose.",
       "why_important": "P&L is the financial summary; Deals is where deal-level detail lives. Splitting live deals onto P&L makes the information architecture confusing and the live view hard to find. Lloyd explicitly requested the move (2026-06-11).",
       "user_story": "When I open the Deals page, I expect to switch between historical/reconciled deals and live/this-month deals in one place. Currently: reconciled deals are on the Deals page, but live this-month deals are on a separate P&L page.",
       "success_definition": "The Deals page shows a Historical/Live toggle; the Live lens renders the per-rep collapsible Whop view (net cash, contract, fee + confidence badges); the P&L page no longer contains the Live Whop section.",
@@ -255,7 +255,9 @@
         "Live lens renders per-rep collapsible buckets with net cash, gross contract, Splitit/ClarityPay -15% badges, HIGH/MEDIUM confidence badges, and an 'as of ... refreshed nightly' line",
         "Live lens shows the correct empty state for a month with no Whop deals (does not error)",
         "P&L page (static/pnl.html) no longer renders #whop-live-section and no longer calls loadWhopLive",
-        "GET /api/dashboard/pnl/whop-live still returns 200 and drives the Live lens unchanged"
+        "GET /api/dashboard/pnl/whop-live still returns 200 and drives the Live lens unchanged",
+        "Live lens has its OWN month selector populated from months that have Whop deals (deal_whop_matches.first_payment_date), defaulting to the CURRENT month — decoupled from the P&L revenue-period dropdown so recent/current months (e.g. May/June 2026) are always reachable",
+        "A rep's deals are findable without hunting month-by-month — the Live lens makes the active month obvious and/or offers a rep-centric view spanning months (decide in /ux-design)"
       ],
       "general_approach": "Pure frontend relocation. Move loadWhopLive/renderWhopLiveSection/renderRepBucket + the Live Whop CSS from pnl.html into deals.html. Add a lens toggle on the Deals page: 'Historical' = existing reconciliation cards/table, 'Live' = the relocated Whop view (calls the existing GET /pnl/whop-live for the current month). Remove the #whop-live-section block + loadWhopLive call from pnl.html. No backend change.",
       "files_in_scope": [
@@ -278,7 +280,9 @@
         "Current month has zero Whop deals -> Live lens shows 'No Whop-settled deals for this month yet', not an error",
         "Deals page has no month selector today; the Live lens needs a current-month default (and possibly a month picker) distinct from the Historical filter controls",
         "Deals with NULL ghl_owner_name still group under 'Unassigned' in the Live lens (expected)",
-        "Switching lenses must not double-fetch or leave stale DOM from the other lens"
+        "Switching lenses must not double-fetch or leave stale DOM from the other lens",
+        "Current month has Whop deals but no P&L data loaded -> month MUST still appear in the Live lens selector (the bug being fixed)",
+        "A rep (e.g. Armando) has deals scattered across months -> appears in each month's lens; no single-month view shows all (the discoverability gap that triggered this)"
       ],
       "failure_modes": [
         "Live JS moved but its CSS left behind -> badges/buckets render unstyled",
