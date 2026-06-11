@@ -2,7 +2,7 @@
   "project_name": "QS Revenue Dashboard",
   "description": "Internal sales performance dashboard \u2014 call volume, show rates, qualification, lead source attribution, compliance tracking, funnel economics",
   "business_entity": "quantum_scaling",
-  "last_updated": "2026-06-12T01:15:00Z",
+  "last_updated": "2026-06-12T11:35:00Z",
   "current_state": {
     "phase_name": "Phase 1 - Live & Iterating",
     "status": "live"
@@ -19,14 +19,12 @@
     "goal": "Full internal dashboard for Lloyd to monitor sales team performance: call volume per rep, show rates, qualification breakdowns, lead source attribution, compliance tracking, funnel economics with RORI",
     "current_focus": [
       "Whop Live Revenue SHIPPED + verified live (2026-06-11)",
-      "Phase 2 next: Financial integration (auto-pull Xero spend + rep comp)"
+      "Phase 2 (Xero autopull) DROPPED 2026-06-12 \u2014 unreconciled Xero unfit for live dashboard; Funnel Economics inputs stay manual (correct for trailing/reconciled metric)"
     ],
     "immediate_next_steps": [
-      "Monitor /xero/sync-invoices endpoint \u2014 check for EUR\u2192USD conversion accuracy, invoice count alignment with Xero",
-      "Phase 2a: Create Xero accounting queries for marketing spend + rep comp per period",
-      "Phase 2b: Build /xero/sync-financials endpoint \u2014 auto-pull marketing spend and rep comp from Xero",
-      "Phase 2c: Modify period_financial_inputs panel \u2014 auto-populate from Xero endpoint instead of manual entry",
-      "Phase 2d: Add Xero Contacts (AP) verification \u2014 ensure rep names in Xero match GHL rep names for matching"
+      "Optional: monitor /xero/sync-invoices endpoint for accuracy; optional: build Run Match pagination fix for full-history net_cash backfill",
+      "Phase 3 candidate (advanced analytics) deferred until 4-6 weeks of synced data accrues",
+      "No active build queued \u2014 dashboard is mature"
     ],
     "known_issues": [
       {
