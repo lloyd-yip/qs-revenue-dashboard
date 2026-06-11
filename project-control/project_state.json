@@ -13,12 +13,12 @@
     "end_state": "A comprehensive revenue intelligence platform with real-time KPIs, financial integration (Xero for actual revenue vs pipeline), automated anomaly detection, and API endpoints that feed the OpenClaw agent layer for cross-app synthesis.",
   "current_summary": "Dashboard is live and in daily use across 5 tabs: Sales Performance, Lead Quality by Channel, Pipeline Intelligence, Funnel Economics, and Compliance. Xero invoice sync LIVE \u2014 Contract Value on P&L page updates monthly from actual ACCREC invoices with EUR\u2192USD conversion. RORI columns display but require manual period financial inputs (Phase 2 will auto-pull from Xero). Show rate, compliance tracking, and lead quality distribution all working. Lloyd has real-time visibility into rep performance and pipeline economics."
   },
-  "resume_here": "Manual whop-refresh endpoint shipped (2026-06-12, commit 10ae80f): POST /pnl/whop-refresh provides curl-verification surface for EOD batch job + gives Lloyd one-click refresh-now capability. Dashboard is live and in daily use across 5 tabs. Whop Live Revenue (per-rep cash) live (2026-06-11). Xero invoice sync live (2026-06-10) — contract value auto-updates monthly. Next: Phase 2 Financial Integration — auto-pull marketing spend + rep comp from Xero to eliminate manual Funnel Economics inputs.",
+  "resume_here": "Whop Live Revenue SHIPPED + VERIFIED LIVE (2026-06-11). Per-rep net cash + contract value on P&L page. Verified with real data: endpoint 200/422, migration whop001 applied, Splitit/ClarityPay 15% fee exact (Judith DeFeo net $15,296 = $17,995x0.85), internal-plan no-fee, anomaly flag fires (May: 2 flagged), per-rep grouping + Unassigned, screenshot captured. Current month (June) correctly empty until deals close; EOD cron (22:00 UTC) refreshes nightly. Payment model documented in knowledge/whop_payment_model.md. RESIDUALS (await Lloyd): (1) full-history net_cash backfill incomplete — Run Match HTTP-times-out at Railway gateway (~5min sync limit); recent months OK, older months fall back to total_paid until reprocessed — fix would be batching Run Match or a paginated refresh; (2) per-rep attribution weak historically (ghl_owner_name mostly NULL); (3) refunds not subtracted from total_paid. Next options: Phase 2 Financial Integration (Xero spend/comp autopull) OR address residuals.",
   "current_phase": {
     "name": "Phase 1 - Live & Iterating",
     "goal": "Full internal dashboard for Lloyd to monitor sales team performance: call volume per rep, show rates, qualification breakdowns, lead source attribution, compliance tracking, funnel economics with RORI",
     "current_focus": [
-      "Whop Live Revenue SHIPPED (commit 15da8da, 2026-06-11)",
+      "Whop Live Revenue SHIPPED + verified live (2026-06-11)",
       "Phase 2 next: Financial integration (auto-pull Xero spend + rep comp)"
     ],
     "immediate_next_steps": [
@@ -128,6 +128,11 @@
     }
   ],
   "decision_log": [
+    {
+      "decision": "Whop processor detection is PAYMENT-level, not membership-level; net cash = total_paid x 0.85 for Splitit/ClarityPay, total_paid otherwise; internal-plan length from split_pay_required_payments",
+      "reasoning": "Verified against live Whop API 2026-06-11. ClarityPay is invisible on the membership (reads 'multi_psp'); only payment.payment_processor exposes 'claritypay'. Financed deals (Splitit/ClarityPay) settle 100% upfront as a single payment, so total_paid x 0.85 is correct from day one. Internal plans only record collected installments, so len(payments) under-counts — split_pay_required_payments is the authoritative plan length. Full model in knowledge/whop_payment_model.md.",
+      "phase": "Phase 1"
+    },
     {
       "decision": "Xero invoices are the authoritative source for contract value (not GHL projected_deal_size)",
       "reasoning": "GHL projected_deal_size is unreliable — reps don't fill it in consistently. Xero ACCREC invoices reflect what was actually billed to clients.",
