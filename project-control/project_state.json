@@ -2,7 +2,7 @@
   "project_name": "QS Revenue Dashboard",
   "description": "Internal sales performance dashboard \u2014 call volume, show rates, qualification, lead source attribution, compliance tracking, funnel economics",
   "business_entity": "quantum_scaling",
-  "last_updated": "2026-06-10T20:51:24Z",
+  "last_updated": "2026-06-11T02:30:00Z",
   "current_state": {
     "phase_name": "Phase 1 - Live & Iterating",
     "status": "live"
@@ -11,9 +11,9 @@
     "what": "The QS Revenue Dashboard pulls sales data from GoHighLevel (CRM) and turns it into a real-time performance dashboard. It tracks call volume, show rates, close rates, lead source attribution, rep-level performance, compliance, and funnel economics (RORI per rep once financial data is entered).",
     "why": "Lloyd needs to see exactly how each sales rep is performing, which lead sources are producing revenue, and where the pipeline is leaking \u2014 without manually pulling GHL reports. This is the operational nervous system for the sales org.",
     "end_state": "A comprehensive revenue intelligence platform with real-time KPIs, financial integration (Xero for actual revenue vs pipeline), automated anomaly detection, and API endpoints that feed the OpenClaw agent layer for cross-app synthesis.",
-    "current_summary": "Dashboard is live and in daily use across 5 tabs: Sales Performance, Lead Quality by Channel, Pipeline Intelligence, Funnel Economics, and Compliance. Xero invoice sync shipped \u2014 Contract Value section visible on P&L page when data exists. RORI infrastructure live, awaiting automated pull of marketing spend + rep comp from Xero (Phase 2). Funnel Economics currently uses manual entry for financial inputs. Show rate calculation is correct. Tooltips on all KPI labels. Rep breakdown shows lead quality distribution per rep."
+  "current_summary": "Dashboard is live and in daily use across 5 tabs: Sales Performance, Lead Quality by Channel, Pipeline Intelligence, Funnel Economics, and Compliance. Xero invoice sync LIVE \u2014 Contract Value on P&L page updates monthly from actual ACCREC invoices with EUR\u2192USD conversion. RORI columns display but require manual period financial inputs (Phase 2 will auto-pull from Xero). Show rate, compliance tracking, and lead quality distribution all working. Lloyd has real-time visibility into rep performance and pipeline economics."
   },
-  "resume_here": "Xero invoice sync shipped and live. POST /xero/sync-invoices is live on Railway. Next: monitor for data accuracy issues. Then move to Phase 2 automation (pull marketing spend and rep comp from Xero automatically instead of manual entry).",
+  "resume_here": "Xero invoice sync shipped and live on Railway. Contract Value now pulls from actual signed invoices (ACCREC) instead of unreliable GHL projected_deal_size. Next: monitor for EUR→USD conversion accuracy and invoice count alignment. Then Phase 2 automation (auto-pull marketing spend + rep comp instead of manual entry).",
   "current_phase": {
     "name": "Phase 1 - Live & Iterating",
     "goal": "Full internal dashboard for Lloyd to monitor sales team performance: call volume per rep, show rates, qualification breakdowns, lead source attribution, compliance tracking, funnel economics with RORI",
