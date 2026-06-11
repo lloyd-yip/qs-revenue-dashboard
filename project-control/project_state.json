@@ -2,7 +2,7 @@
   "project_name": "QS Revenue Dashboard",
   "description": "Internal sales performance dashboard \u2014 call volume, show rates, qualification, lead source attribution, compliance tracking, funnel economics",
   "business_entity": "quantum_scaling",
-  "last_updated": "2026-06-12T23:00:00Z",
+  "last_updated": "2026-06-13T00:15:00Z",
   "current_state": {
     "phase_name": "Phase 1 - Live & Iterating",
     "status": "live"
@@ -13,26 +13,25 @@
     "end_state": "A comprehensive revenue intelligence platform with real-time KPIs, financial integration (Xero for actual revenue vs pipeline), automated anomaly detection, and API endpoints that feed the OpenClaw agent layer for cross-app synthesis.",
   "current_summary": "Dashboard is live and in daily use across 5 tabs: Sales Performance, Lead Quality by Channel, Pipeline Intelligence, Funnel Economics, and Compliance. Xero invoice sync LIVE \u2014 Contract Value on P&L page updates monthly from actual ACCREC invoices with EUR\u2192USD conversion. RORI columns display but require manual period financial inputs (Phase 2 will auto-pull from Xero). Show rate, compliance tracking, and lead quality distribution all working. Lloyd has real-time visibility into rep performance and pipeline economics."
   },
-  "resume_here": "Deals Rework root cause locked (2026-06-12): missing user names come from empty `name` field in GHL /users responses (users have firstName/lastName but blank name → get_users() groups as 'Unassigned'). Fix spec written to project-control/deals-rework-plan.md Step 2: change get_users() to resolve name → firstName+lastName → email (handles empty-name case), then full-sync to backfill all unresolved IDs. Build: single-line fix + verify on Ryan deals, done. NEXT: /build-loop on get_users() fix, then merge.",
+  "resume_here": "Deal attribution fixed: get_users() now resolves missing names via firstName+lastName+email fallback (commit be9837d). Deploy pushed to Railway. NEXT: full-sync endpoint to backfill all unresolved opportunity owner_names, then verify P&L Unassigned bucket collapses.",
   "current_phase": {
     "name": "Phase 1 - Live & Iterating",
     "goal": "Full internal dashboard for Lloyd to monitor sales team performance: call volume per rep, show rates, qualification breakdowns, lead source attribution, compliance tracking, funnel economics with RORI",
     "current_focus": [
-      "Whop Live Revenue SHIPPED + verified live (2026-06-11)",
-      "Phase 2 (Xero autopull) DROPPED 2026-06-12 \u2014 unreconciled Xero unfit for live dashboard; Funnel Economics inputs stay manual (correct for trailing/reconciled metric)"
+      "Deal attribution root-cause fixed & deployed (2026-06-12): get_users() now resolves empty names via firstName+lastName+email fallback",
+      "Next: full-sync to backfill all April unresolved IDs, verify Unassigned bucket collapses"
     ],
     "immediate_next_steps": [
-      "Execute Deals Rework fix (get_users() name resolution) \u2014 single-line code change in sync/ghl_client.py, tested on Ryan deals (owner_name resolution)",
-      "Run full-sync after deploy to backfill all unresolved opportunity owner_name values",
-      "Verify: check /api/dashboard/deals/matches shows owner names for April Unassigned deals, P&L Unassigned bucket shrinks",
-      "Monitor /xero/sync-invoices endpoint for accuracy (optional Phase 2 candidate)"
+      "POST /api/sync/trigger?sync_type=full to backfill all opportunity owner_names from fixed get_users()",
+      "Verify: GET /api/dashboard/deals/matches shows owner names for April deals; P&L Unassigned bucket collapses",
+      "Monitor weekly for attribution consistency (Xero accuracy optional, low priority)"
     ],
     "known_issues": [
       {
         "title": "Deals attribution: Unassigned reps in April ~40% due to missing names in GHL user records",
         "severity": "high",
-        "status": "root cause confirmed 2026-06-12 \u2014 fix queued",
-        "resolution": "Change get_users() to resolve name \u2192 firstName+lastName \u2192 email (handles empty-name GHL records). Re-sync to backfill. Single-line code change."
+        "status": "FIXED 2026-06-12 \u2014 get_users() fallback deployed. Awaiting full-sync to backfill historical data.",
+        "resolution": "get_users() now resolves name via firstName+lastName+email fallback (commit be9837d). Full-sync POST /sync/trigger?sync_type=full will backfill all April unresolved IDs."
       },
       {
         "title": "Funnel Economics RORI columns all show \u2014 until marketing spend + rep comp are entered",
@@ -70,6 +69,10 @@
     }
   ],
   "recent_milestones": [
+    {
+      "description": "Deal attribution root-cause fixed (2026-06-12, commit be9837d). get_users() now resolves empty `name` fields in GHL /users responses via firstName+lastName+email fallback. This unlocks proper rep name resolution for all ~40% of April deals that were grouped as Unassigned due to missing names in GHL user records. Once full-sync runs, the P&L Unassigned bucket will collapse and reps get proper attribution. The fix is minimal and low-regression: fallback only fires when name is empty, so existing working reps (e.g., Melissa) remain untouched.",
+      "date": "2026-06-12"
+    },
     {
       "description": "Manual whop-refresh endpoint shipped (2026-06-12, commit 10ae80f). POST /pnl/whop-refresh gives Lloyd a one-click refresh-now button for the Whop cash-in data, plus provides a curl-verifiable surface for the EOD batch job (useful for troubleshooting sync failures). Dashboard now has both scheduled syncs and manual refresh capability.",
       "date": "2026-06-12"
