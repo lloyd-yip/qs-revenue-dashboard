@@ -2,7 +2,7 @@
   "project_name": "QS Revenue Dashboard",
   "description": "Internal sales performance dashboard \u2014 call volume, show rates, qualification, lead source attribution, compliance tracking, funnel economics",
   "business_entity": "quantum_scaling",
-  "last_updated": "2026-06-11T02:30:00Z",
+  "last_updated": "2026-06-11T05:00:00Z",
   "current_state": {
     "phase_name": "Phase 1 - Live & Iterating",
     "status": "live"
@@ -13,7 +13,7 @@
     "end_state": "A comprehensive revenue intelligence platform with real-time KPIs, financial integration (Xero for actual revenue vs pipeline), automated anomaly detection, and API endpoints that feed the OpenClaw agent layer for cross-app synthesis.",
   "current_summary": "Dashboard is live and in daily use across 5 tabs: Sales Performance, Lead Quality by Channel, Pipeline Intelligence, Funnel Economics, and Compliance. Xero invoice sync LIVE \u2014 Contract Value on P&L page updates monthly from actual ACCREC invoices with EUR\u2192USD conversion. RORI columns display but require manual period financial inputs (Phase 2 will auto-pull from Xero). Show rate, compliance tracking, and lead quality distribution all working. Lloyd has real-time visibility into rep performance and pipeline economics."
   },
-  "resume_here": "Xero invoice sync shipped and live on Railway. Contract Value now pulls from actual signed invoices (ACCREC) instead of unreliable GHL projected_deal_size. Next: monitor for EUR→USD conversion accuracy and invoice count alignment. Then Phase 2 automation (auto-pull marketing spend + rep comp instead of manual entry).",
+  "resume_here": "Whop Live Revenue feature designed and ready to blueprint. All decisions confirmed (2026-06-11). Architecture: extend existing DealWhopMatch infrastructure (already has is_splitit, total_paid, total_contract_value, ghl_owner_name). 5 additions: (1) migration adding is_claritypay/provider_fee_pct/net_cash_collected/plan_months_flag columns, (2) extend match_deals_whop.py with ClarityPay detection + net cash calc + anomaly flag, (3) daily EOD cron, (4) new GET /api/dashboard/pnl/whop-live endpoint, (5) P&L page 'Live Whop Revenue' section. Say 'blueprint whop-live-revenue' to proceed.",
   "current_phase": {
     "name": "Phase 1 - Live & Iterating",
     "goal": "Full internal dashboard for Lloyd to monitor sales team performance: call volume per rep, show rates, qualification breakdowns, lead source attribution, compliance tracking, funnel economics with RORI",
