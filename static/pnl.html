@@ -98,6 +98,27 @@
     .summary-card.red   { background: var(--red-dim);   border-color: var(--red-border);   }
     .summary-card .s-label { font-size: 11px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
     .summary-card .s-value { font-size: 26px; font-weight: 700; letter-spacing: -0.5px; }
+
+    /* ── Live Whop Revenue ── */
+    .whop-last-refreshed { font-size: 11px; color: var(--text3); margin: -4px 0 12px; }
+    .whop-totals {
+      display: flex; gap: 24px; flex-wrap: wrap;
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 14px 18px; margin-bottom: 14px;
+    }
+    .whop-totals .wt-item { display: flex; flex-direction: column; gap: 2px; }
+    .whop-totals .wt-label { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.05em; }
+    .whop-totals .wt-value { font-size: 18px; font-weight: 700; letter-spacing: -0.3px; }
+    .confidence-badge {
+      font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 4px;
+      text-transform: uppercase; letter-spacing: 0.04em; vertical-align: middle;
+    }
+    .confidence-badge.high   { color: var(--green);  background: var(--green-dim); }
+    .confidence-badge.medium { color: var(--yellow); background: var(--yellow-dim); }
+    .flag-badge {
+      font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 4px;
+      color: var(--yellow); background: var(--yellow-dim); margin-left: 4px; vertical-align: middle;
+    }
     .summary-card.green .s-value { color: var(--green); }
     .summary-card.red   .s-value { color: var(--red);   }
     .summary-card .s-sub { font-size: 11px; color: var(--text3); margin-top: 4px; }
@@ -306,6 +327,9 @@
     const expData = expRes.ok  ? (await expRes.json()).data  : null;
 
     renderPnL(revData, expData, start, end);
+
+    // Live Whop revenue — fetched separately (different source + cadence), fills its own section.
+    await loadWhopLive(start.slice(0, 7));  // "YYYY-MM"
   }
 
   // ── Render ──────────────────────────────────────────────────────────────────
@@ -404,6 +428,9 @@
       });
     }
 
+    // ── Live Whop Revenue section (filled async by loadWhopLive) ──
+    html += `<div id="whop-live-section"></div>`;
+
     // ── Expenses section ──
     html += `<div class="section-header">Expense Breakdown</div>`;
     if (exp && exp.buckets && exp.buckets.length > 0) {
@@ -475,6 +502,89 @@
 
   function toggleBucket(id) {
     document.getElementById("bucket-" + id).classList.toggle("open");
+  }
+
+  // ── Live Whop Revenue ─────────────────────────────────────────────────────────
+  // Fetches real-time Whop cash + contract value per rep for the month and fills the
+  // #whop-live-section placeholder. Refreshed nightly by the daily_whop_refresh cron.
+  async function loadWhopLive(month) {
+    const el = document.getElementById("whop-live-section");
+    if (!el) return;
+    el.innerHTML = `<div class="section-header">Live Whop Revenue</div><div class="no-data-inline">Loading live Whop data…</div>`;
+    try {
+      const res = await fetch(`${API}/api/dashboard/pnl/whop-live?month=${month}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      renderWhopLiveSection(await res.json());
+    } catch (e) {
+      el.innerHTML = `<div class="section-header">Live Whop Revenue</div><div class="no-data-inline">Could not load live Whop data (${e.message})</div>`;
+    }
+  }
+
+  function renderWhopLiveSection(data) {
+    const el = document.getElementById("whop-live-section");
+    if (!el) return;
+    const reps = data.reps || [];
+    const t = data.totals || {};
+
+    let html = `<div class="section-header">Live Whop Revenue</div>`;
+    const asOf = data.last_refreshed ? `As of ${new Date(data.last_refreshed).toLocaleString()} · ` : "";
+    html += `<div class="whop-last-refreshed">${asOf}Whop-settled deals only (excludes wire / Stripe-only) · refreshed nightly</div>`;
+
+    if (reps.length === 0) {
+      html += `<div class="no-data-inline">No Whop-settled deals for this month yet</div>`;
+      el.innerHTML = html;
+      return;
+    }
+
+    html += `
+      <div class="whop-totals">
+        <div class="wt-item"><span class="wt-label">Net Cash Collected</span><span class="wt-value">${fmt(t.net_cash_collected || 0)}</span></div>
+        <div class="wt-item"><span class="wt-label">Gross Contract Value</span><span class="wt-value">${fmt(t.gross_contract_value || 0)}</span></div>
+        <div class="wt-item"><span class="wt-label">Deals</span><span class="wt-value">${t.deal_count || 0}</span></div>
+        <div class="wt-item"><span class="wt-label">Flagged</span><span class="wt-value">${t.flagged_count || 0}</span></div>
+      </div>
+    `;
+    reps.forEach((rep, i) => { html += renderRepBucket(rep, i === 0); });
+    el.innerHTML = html;
+  }
+
+  function renderRepBucket(rep, isFirst) {
+    const id = "whop-" + rep.rep_name.replace(/[^a-zA-Z0-9]/g, "");
+    const dealRows = rep.deals.map(d => {
+      const conf = `<span class="confidence-badge ${d.match_confidence}">${d.match_confidence}</span>`;
+      let flags = "";
+      if (d.is_splitit)      flags += `<span class="flag-badge">Splitit −15%</span>`;
+      if (d.is_claritypay)   flags += `<span class="flag-badge">ClarityPay −15%</span>`;
+      if (d.plan_months_flag) flags += `<span class="flag-badge">⚠ ${d.total_installments}-pmt plan</span>`;
+      const gross = d.gross_contract_value != null ? `contract ${fmt(d.gross_contract_value)}` : "";
+      const fpd   = d.first_payment_date ? ` · ${d.first_payment_date}` : "";
+      const net   = d.net_cash_collected != null ? fmt(d.net_cash_collected) : "—";
+      return `
+        <div class="item-row">
+          <div>
+            <div class="item-name">${d.ghl_opportunity_name || d.ghl_opportunity_id} ${conf}${flags}</div>
+            <div class="item-meta">${gross}${fpd}</div>
+          </div>
+          <div class="item-amount">${net}</div>
+        </div>`;
+    }).join("");
+    const flaggedBadge = rep.flagged_count > 0 ? `<span class="flag-badge">${rep.flagged_count} flagged</span>` : "";
+    return `
+      <div class="bucket ${isFirst ? "open" : ""}" id="bucket-${id}">
+        <div class="bucket-header" onclick="toggleBucket('${id}')">
+          <div class="bucket-header-left">
+            <svg class="bucket-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 18 15 12 9 6"/>
+            </svg>
+            <span class="bucket-name">${rep.rep_name}</span>
+            <span class="bucket-count">${rep.deal_count} deal${rep.deal_count !== 1 ? "s" : ""}</span>
+            ${flaggedBadge}
+          </div>
+          <span class="bucket-total">${fmt(rep.net_cash_collected)}</span>
+        </div>
+        <div class="bucket-body">${dealRows}</div>
+      </div>
+    `;
   }
 
   // ── Sync from Xero ───────────────────────────────────────────────────────────

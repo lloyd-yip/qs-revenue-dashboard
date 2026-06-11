@@ -16,6 +16,7 @@ from sqlalchemy import select
 
 from api.routers import metrics, sync as sync_router
 from api.routers import dashboard as dashboard_router
+from api.routers import whop_live as whop_live_router
 from api.routers import xero_auth as xero_auth_router
 from api.routers import xero_invoices as xero_invoices_router
 from api.schemas.responses import HealthResponse
@@ -99,6 +100,9 @@ app.include_router(sync_router.router, dependencies=[Depends(verify_token)])
 
 # Dashboard router — no auth, browser-facing read-only analytics
 app.include_router(dashboard_router.router)
+
+# Live Whop Revenue router — GET /api/dashboard/pnl/whop-live, no auth (browser-facing)
+app.include_router(whop_live_router.router)
 
 # Xero OAuth router — /xero/auth and /xero/callback are public (OAuth flow requires it)
 # /xero/sync-revenue is protected (bearer token checked inside the router itself)

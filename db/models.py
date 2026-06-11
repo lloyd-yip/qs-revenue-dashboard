@@ -358,9 +358,23 @@ class DealWhopMatch(Base):
     # first_payment_date: canonical close date — earliest paid Whop payment.
     # More reliable than ghl_close_date (can't be manually set to future dates).
     first_payment_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    # total_installments: len(all Whop payment records) as plan-length proxy.
-    # Assumes Whop pre-creates future payment records at signup. Confirmed on first Run Match.
+    # total_installments: authoritative plan length. Sourced from the membership's
+    # split_pay_required_payments field (NOT len(payments) — Whop does not pre-create
+    # future installment records; an internal plan shows only the installments collected
+    # so far). Confirmed against live Whop data 2026-06-11.
     total_installments: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # ── Live revenue fields (Whop Live Revenue feature, 2026-06-11) ──
+    # is_claritypay: detected from payment.payment_processor == "claritypay" (payment-level
+    #   only — membership.payment_processor reads "multi_psp" for ClarityPay deals).
+    is_claritypay: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # provider_fee_pct: 0.15 for Splitit/ClarityPay (external financing), 0.0 otherwise.
+    provider_fee_pct: Mapped[float | None] = mapped_column(Numeric(5, 4), nullable=True)
+    # net_cash_collected: total_paid * (1 - provider_fee_pct). What QS actually keeps.
+    net_cash_collected: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    # plan_months_flag: True = internal plan (no Splitit/ClarityPay) AND total_installments > 3.
+    #   Anomaly signal — unusually long internal payment plan, flagged for review.
+    plan_months_flag: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     # Operational timestamps
     matched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

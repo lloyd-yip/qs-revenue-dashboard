@@ -9,6 +9,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from config import settings
 from sync.appointment_resolver import resolve_appointments
 from sync.sync_engine import run_sync
+from sync.whop_refresh import refresh_current_month_payment_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,18 @@ def create_scheduler() -> AsyncIOScheduler:
         max_instances=1,
     )
 
+    # Daily EOD Whop refresh — 22:00 UTC (~6pm EST). Re-fetches current-month Whop
+    # payments so the Live Whop Revenue P&L section reflects last night's cash.
+    scheduler.add_job(
+        _run_whop_refresh,
+        trigger=CronTrigger(hour=22, minute=0, timezone="UTC"),
+        id="daily_whop_refresh",
+        name="Daily EOD Whop payment refresh",
+        replace_existing=True,
+        misfire_grace_time=300,
+        max_instances=1,
+    )
+
     # Weekly full sync on Sundays at configured hour — catches any data GHL didn't surface incrementally
     scheduler.add_job(
         _run_full,
@@ -66,6 +79,15 @@ async def _run_appointment_resolver() -> None:
         logger.info("Scheduler: appointment resolver complete — %s", summary)
     except Exception as exc:
         logger.error("Scheduler: appointment resolver failed — %s", exc)
+
+
+async def _run_whop_refresh() -> None:
+    logger.info("Scheduler: starting daily EOD Whop payment refresh")
+    try:
+        stats = await refresh_current_month_payment_metrics()
+        logger.info("Scheduler: Whop refresh complete — %s", stats)
+    except Exception as exc:
+        logger.error("Scheduler: Whop refresh failed — %s", exc)
 
 
 async def _run_incremental() -> None:

@@ -262,20 +262,33 @@ def _extract_whop_identity(m: dict) -> tuple[str, str]:
     return email.lower().strip(), name.strip()
 
 
-def _compute_payment_metrics(payments: list[dict], ghl_monetary_value: float) -> dict:
+def _detect_external_processor(paid_payments: list[dict]) -> tuple[bool, bool]:
+    """Detect whether any paid payment used an external financing processor.
+
+    Returns (is_splitit, is_claritypay). Both signals read payment.payment_processor —
+    the only place ClarityPay is visible (membership.payment_processor reads "multi_psp"
+    for ClarityPay deals). Verified against live Whop data 2026-06-11.
+    """
+    processors = {(p.get("payment_processor") or "").lower() for p in paid_payments}
+    return ("splitit" in processors, "claritypay" in processors)
+
+
+def _compute_payment_metrics(
+    payments: list[dict],
+    ghl_monetary_value: float,
+    installments_override: int | None = None,
+) -> dict:
     """Derive payment summary from raw Whop payment objects.
 
-    Returns:
-        upfront_cash, total_paid, payment_count, is_financing, remaining_ar,
-        is_splitit, first_payment_date, total_installments
+    Returns upfront_cash, total_paid, payment_count, is_financing, remaining_ar,
+    is_splitit, is_claritypay, provider_fee_pct, net_cash_collected, plan_months_flag,
+    first_payment_date, total_installments.
 
-    total_installments = len(ALL payment records, all statuses).
-    This assumes Whop pre-creates future payment records at signup (so the
-    full plan length is visible immediately). The debug log below confirms
-    this on the first Run Match — look for lines starting with
-    "[payment-debug]" in Railway logs after triggering Run Match.
-    If total_installments == payment_count for all deals, Whop does NOT
-    pre-create future records and we need a different source (plan object).
+    installments_override: the membership's split_pay_required_payments — the
+    authoritative plan length. Whop does NOT pre-create future installment records,
+    so len(payments) under-counts internal plans (a 6-month plan shows only the
+    installments collected so far). When provided, it sets total_installments and
+    drives plan_months_flag. Falls back to len(payments) when absent.
     """
     paid = [
         p for p in payments
@@ -293,38 +306,45 @@ def _compute_payment_metrics(payments: list[dict], ghl_monetary_value: float) ->
     # made and $14k still owed is absolutely a financed deal.
     is_financing = bool(remaining_ar and remaining_ar > 0)
 
-    # total_installments: count ALL payment records (paid + pending/future).
-    # If Whop pre-creates future records, this equals the full plan length.
-    total_installments = len(payments) if payments else None
+    # ── Processor detection + net cash (payment-level) ──────────────────────
+    # Splitit / ClarityPay = external financing: QS receives the full contract
+    # upfront, minus a 15% fee. Whop records these as a single upfront payment,
+    # so total_paid == full contract and net = total_paid * 0.85.
+    # Internal plans / pay-in-full: no fee, net = total_paid (cash collected to date).
+    is_splitit, is_claritypay = _detect_external_processor(paid)
+    is_external = is_splitit or is_claritypay
+    provider_fee_pct = 0.15 if is_external else 0.0
+    net_cash_collected = round(total_paid * (1 - provider_fee_pct), 2)
 
-    # Debug log — remove after first Run Match confirms Whop pre-creates future records.
-    # Look for [payment-debug] lines in Railway logs.
-    if payments:
-        all_statuses = [p.get("status", "unknown") for p in payments]
-        logger.info(
-            f"[payment-debug] total={len(payments)} paid={payment_count} "
-            f"statuses={all_statuses[:20]}"
-        )
+    # total_installments: authoritative plan length from the membership's
+    # split_pay_required_payments (passed as installments_override). len(payments)
+    # under-counts internal plans because Whop does not pre-create future records.
+    total_installments = (
+        installments_override if installments_override
+        else (len(payments) if payments else None)
+    )
+    # plan_months_flag: internal plan (no external financing) running longer than 3.
+    plan_months_flag = bool(
+        not is_external
+        and total_installments is not None
+        and total_installments > 3
+    )
 
-    # Upfront cash: Splitit = 100% cash collect (QS receives full amount
-    # upfront regardless of customer installment schedule). Otherwise, first
-    # payment amount.
+    # Upfront cash: external financing = full amount upfront (sum of the financed
+    # payment records). Otherwise the first payment amount.
     upfront_cash = None
-    is_splitit = False
     first_payment_date = None
 
     if paid:
-        splitit_payments = [
-            p for p in paid
-            if (p.get("payment_processor") or "").lower() == "splitit"
-        ]
-        splitit_total = sum(
-            float(p.get("final_amount") or p.get("total") or 0)
-            for p in splitit_payments
-        )
-        if splitit_total > 0:
-            upfront_cash = splitit_total
-            is_splitit = True
+        if is_external:
+            ext_payments = [
+                p for p in paid
+                if (p.get("payment_processor") or "").lower() in ("splitit", "claritypay")
+            ]
+            upfront_cash = sum(
+                float(p.get("final_amount") or p.get("total") or 0)
+                for p in ext_payments
+            )
         else:
             first = min(paid, key=lambda p: p.get("created_at") or p.get("paid_at") or 0)
             upfront_cash = float(first.get("final_amount") or first.get("total") or 0)
@@ -351,6 +371,10 @@ def _compute_payment_metrics(payments: list[dict], ghl_monetary_value: float) ->
         "total_contract_value": round(contract_value, 2) if contract_value else None,
         "remaining_ar": round(remaining_ar, 2) if remaining_ar is not None else None,
         "is_splitit": is_splitit,
+        "is_claritypay": is_claritypay,
+        "provider_fee_pct": provider_fee_pct,
+        "net_cash_collected": net_cash_collected,
+        "plan_months_flag": plan_months_flag,
         "first_payment_date": first_payment_date,
         "total_installments": total_installments,
     }
@@ -509,6 +533,10 @@ def _compute_stripe_payment_metrics(
         "total_contract_value": round(contract_value, 2) if contract_value else None,
         "remaining_ar": round(remaining_ar, 2) if remaining_ar is not None else None,
         "is_splitit": False,  # Splitit is Whop-specific
+        "is_claritypay": False,  # ClarityPay is Whop-specific
+        "provider_fee_pct": 0.0,  # Stripe charges are face value — no financing fee
+        "net_cash_collected": round(total_paid, 2),
+        "plan_months_flag": False,  # Stripe deals are not QS Whop internal plans
         "first_payment_date": first_payment_date,
         "total_installments": payment_count,
     }
@@ -788,7 +816,8 @@ async def _match_one_deal(
                 )
                 if payments:
                     metrics = _compute_payment_metrics(
-                        payments, float(deal.monetary_value or 0)
+                        payments, float(deal.monetary_value or 0),
+                        installments_override=existing.total_installments,
                     )
                     enriched = await enrich_deal_match_payments(
                         session, deal.ghl_opportunity_id, metrics
@@ -927,22 +956,19 @@ async def _match_one_deal(
         # Fetch payment metrics for HIGH and MEDIUM matches only
         if confidence in ("high", "medium") and best_m.get("id"):
             payments = await _fetch_membership_payments(whop_client, best_m["id"])
+            # split_pay_required_payments = authoritative plan length (set at membership
+            # creation for QS internal financing plans). Passed so total_installments and
+            # plan_months_flag derive from it, not from len(payments) which under-counts.
+            split_pay_count = best_m.get("split_pay_required_payments")
             metrics = _compute_payment_metrics(
-                payments, float(deal.monetary_value or 0)
+                payments, float(deal.monetary_value or 0),
+                installments_override=split_pay_count,
             )
             record.update(metrics)
-
-            # Override total_installments with the authoritative Whop field.
-            # split_pay_required_payments = total # of payments the deal requires
-            # (set at membership creation for QS's internal financing plans).
-            # Whop does NOT always pre-create future payment records, so counting
-            # len(payments) can under-count. This membership-level field is correct.
-            split_pay_count = best_m.get("split_pay_required_payments")
             if split_pay_count:
-                record["total_installments"] = split_pay_count
                 logger.info(
                     f"  split_pay_required_payments={split_pay_count} "
-                    f"→ total_installments override for {best_m.get('id')}"
+                    f"→ total_installments for {best_m.get('id')}"
                 )
 
     await upsert_deal_match(session, record)

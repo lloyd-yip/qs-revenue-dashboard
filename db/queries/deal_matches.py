@@ -84,6 +84,10 @@ async def upsert_deal_match(session: AsyncSession, data: dict) -> None:
             is_splitit=data.get("is_splitit"),
             first_payment_date=data.get("first_payment_date"),
             total_installments=data.get("total_installments"),
+            is_claritypay=data.get("is_claritypay"),
+            provider_fee_pct=data.get("provider_fee_pct"),
+            net_cash_collected=data.get("net_cash_collected"),
+            plan_months_flag=data.get("plan_months_flag"),
             matched_at=func.now(),
             metrics_updated_at=func.now() if data.get("total_paid") is not None else None,
         )
@@ -118,6 +122,10 @@ async def upsert_deal_match(session: AsyncSession, data: dict) -> None:
                 "is_splitit": data.get("is_splitit"),
                 "first_payment_date": data.get("first_payment_date"),
                 "total_installments": data.get("total_installments"),
+                "is_claritypay": data.get("is_claritypay"),
+                "provider_fee_pct": data.get("provider_fee_pct"),
+                "net_cash_collected": data.get("net_cash_collected"),
+                "plan_months_flag": data.get("plan_months_flag"),
                 "matched_at": func.now(),
                 "metrics_updated_at": func.now() if data.get("total_paid") is not None else None,
                 "updated_at": func.now(),
@@ -176,6 +184,18 @@ async def enrich_deal_match_payments(
 
     if existing.total_installments is None and payment_data.get("total_installments"):
         updates["total_installments"] = payment_data["total_installments"]
+
+    if existing.net_cash_collected is None and payment_data.get("net_cash_collected") is not None:
+        updates["net_cash_collected"] = payment_data["net_cash_collected"]
+
+    if existing.is_claritypay is None and payment_data.get("is_claritypay") is not None:
+        updates["is_claritypay"] = payment_data["is_claritypay"]
+
+    if existing.provider_fee_pct is None and payment_data.get("provider_fee_pct") is not None:
+        updates["provider_fee_pct"] = payment_data["provider_fee_pct"]
+
+    if existing.plan_months_flag is None and payment_data.get("plan_months_flag") is not None:
+        updates["plan_months_flag"] = payment_data["plan_months_flag"]
 
     if not updates:
         return False
