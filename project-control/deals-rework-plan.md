@@ -101,3 +101,14 @@ Evidence (live GHL, 3 "Unassigned" April deals):
 **Open sub-question for the fix:** confirm `Opportunity.opportunity_owner_id` is in fact populated for these NULL-name rows (expected yes — assignedTo was a string on all sampled deals). If yes, backfill is purely internal (no GHL re-fetch beyond the user map).
 
 **Backfill scope decision (for Step 2):** targeted UPDATE (fast, internal) vs full re-sync (slow). Targeted UPDATE recommended.
+
+## STEP 2 — FIX SPEC (APPROVED 2026-06-11, no /blueprint — bug fix)
+
+Two plausible mechanisms for the unresolved IDs (can't pre-verify: no local GHL key):
+- **(B, most likely)** the user IS in `/users/` but its `name` field is empty → `u.get("name","")` returns "" → grouped as "Unassigned". (GHL users often have firstName/lastName but blank `name`.)
+- **(A, less likely)** the user isn't in the `/users/` response at all (pagination/scope). GHL `/users/?locationId=` is believed to return all location users unpaginated, so A is unlikely.
+
+1. **Fix:** `get_users()` resolves display name as `name` → `firstName+lastName` → `email` (handles B), and logs the resolved user count (observability; reveals A if count is suspiciously low). Single safe change to `sync/ghl_client.py:121`. No pagination added (unverified param names = risk for an unlikely cause); add only if behavioral verification shows A.
+2. **Backfill (reuse existing jobs — no new loop):** after deploy, trigger a **full sync** (re-resolves `opportunity_owner_name` for all opps via the fixed `get_users`) → then **Run Match** (copies names onto `DealWhopMatch.ghl_owner_name`). Fallback if full sync is too heavy/timeout-prone: a set-based `UPDATE opportunities SET owner_name = map[owner_id] WHERE owner_name IS NULL AND owner_id IS NOT NULL` (bulk, idempotent — NOT a row loop) + join-update to deal_whop_matches.
+3. **Verify:** `GET /api/dashboard/deals/matches` → Judith DeFeo & Michael now show owner "Ryan" (was Unassigned); `GET /pnl/whop-live?month=2026-04` → Unassigned bucket shrinks, real rep buckets appear; sanity-check total distinct reps is plausible (not inflated/duplicated).
+4. **Rollback:** fix is additive + idempotent; re-runnable. To revert, restore prior `get_users` and re-sync. No schema change, no migration.

@@ -119,14 +119,34 @@ class GHLClient:
         self._page_delay_s = settings.ghl_page_delay_ms / 1000.0
 
     async def get_users(self) -> dict[str, str]:
-        """Fetch all users for this location. Returns {user_id: name} map.
+        """Fetch all users for this location. Returns {user_id: display_name} map.
 
-        Called once at sync start to resolve assignedTo IDs to names.
+        Called once at sync start to resolve assignedTo IDs to names. Display name
+        falls back `name` -> `firstName lastName` -> `email` because some GHL users
+        have an empty `name` field — which previously resolved to "" and surfaced
+        every deal they closed as "Unassigned". Logs the resolved count so a
+        suspiciously low number (would indicate the /users/ response is incomplete)
+        is visible.
         """
         async with httpx.AsyncClient(timeout=30.0) as client:
             try:
                 data = await self._get(client, "/users/", {"locationId": self._location_id})
-                return {u["id"]: u.get("name", "") for u in data.get("users", [])}
+                raw = data.get("users", [])
+                users: dict[str, str] = {}
+                for u in raw:
+                    uid = u.get("id")
+                    if not uid:
+                        continue
+                    name = (
+                        (u.get("name") or "").strip()
+                        or f"{u.get('firstName', '')} {u.get('lastName', '')}".strip()
+                        or (u.get("email") or "").strip()
+                    )
+                    users[uid] = name
+                logger.info(
+                    "get_users: resolved %d users for location %s", len(users), self._location_id
+                )
+                return users
             except Exception as exc:
                 logger.warning("Failed to fetch users: %s", exc)
                 return {}
