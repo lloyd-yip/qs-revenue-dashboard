@@ -2,7 +2,7 @@
   "project_name": "QS Revenue Dashboard",
   "description": "Internal sales performance dashboard \u2014 call volume, show rates, qualification, lead source attribution, compliance tracking, funnel economics",
   "business_entity": "quantum_scaling",
-  "last_updated": "2026-06-11T05:00:00Z",
+  "last_updated": "2026-06-11T19:30:00Z",
   "current_state": {
     "phase_name": "Phase 1 - Live & Iterating",
     "status": "live"
@@ -13,7 +13,7 @@
     "end_state": "A comprehensive revenue intelligence platform with real-time KPIs, financial integration (Xero for actual revenue vs pipeline), automated anomaly detection, and API endpoints that feed the OpenClaw agent layer for cross-app synthesis.",
   "current_summary": "Dashboard is live and in daily use across 5 tabs: Sales Performance, Lead Quality by Channel, Pipeline Intelligence, Funnel Economics, and Compliance. Xero invoice sync LIVE \u2014 Contract Value on P&L page updates monthly from actual ACCREC invoices with EUR\u2192USD conversion. RORI columns display but require manual period financial inputs (Phase 2 will auto-pull from Xero). Show rate, compliance tracking, and lead quality distribution all working. Lloyd has real-time visibility into rep performance and pipeline economics."
   },
-  "resume_here": "Active blueprint: blueprints/whop_live_revenue_blueprint_v2.md — read it before building. Approved by Lloyd. Fill in function bodies only, structure is locked. Migration whop001 must be applied first (down_revision=wise001). Key: inline splitit_payments detection in _compute_payment_metrics() must be replaced by _detect_external_processor() call.",
+  "resume_here": "Xero invoice sync SHIPPED and LIVE on Railway (2026-06-10). Contract Value now updates monthly from actual ACCREC invoices with EUR→USD auto-conversion. Next: Whop Live Revenue (blueprint v2 locked, ready to build). 7-file structure skeleton in place. Start with migration whop001 (down_revision=wise001), then fill in services/models/queries/match_deals + scheduler + dashboard route.",
   "current_phase": {
     "name": "Phase 1 - Live & Iterating",
     "goal": "Full internal dashboard for Lloyd to monitor sales team performance: call volume per rep, show rates, qualification breakdowns, lead source attribution, compliance tracking, funnel economics with RORI",
@@ -71,7 +71,7 @@
   ],
   "recent_milestones": [
     {
-      "description": "Xero invoice sync shipped \u2014 POST /xero/sync-invoices now live on Railway. Contract Value section appears on P&L page when invoice data exists. EUR\u2192USD conversion automatic. Category-scoped delete ensures re-runs are safe and never touch cash_collected rows. Founders can now sync Xero invoices monthly to track actual contract value vs pipeline value.",
+      "description": "Xero invoice sync shipped and LIVE on Railway (2026-06-10). POST /xero/sync-invoices now running in production. Contract Value section on P&L page auto-updates monthly with actual ACCREC invoices from Xero. EUR\u2192USD conversion automatic. Category-scoped delete ensures re-runs never touch cash_collected rows. Founders can now track actual contract value vs pipeline value on the Funnel Economics tab.",
       "date": "2026-06-10"
     },
     {
