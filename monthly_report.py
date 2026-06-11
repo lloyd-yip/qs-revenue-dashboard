@@ -18,8 +18,7 @@ import requests
 # ── Config ────────────────────────────────────────────────────────────────────
 API_BASE  = "https://qs-revenue-dashboard-production.up.railway.app"
 API_TOKEN = "RAILWAY_BEARER_REMOVED"
-SMTP_USER = "lloyd@quantum-scaling.com"
-SMTP_PASS = "rxxeukliingtgroq"
+from email_config import SMTP_USER, SMTP_PASS  # loaded from .env (gitignored) — never hardcode
 
 RECIPIENTS = ["lloyd@attractandscale.com", "scott@quantum-scaling.com", "alex@quantum-scaling.com"]
 

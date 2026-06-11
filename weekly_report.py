@@ -24,8 +24,7 @@ from compliance_email import send_compliance_emails
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 API_BASE    = "https://qs-revenue-dashboard-production.up.railway.app"
-SMTP_USER   = "lloyd@quantum-scaling.com"
-SMTP_PASS   = "rxxeukliingtgroq"
+from email_config import SMTP_USER, SMTP_PASS  # loaded from .env (gitignored) — never hardcode
 
 # Main report recipients
 RECIPIENTS  = [
