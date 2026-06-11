@@ -2,7 +2,7 @@
   "project_name": "QS Revenue Dashboard",
   "description": "Internal sales performance dashboard \u2014 call volume, show rates, qualification, lead source attribution, compliance tracking, funnel economics",
   "business_entity": "quantum_scaling",
-  "last_updated": "2026-06-12T11:35:00Z",
+  "last_updated": "2026-06-12T19:00:00Z",
   "current_state": {
     "phase_name": "Phase 1 - Live & Iterating",
     "status": "live"
@@ -121,6 +121,12 @@
     }
   ],
   "decision_log": [
+    {
+      "decision": "Phase 2 (Xero financial autopull) CANCELLED — Funnel Economics inputs remain manual",
+      "reasoning": "Xero data is only accurate AFTER human reconciliation (~10-day lag post-month-close). Auto-pulling unreconciled numbers would feed the dashboard confidently-wrong figures every period — worse than transparent manual entry. The cash-collected half shipped as Whop Live Revenue (verified 2026-06-11). The spend/comp half is NOT a build — it's a data-accuracy gate. Funnel Economics is correctly a trailing/reconciled metric. Dashboard is mature and live.",
+      "phase": "Phase 1 - Live & Iterating",
+      "date": "2026-06-12"
+    },
     {
       "decision": "Never auto-pull financials from Xero into the dashboard. Real-time inputs come from operational systems (Whop for cash, ad platforms for spend); Xero is reconciled-only.",
       "reasoning": "Xero numbers are not accurate until a human reconciles them (~10-day lag) — the same lag that motivated the Whop Live Revenue feature. Auto-pulling unreconciled Xero would feed the dashboard confidently-wrong figures every period, which is worse than deliberate manual entry. This kills the originally-planned Phase 2 'Xero autopull'. RORI is a trailing metric (needs accurate costs), so its manual reconciled inputs are appropriate and stay manual. Live/now metrics (cash collected) use operational sources; trailing/reconciled metrics (RORI) tolerate the lag.",
