@@ -13,7 +13,7 @@
     "end_state": "A comprehensive revenue intelligence platform with real-time KPIs, financial integration (Xero for actual revenue vs pipeline), automated anomaly detection, and API endpoints that feed the OpenClaw agent layer for cross-app synthesis.",
   "current_summary": "Dashboard is live and in daily use across 5 tabs: Sales Performance, Lead Quality by Channel, Pipeline Intelligence, Funnel Economics, and Compliance. Xero invoice sync LIVE \u2014 Contract Value on P&L page updates monthly from actual ACCREC invoices with EUR\u2192USD conversion. RORI columns display but require manual period financial inputs (Phase 2 will auto-pull from Xero). Show rate, compliance tracking, and lead quality distribution all working. Lloyd has real-time visibility into rep performance and pipeline economics."
   },
-  "resume_here": "Whop Live Revenue SHIPPED + VERIFIED LIVE (2026-06-11). Per-rep net cash + contract value on P&L page. Verified with real data: endpoint 200/422, migration whop001 applied, Splitit/ClarityPay 15% fee exact (Judith DeFeo net $15,296 = $17,995x0.85), internal-plan no-fee, anomaly flag fires (May: 2 flagged), per-rep grouping + Unassigned, screenshot captured. Current month (June) correctly empty until deals close; EOD cron (22:00 UTC) refreshes nightly. Payment model documented in knowledge/whop_payment_model.md. RESIDUALS (await Lloyd): (1) full-history net_cash backfill incomplete — Run Match HTTP-times-out at Railway gateway (~5min sync limit); recent months OK, older months fall back to total_paid until reprocessed — fix would be batching Run Match or a paginated refresh; (2) per-rep attribution weak historically (ghl_owner_name mostly NULL); (3) refunds not subtracted from total_paid. Next options: Phase 2 Financial Integration (Xero spend/comp autopull) OR address residuals.",
+  "resume_here": "Whop Live Revenue SHIPPED + VERIFIED LIVE (2026-06-11). Per-rep net cash + contract value on P&L page. Verified with real data: endpoint 200/422, migration whop001 applied, Splitit/ClarityPay 15% fee exact (Judith DeFeo net $15,296 = $17,995x0.85), internal-plan no-fee, anomaly flag fires (May: 2 flagged), per-rep grouping + Unassigned, screenshot captured. Current month (June) correctly empty until deals close; EOD cron (22:00 UTC) refreshes nightly. Payment model documented in knowledge/whop_payment_model.md. RESIDUALS (await Lloyd): (1) full-history net_cash backfill incomplete — Run Match HTTP-times-out at Railway gateway (~5min sync limit); recent months OK, older months fall back to total_paid until reprocessed — fix would be batching Run Match or a paginated refresh; (2) per-rep attribution weak historically (ghl_owner_name mostly NULL); (3) refunds not subtracted from total_paid. Phase 2 (Xero autopull) DROPPED 2026-06-11 — unreconciled Xero is not trustworthy for a live dashboard (see decision_log); Funnel Economics inputs stay manual. Dashboard is mature. Next candidates are only the optional residuals or Phase 3 analytics later — no active build queued.",
   "current_phase": {
     "name": "Phase 1 - Live & Iterating",
     "goal": "Full internal dashboard for Lloyd to monitor sales team performance: call volume per rep, show rates, qualification breakdowns, lead source attribution, compliance tracking, funnel economics with RORI",
@@ -44,19 +44,14 @@
     ]
   },
   "next_phase": {
-    "name": "Phase 2 - Financial Integration",
-    "goal": "Connect Xero and WAP for automated payment processing and cash collection visibility \u2014 replace manual financial inputs in Funnel Economics with live pulled data",
-    "key_features": [
-      "Xero API integration \u2014 pull total marketing spend and rep comp automatically per period",
-      "WAP integration \u2014 pull actual contract values and cash collected per deal",
-      "Funnel Economics financial inputs auto-populated instead of manually entered"
-    ],
-    "tools_and_apis": [
-      "Xero API",
-      "WAP API"
-    ],
-    "prerequisites": "Accounting data manually validated first (Phase 1 manual entry). Confirm Xero field mappings match expected format.",
-    "deferred_items": []
+    "name": "No active next phase \u2014 dashboard mature",
+    "goal": "Phase 2 (Xero/WAP financial autopull) reconsidered and DROPPED 2026-06-11. The cash-collected half shipped as Whop Live Revenue. The Xero-autopull half is cancelled: Xero is only accurate AFTER human reconciliation (~10-day lag), so auto-pulling unreconciled numbers would feed the dashboard confidently-wrong figures every period \u2014 worse than deliberate manual entry. Funnel Economics inputs stay manual, which is correct for a trailing (reconciled-cost) metric. Dashboard is live and mature. Phase 3 (advanced analytics/trends) is the next real candidate once enough synced history accrues.",
+    "key_features": [],
+    "tools_and_apis": [],
+    "prerequisites": "Phase 3 needs 4-6 weeks of synced data for meaningful trends.",
+    "deferred_items": [
+      "Xero financial autopull \u2014 CANCELLED (unreconciled Xero not trustworthy for a live dashboard; see decision_log)"
+    ]
   },
   "future_phases": [
     {
@@ -128,6 +123,11 @@
     }
   ],
   "decision_log": [
+    {
+      "decision": "Never auto-pull financials from Xero into the dashboard. Real-time inputs come from operational systems (Whop for cash, ad platforms for spend); Xero is reconciled-only.",
+      "reasoning": "Xero numbers are not accurate until a human reconciles them (~10-day lag) — the same lag that motivated the Whop Live Revenue feature. Auto-pulling unreconciled Xero would feed the dashboard confidently-wrong figures every period, which is worse than deliberate manual entry. This kills the originally-planned Phase 2 'Xero autopull'. RORI is a trailing metric (needs accurate costs), so its manual reconciled inputs are appropriate and stay manual. Live/now metrics (cash collected) use operational sources; trailing/reconciled metrics (RORI) tolerate the lag.",
+      "phase": "Phase 2"
+    },
     {
       "decision": "Whop processor detection is PAYMENT-level, not membership-level; net cash = total_paid x 0.85 for Splitit/ClarityPay, total_paid otherwise; internal-plan length from split_pay_required_payments",
       "reasoning": "Verified against live Whop API 2026-06-11. ClarityPay is invisible on the membership (reads 'multi_psp'); only payment.payment_processor exposes 'claritypay'. Financed deals (Splitit/ClarityPay) settle 100% upfront as a single payment, so total_paid x 0.85 is correct from day one. Internal plans only record collected installments, so len(payments) under-counts — split_pay_required_payments is the authoritative plan length. Full model in knowledge/whop_payment_model.md.",
