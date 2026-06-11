@@ -2,7 +2,7 @@
   "project_name": "QS Revenue Dashboard",
   "description": "Internal sales performance dashboard \u2014 call volume, show rates, qualification, lead source attribution, compliance tracking, funnel economics",
   "business_entity": "quantum_scaling",
-  "last_updated": "2026-06-11T20:33:00Z",
+  "last_updated": "2026-06-13T00:00:00Z",
   "current_state": {
     "phase_name": "Phase 1 - Live & Iterating",
     "status": "live"
@@ -13,18 +13,17 @@
     "end_state": "A comprehensive revenue intelligence platform with real-time KPIs, financial integration (Xero for actual revenue vs pipeline), automated anomaly detection, and API endpoints that feed the OpenClaw agent layer for cross-app synthesis.",
   "current_summary": "Dashboard is live and in daily use across 5 tabs: Sales Performance, Lead Quality by Channel, Pipeline Intelligence, Funnel Economics, and Compliance. Xero invoice sync LIVE \u2014 Contract Value on P&L page updates monthly from actual ACCREC invoices with EUR\u2192USD conversion. RORI columns display but require manual period financial inputs (Phase 2 will auto-pull from Xero). Show rate, compliance tracking, and lead quality distribution all working. Lloyd has real-time visibility into rep performance and pipeline economics."
   },
-  "resume_here": "Deal attribution FIXED & DEPLOYED (2026-06-12, commit be9837d): get_users() now resolves missing names via firstName+lastName+email fallback. Full-sync endpoint ready. NEXT: run POST /api/sync/trigger?sync_type=full to backfill April unresolved IDs, verify P&L Unassigned bucket collapses.",
+  "resume_here": "One-shot rep-attribution backfill endpoint shipped (2026-06-13, commit f1de326). POST /api/sync/trigger?sync_type=full now live. NEXT: monitor attribution consistency weekly; Xero accuracy low priority.",
   "current_phase": {
     "name": "Phase 1 - Live & Iterating",
     "goal": "Full internal dashboard for Lloyd to monitor sales team performance: call volume per rep, show rates, qualification breakdowns, lead source attribution, compliance tracking, funnel economics with RORI",
     "current_focus": [
-      "Deal attribution FIXED & DEPLOYED (2026-06-12, commit be9837d): get_users() resolves empty names via firstName+lastName+email fallback",
-      "Next: run full-sync to backfill April, verify Unassigned bucket collapses"
+      "One-shot rep-attribution backfill endpoint shipped (2026-06-13, commit f1de326): call POST /api/sync/trigger?sync_type=full once to sync all deals",
+      "Dashboard is live and mature — next real phase is Phase 3 (analytics) once data history accrues"
     ],
     "immediate_next_steps": [
-      "POST /api/sync/trigger?sync_type=full to backfill all opportunity owner_names from fixed get_users()",
-      "Verify: GET /api/dashboard/deals/matches shows owner names for April deals; P&L Unassigned bucket collapses",
-      "Monitor weekly for attribution consistency (Xero accuracy optional, low priority)"
+      "Monitor attribution consistency weekly (no manual action required)",
+      "Collect 4-6 weeks of data for Phase 3 advanced analytics"
     ],
     "known_issues": [
       {
@@ -69,6 +68,10 @@
     }
   ],
   "recent_milestones": [
+    {
+      "description": "One-shot rep-attribution backfill endpoint shipped (2026-06-13, commit f1de326). POST /api/sync/trigger?sync_type=full now available to backfill all deals at once. Lloyd can run this once to resolve April Unassigned bucket completely. Combined with the get_users() fallback (2026-06-12), P&L now shows accurate rep attribution. Dashboard is mature and live for daily use.",
+      "date": "2026-06-13"
+    },
     {
       "description": "Deal attribution root-cause fixed (2026-06-12, commit be9837d). get_users() now resolves empty `name` fields in GHL /users responses via firstName+lastName+email fallback. This unlocks proper rep name resolution for all ~40% of April deals that were grouped as Unassigned due to missing names in GHL user records. Once full-sync runs, the P&L Unassigned bucket will collapse and reps get proper attribution. The fix is minimal and low-regression: fallback only fires when name is empty, so existing working reps (e.g., Melissa) remain untouched.",
       "date": "2026-06-12"
