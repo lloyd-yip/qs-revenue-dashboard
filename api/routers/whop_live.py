@@ -6,6 +6,7 @@ daily_whop_refresh cron (sync/whop_refresh.py).
 """
 
 import calendar
+import logging
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -14,7 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.queries.whop_live import get_whop_live_summary_for_month
 from db.session import get_db
+from sync.whop_refresh import refresh_current_month_payment_metrics
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/dashboard", tags=["whop-live"])
 
 
@@ -93,3 +96,18 @@ async def pnl_whop_live(
         totals=data["totals"],
         last_refreshed=data["last_refreshed"],
     )
+
+
+@router.post("/pnl/whop-refresh")
+async def whop_refresh() -> dict:
+    """Manually run the current-month Whop payment refresh — the same job the EOD cron runs.
+
+    Idempotent: rows refreshed within the last 6h are skipped, so re-running is safe.
+    Returns {ok, stats:{refreshed, skipped, errors, flagged}}.
+    """
+    try:
+        stats = await refresh_current_month_payment_metrics()
+        return {"ok": True, "stats": stats}
+    except Exception as exc:
+        logger.error(f"Whop refresh failed: {exc}", exc_info=True)
+        return {"ok": False, "error": str(exc), "stats": {}}
