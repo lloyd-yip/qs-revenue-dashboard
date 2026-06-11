@@ -1,17 +1,17 @@
 {
   "project_name": "QS Revenue Dashboard",
-  "description": "Internal sales performance dashboard \u2014 call volume, show rates, qualification, lead source attribution, compliance tracking, funnel economics",
+  "description": "Internal sales performance dashboard — call volume, show rates, qualification, lead source attribution, compliance tracking, funnel economics",
   "business_entity": "quantum_scaling",
-  "last_updated": "2026-06-11T20:58:00Z",
+  "last_updated": "2026-06-11T21:15:00Z",
   "current_state": {
     "phase_name": "Phase 1 - Live & Iterating",
     "status": "live"
   },
   "project_overview": {
     "what": "The QS Revenue Dashboard pulls sales data from GoHighLevel (CRM) and turns it into a real-time performance dashboard. It tracks call volume, show rates, close rates, lead source attribution, rep-level performance, compliance, and funnel economics (RORI per rep once financial data is entered).",
-    "why": "Lloyd needs to see exactly how each sales rep is performing, which lead sources are producing revenue, and where the pipeline is leaking \u2014 without manually pulling GHL reports. This is the operational nervous system for the sales org.",
+    "why": "Lloyd needs to see exactly how each sales rep is performing, which lead sources are producing revenue, and where the pipeline is leaking — without manually pulling GHL reports. This is the operational nervous system for the sales org.",
     "end_state": "A comprehensive revenue intelligence platform with real-time KPIs, financial integration (Xero for actual revenue vs pipeline), automated anomaly detection, and API endpoints that feed the OpenClaw agent layer for cross-app synthesis.",
-  "current_summary": "Dashboard is live and in daily use across 5 tabs: Sales Performance, Lead Quality by Channel, Pipeline Intelligence, Funnel Economics, and Compliance. Xero invoice sync LIVE \u2014 Contract Value on P&L page updates monthly from actual ACCREC invoices with EUR\u2192USD conversion. RORI columns display but require manual period financial inputs (Phase 2 will auto-pull from Xero). Show rate, compliance tracking, and lead quality distribution all working. Lloyd has real-time visibility into rep performance and pipeline economics."
+    "current_summary": "Dashboard is live and in daily use across 5 tabs: Sales Performance, Lead Quality by Channel, Pipeline Intelligence, Funnel Economics, and Compliance. Xero invoice sync LIVE — Contract Value on P&L page updates monthly from actual ACCREC invoices with EUR→USD conversion. RORI columns display but require manual period financial inputs (Phase 2 will auto-pull from Xero). Show rate, compliance tracking, and lead quality distribution all working. Lloyd has real-time visibility into rep performance and pipeline economics."
   },
   "resume_here": "Rep attribution FIXED + VERIFIED + SECURED (2026-06-11). Root cause: get_users() name resolution gap → FIXED (commit be9837d: firstName+lastName+email fallback). One-shot backfill endpoint shipped (commit f1de326): POST /api/sync/trigger?sync_type=full (set-based, idempotent, FAST). Ran backfill: 76 users resolved, 3513 opportunities, 123 deals filled. Results verified: Ryan Matsumori 107 matched deals; April Unassigned 10→2 (residual 2 are legitimately owner-less, no assignedTo in GHL). SECURITY: Gmail SMTP credentials moved from source code to .env (commit f82abf8, gitignored). NEXT (Step 3 of deals-rework-plan.md): Deals-page IA redesign — move Live Whop view from P&L to Deals page (Historical + Live lenses), remove from P&L. First: run /ux-design on Deals page (top-nav consolidation deferred).",
   "current_phase": {
@@ -29,17 +29,17 @@
       {
         "title": "Deals attribution: Unassigned reps due to get_users() name resolution gap",
         "severity": "high",
-        "status": "RESOLVED + VERIFIED 2026-06-11 \u2014 fallback deployed, backfill run, deal-level confirmed (Ryan Matsumori 107 deals, April Unassigned 10->2).",
+        "status": "RESOLVED + VERIFIED 2026-06-11 — fallback deployed, backfill run, deal-level confirmed (Ryan Matsumori 107 deals, April Unassigned 10->2).",
         "resolution": "get_users() resolves name via firstName+lastName+email fallback (commit be9837d). One-shot backfill POST /api/sync/backfill-attribution (fast/idempotent) applied: 76 users, 3513 opps, 123 deals. Residual ~16 deals genuinely owner-less in GHL (no assignedTo)."
       },
       {
-        "title": "Funnel Economics RORI columns all show \u2014 until marketing spend + rep comp are entered",
+        "title": "Funnel Economics RORI columns all show — until marketing spend + rep comp are entered",
         "severity": "medium",
         "status": "open",
         "resolution": "Enter period data via the collapsible Period Financial Inputs panel on the Funnel Economics tab. Data needed: total marketing spend per period, per-rep total comp per period."
       },
       {
-        "title": "Railway deploy requires manual subtree push \u2014 origin push does NOT redeploy qs-dashboard",
+        "title": "Railway deploy requires manual subtree push — origin push does NOT redeploy qs-dashboard",
         "severity": "low",
         "status": "understood",
         "resolution": "Deploy cmd: git push qs-dashboard $(git subtree split --prefix=qs-dashboard HEAD):main --force"
@@ -47,13 +47,13 @@
     ]
   },
   "next_phase": {
-    "name": "No active next phase \u2014 dashboard mature",
-    "goal": "Phase 2 (Xero/WAP financial autopull) reconsidered and DROPPED 2026-06-11. The cash-collected half shipped as Whop Live Revenue. The Xero-autopull half is cancelled: Xero is only accurate AFTER human reconciliation (~10-day lag), so auto-pulling unreconciled numbers would feed the dashboard confidently-wrong figures every period \u2014 worse than deliberate manual entry. Funnel Economics inputs stay manual, which is correct for a trailing (reconciled-cost) metric. Dashboard is live and mature. Phase 3 (advanced analytics/trends) is the next real candidate once enough synced history accrues.",
+    "name": "No active next phase — dashboard mature",
+    "goal": "Phase 2 (Xero/WAP financial autopull) reconsidered and DROPPED 2026-06-11. The cash-collected half shipped as Whop Live Revenue. The Xero-autopull half is cancelled: Xero is only accurate AFTER human reconciliation (~10-day lag), so auto-pulling unreconciled numbers would feed the dashboard confidently-wrong figures every period — worse than deliberate manual entry. Funnel Economics inputs stay manual, which is correct for a trailing (reconciled-cost) metric. Dashboard is live and mature. Phase 3 (advanced analytics/trends) is the next real candidate once enough synced history accrues.",
     "key_features": [],
     "tools_and_apis": [],
     "prerequisites": "Phase 3 needs 4-6 weeks of synced data for meaningful trends.",
     "deferred_items": [
-      "Xero financial autopull \u2014 CANCELLED (unreconciled Xero not trustworthy for a live dashboard; see decision_log)"
+      "Xero financial autopull — CANCELLED (unreconciled Xero not trustworthy for a live dashboard; see decision_log)"
     ]
   },
   "future_phases": [
@@ -81,55 +81,55 @@
       "date": "2026-06-12"
     },
     {
-      "description": "Whop Live Revenue shipped (2026-06-11, commit 15da8da) \u2014 per-rep net cash + contract value columns now on the P&L tab. Lloyd can see exactly what cash came in from each rep's closed deals vs. what was forecasted. Paired with Xero invoice sync (2026-06-10) which auto-pulls historical contract value from actual invoices. Dashboard now shows the full cash-flow picture: pipeline (GHL) + signed/invoiced value (Xero) + cash in (Whop). The two feeds (Xero historical contracts + Whop current cash) together give complete visibility into deal lifecycle from close to cash.",
+      "description": "Whop Live Revenue shipped (2026-06-11, commit 15da8da) — per-rep net cash + contract value columns now on the P&L tab. Lloyd can see exactly what cash came in from each rep's closed deals vs. what was forecasted. Paired with Xero invoice sync (2026-06-10) which auto-pulls historical contract value from actual invoices. Dashboard now shows the full cash-flow picture: pipeline (GHL) + signed/invoiced value (Xero) + cash in (Whop). The two feeds (Xero historical contracts + Whop current cash) together give complete visibility into deal lifecycle from close to cash.",
       "date": "2026-06-11"
     },
     {
-      "description": "Xero invoice sync shipped and LIVE on Railway (2026-06-10). POST /xero/sync-invoices running in production. Contract Value on P&L auto-updates monthly from actual ACCREC invoices. EUR\u2192USD conversion automatic. Category-scoped delete ensures re-runs never touch cash_collected rows.",
+      "description": "Xero invoice sync shipped and LIVE on Railway (2026-06-10). POST /xero/sync-invoices running in production. Contract Value on P&L auto-updates monthly from actual ACCREC invoices. EUR→USD conversion automatic. Category-scoped delete ensures re-runs never touch cash_collected rows.",
       "date": "2026-06-10"
     },
     {
-      "description": "Show rate numerator bug fixed across all 5 query files \u2014 compliance flags (outcome_unfilled, rep_compliance_failure) no longer gate the show count. showed_1st_call_expr() is now the sole show signal, correctly counting stage-based shows where rep moved stage without updating appointment status field.",
+      "description": "Show rate numerator bug fixed across all 5 query files — compliance flags (outcome_unfilled, rep_compliance_failure) no longer gate the show count. showed_1st_call_expr() is now the sole show signal, correctly counting stage-based shows where rep moved stage without updating appointment status field.",
       "date": "2026-04-15"
     },
     {
-      "description": "Lead quality distribution columns added to Rep Breakdown table \u2014 Great / Ok / Barely Pass. / Bad / Missing counts visible per rep on Sales Performance tab",
+      "description": "Lead quality distribution columns added to Rep Breakdown table — Great / Ok / Barely Pass. / Bad / Missing counts visible per rep on Sales Performance tab",
       "date": "2026-04-15"
     },
     {
-      "description": "Pipeline Intelligence segment-by expanded with 4 new dimensions: Business Fit, Pain/Goal, Industry, Current Revenue \u2014 all sourced from existing GHL custom fields",
+      "description": "Pipeline Intelligence segment-by expanded with 4 new dimensions: Business Fit, Pain/Goal, Industry, Current Revenue — all sourced from existing GHL custom fields",
       "date": "2026-04-15"
     },
     {
-      "description": "Hover tooltips on every KPI label and column header across all 5 tabs \u2014 shows definition and formula on hover using fixed-position JS tooltip (bypasses overflow:hidden clipping)",
+      "description": "Hover tooltips on every KPI label and column header across all 5 tabs — shows definition and formula on hover using fixed-position JS tooltip (bypasses overflow:hidden clipping)",
       "date": "2026-04-15"
     },
     {
-      "description": "Funnel Economics tab built \u2014 RORI per rep (Contract RORI + Cash RORI), period financial inputs panel (marketing spend + per-rep comp), cost-per-show/qual/close columns. New DB tables: period_marketing_spend, rep_compensation. All columns show \u2014 until data entered.",
+      "description": "Funnel Economics tab built — RORI per rep (Contract RORI + Cash RORI), period financial inputs panel (marketing spend + per-rep comp), cost-per-show/qual/close columns. New DB tables: period_marketing_spend, rep_compensation. All columns show — until data entered.",
       "date": "2026-04-10"
     },
     {
-      "description": "Date picker split into two independent From/To fields \u2014 removed flatpickr dependency",
+      "description": "Date picker split into two independent From/To fields — removed flatpickr dependency",
       "date": "2026-04-10"
     },
     {
-      "description": "Weekly activity view now lets you browse previous weeks \u2014 see day-by-day bookings, shows, and qualifications for any week",
+      "description": "Weekly activity view now lets you browse previous weeks — see day-by-day bookings, shows, and qualifications for any week",
       "date": "2026-03-26"
     },
     {
-      "description": "Rep performance numbers are now clickable \u2014 see the specific deals behind each rep's bookings, shows, and closes, with direct links to GoHighLevel",
+      "description": "Rep performance numbers are now clickable — see the specific deals behind each rep's bookings, shows, and closes, with direct links to GoHighLevel",
       "date": "2026-03-25"
     },
     {
-      "description": "Compliance tracking is live \u2014 see which reps aren't logging outcomes, which ones are writing low-quality notes, and disqualification rates per rep",
+      "description": "Compliance tracking is live — see which reps aren't logging outcomes, which ones are writing low-quality notes, and disqualification rates per rep",
       "date": "2026-03-24"
     },
     {
-      "description": "Dashboard launched \u2014 key metrics, show rate trends, sales funnel visualization, and per-rep performance table all visible at a glance",
+      "description": "Dashboard launched — key metrics, show rate trends, sales funnel visualization, and per-rep performance table all visible at a glance",
       "date": "2026-03-24"
     },
     {
-      "description": "First complete data sync from GoHighLevel \u2014 pulled in 3,243 deals with zero errors",
+      "description": "First complete data sync from GoHighLevel — pulled in 3,243 deals with zero errors",
       "date": "2026-03-22"
     }
   ],
@@ -171,13 +171,13 @@
       "phase": "Phase 2"
     },
     {
-      "decision": "Show count numerator uses showed_1st_call_expr() alone \u2014 no compliance flag filter",
+      "decision": "Show count numerator uses showed_1st_call_expr() alone — no compliance flag filter",
       "reasoning": "compliance flags (outcome_unfilled, rep_compliance_failure) must never gate metric counts. A rep moving to the 'Call 1 Done' stage counts as a show regardless of whether appointment status field was also updated. Compliance flags are for separate compliance tab only.",
       "phase": "Phase 1"
     },
     {
-      "decision": "RORI defined as Contract Value \u00f7 (Rep Comp + Mktg Alloc) for Contract RORI, Cash Collected \u00f7 (Rep Comp + Mktg Alloc) for Cash RORI",
-      "reasoning": "Marketing allocation per rep = (Total Mktg Spend \u00f7 Team Total Shows) \u00d7 Rep Shows. This proportionally assigns shared marketing cost based on each rep's share of team volume.",
+      "decision": "RORI defined as Contract Value ÷ (Rep Comp + Mktg Alloc) for Contract RORI, Cash Collected ÷ (Rep Comp + Mktg Alloc) for Cash RORI",
+      "reasoning": "Marketing allocation per rep = (Total Mktg Spend ÷ Team Total Shows) × Rep Shows. This proportionally assigns shared marketing cost based on each rep's share of team volume.",
       "phase": "Phase 1"
     },
     {
@@ -187,7 +187,7 @@
     },
     {
       "decision": "qs-dashboard lives in monorepo locally but deploys from standalone qs-revenue-dashboard GitHub repo",
-      "reasoning": "Railway service was originally created from the standalone repo. Easiest to maintain \u2014 use git subtree push to keep qs-revenue-dashboard in sync with monorepo changes.",
+      "reasoning": "Railway service was originally created from the standalone repo. Easiest to maintain — use git subtree push to keep qs-revenue-dashboard in sync with monorepo changes.",
       "phase": "Phase 1"
     },
     {
@@ -211,7 +211,7 @@
     "items": [
       "Total marketing spend per period (from Xero/bookkeeper)",
       "Per-rep total compensation per period (base + commission + bonuses)",
-      "Actual signed contract value per closed deal (should be in GHL monetary_value \u2014 verify reps are filling it in)",
+      "Actual signed contract value per closed deal (should be in GHL monetary_value — verify reps are filling it in)",
       "Cash collected per closed deal (from WAP/Stripe refund reports)",
       "Optional: refunds/chargebacks per period to adjust effective cash collected"
     ]
@@ -225,19 +225,74 @@
   "tech_stack": {
     "backend": "Python / FastAPI (async throughout)",
     "database": "PostgreSQL via SQLAlchemy 2.0 + psycopg2 (Supabase hosted)",
-    "migrations": "Alembic \u2014 always write reversible migrations",
-    "auth": "Bearer token \u2014 all endpoints",
-    "stripe": "Read-only charge/customer lookups only \u2014 no webhooks, no writes",
+    "migrations": "Alembic — always write reversible migrations",
+    "auth": "Bearer token — all endpoints",
+    "stripe": "Read-only charge/customer lookups only — no webhooks, no writes",
     "integrations": "GHL (deal sync), Xero (invoice matching), Stripe (revenue), Wise (payouts), Whop",
     "hosting": "Railway",
-    "shared_repo": "Geri also pushes to lloyd-yip/qs-revenue-dashboard \u2014 NEVER force-push"
+    "shared_repo": "Geri also pushes to lloyd-yip/qs-revenue-dashboard — NEVER force-push"
   },
   "hard_constraints": [
-    "Routes \u2192 Services/DB. No direct DB calls in route handlers.",
+    "Routes → Services/DB. No direct DB calls in route handlers.",
     "Stripe is READ-ONLY. No webhook handler. No write operations. Never add without signature verification.",
     "NEVER force-push to qs-dashboard remote. Always git fetch before pushing. If rejected: fetch and merge.",
     "Bearer token auth on all endpoints.",
     "All OAuth secrets and API keys in environment variables only.",
-    "Alembic migrations must be reversible \u2014 write down migration before running up."
+    "Alembic migrations must be reversible — write down migration before running up."
+  ],
+  "feature_backlog": [
+    {
+      "id": "relocate-live-whop-to-deals-page",
+      "type": "feature",
+      "status": "scoped",
+      "title": "Relocate Live Whop view from P&L to Deals page",
+      "problem": "The live per-rep Whop cash view is buried at the bottom of the P&L (money-summary) page. To see live deal-level activity Lloyd has to open P&L, when it belongs alongside the historical deal reconciliation on the Deals page.",
+      "why_important": "P&L is the financial summary; Deals is where deal-level detail lives. Splitting live deals onto P&L makes the information architecture confusing and the live view hard to find. Lloyd explicitly requested the move (2026-06-11).",
+      "user_story": "When I open the Deals page, I expect to switch between historical/reconciled deals and live/this-month deals in one place. Currently: reconciled deals are on the Deals page, but live this-month deals are on a separate P&L page.",
+      "success_definition": "The Deals page shows a Historical/Live toggle; the Live lens renders the per-rep collapsible Whop view (net cash, contract, fee + confidence badges); the P&L page no longer contains the Live Whop section.",
+      "acceptance_criteria": [
+        "Deals page (static/deals.html) has a visible toggle/tabs switching between 'Historical (Reconciled)' and 'Live (This Month)'",
+        "Live lens renders per-rep collapsible buckets with net cash, gross contract, Splitit/ClarityPay -15% badges, HIGH/MEDIUM confidence badges, and an 'as of ... refreshed nightly' line",
+        "Live lens shows the correct empty state for a month with no Whop deals (does not error)",
+        "P&L page (static/pnl.html) no longer renders #whop-live-section and no longer calls loadWhopLive",
+        "GET /api/dashboard/pnl/whop-live still returns 200 and drives the Live lens unchanged"
+      ],
+      "general_approach": "Pure frontend relocation. Move loadWhopLive/renderWhopLiveSection/renderRepBucket + the Live Whop CSS from pnl.html into deals.html. Add a lens toggle on the Deals page: 'Historical' = existing reconciliation cards/table, 'Live' = the relocated Whop view (calls the existing GET /pnl/whop-live for the current month). Remove the #whop-live-section block + loadWhopLive call from pnl.html. No backend change.",
+      "files_in_scope": [
+        "static/deals.html - add Historical/Live lens toggle; add relocated Live Whop section + its loadWhopLive/render* JS + CSS",
+        "static/pnl.html - remove #whop-live-section div, the loadWhopLive call in loadPnL, and the Live Whop CSS/JS",
+        "api/routers/whop_live.py - unchanged (endpoint stays; optional future path rename pnl->deals)"
+      ],
+      "constraints": [
+        "FOCUSED scope - do NOT touch the top navigation in this item",
+        "Reuse existing dark-theme design tokens and the existing renderBucket collapsible pattern - no new design system",
+        "/ux-design must confirm the Deals-page IA (tabs vs toggle vs stacked) before building",
+        "No backend/schema change - GET /pnl/whop-live + POST /pnl/whop-refresh stay as-is"
+      ],
+      "explicitly_out_of_scope": [
+        "Top-nav consolidation across pages (3 inconsistent navs) - separate backlog item",
+        "Renaming the /pnl/whop-live endpoint path to /deals/* - optional, not required",
+        "Any change to Whop matching, attribution, or net-cash logic (that work is done)"
+      ],
+      "edge_cases": [
+        "Current month has zero Whop deals -> Live lens shows 'No Whop-settled deals for this month yet', not an error",
+        "Deals page has no month selector today; the Live lens needs a current-month default (and possibly a month picker) distinct from the Historical filter controls",
+        "Deals with NULL ghl_owner_name still group under 'Unassigned' in the Live lens (expected)",
+        "Switching lenses must not double-fetch or leave stale DOM from the other lens"
+      ],
+      "failure_modes": [
+        "Live JS moved but its CSS left behind -> badges/buckets render unstyled",
+        "pnl.html removal misses the loadWhopLive call -> P&L throws ReferenceError after the JS is deleted",
+        "Lens toggle shares element IDs with the reconciliation table -> sort/filter handlers collide"
+      ],
+      "migration_risk": "None - frontend-only, no schema or data change.",
+      "rollback_path": "Revert static/deals.html and static/pnl.html to prior versions - instant, no data implications.",
+      "dependencies": [
+        "Attribution fix (deals-rework-plan.md Steps 1-2) - DONE + verified 2026-06-11",
+        "GET /api/dashboard/pnl/whop-live + POST /pnl/whop-refresh (already live)",
+        "deals-rework-plan.md Steps 3-7 (detailed step plan)"
+      ],
+      "added": "2026-06-11"
+    }
   ]
 }
