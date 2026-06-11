@@ -73,6 +73,23 @@ async def trigger_resolver(
     }
 
 
+@router.post("/backfill-attribution")
+async def backfill_attribution():
+    """One-shot: re-resolve rep names for all deals (fixes 'Unassigned'). Fast + idempotent.
+
+    Runs synchronously (one GHL user fetch + two set-based updates — seconds, not minutes).
+    The fast alternative to a full re-sync when only rep attribution needs fixing.
+    """
+    from sync.attribution_backfill import backfill_rep_attribution
+
+    try:
+        stats = await backfill_rep_attribution()
+        return {"ok": True, "stats": stats}
+    except Exception as exc:
+        logger.error("Attribution backfill failed: %s", exc)
+        return {"ok": False, "error": str(exc)}
+
+
 async def _run_sync_background(sync_type: str) -> None:
     try:
         await run_sync(sync_type)
