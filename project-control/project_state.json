@@ -2,7 +2,7 @@
   "project_name": "QS Revenue Dashboard",
   "description": "Internal sales performance dashboard — call volume, show rates, qualification, lead source attribution, compliance tracking, funnel economics",
   "business_entity": "quantum_scaling",
-  "last_updated": "2026-06-12T01:10:00Z",
+  "last_updated": "2026-06-14T02:30:00Z",
   "current_state": {
     "phase_name": "Phase 1 - Live & Iterating",
     "status": "live"
@@ -13,18 +13,20 @@
     "end_state": "A comprehensive revenue intelligence platform with real-time KPIs, financial integration (Xero for actual revenue vs pipeline), automated anomaly detection, and API endpoints that feed the OpenClaw agent layer for cross-app synthesis.",
     "current_summary": "Dashboard is live and in daily use across 5 tabs: Sales Performance, Lead Quality by Channel, Pipeline Intelligence, Funnel Economics, and Compliance. Xero invoice sync LIVE — Contract Value on P&L page updates monthly from actual ACCREC invoices with EUR→USD conversion. RORI columns display but require manual period financial inputs (Phase 2 will auto-pull from Xero). Show rate, compliance tracking, and lead quality distribution all working. Lloyd has real-time visibility into rep performance and pipeline economics."
   },
-  "resume_here": "ACTIVE = DEALS REWORK v1. Mockup LOCKED (.ux-approved + project-control/specs/ux-design.md). v1 BLUEPRINT written: blueprints/deals_v1_relocation_blueprint_v2.md (READ IT — it's the build-loop acceptance contract, 6 observable done-conditions). AWAITING LLOYD's ONE approval of the blueprint -> then /build-loop drives build->/build-verify->/test-drive(Railway)->fix until the 6 criteria pass. v1 = relocate Live view to deals.html (Live default + Historical toggle), deal-driven month picker (GET /pnl/whop-live/months) default current, rep fallback via Call-2 appointment assignedUserId (+POST /api/sync/backfill-appointment-owners), explicit Cash-collected/Contract labels, remove Live from pnl.html. Historical month-nav DEFERRED to main UX redesign. v2 cash-ledger DEFERRED (blueprints/monthly_cash_ledger_blueprint_v2.md).",
+  "resume_here": "DEALS v1 REWORK: UX mockup LOCKED + approved (2026-06-13, commit 619ea91). Blueprint acceptance contract locked: 6 observable done-conditions. Ready for /build-loop. v1 scope = relocate Live Whop view to Deals page (Live default + Historical toggle), deal-driven month picker (default current), rep fallback via Call-2 appointment assignedUserId, explicit Cash/Contract labels, remove Live from P&L page. No backend changes. Historical month-nav + v2 cash-ledger both DEFERRED. NEXT: /build-loop approval -> sequential build->verify->test-drive cycle until 6 criteria pass, then deploy.",
   "current_phase": {
     "name": "Phase 1 - Live & Iterating",
     "goal": "Full internal dashboard for Lloyd to monitor sales team performance: call volume per rep, show rates, qualification breakdowns, lead source attribution, compliance tracking, funnel economics with RORI",
     "current_focus": [
-      "Rep-attribution backfill COMPLETE (commit f1de326): dashboard accuracy verified + locked",
-      "ACTIVE: Recurring cash workstream — verified Step 1 DATA (Whop per-installment dates, monthly + rep-bucketing confirmed) + locked direction (no separate Recipe Library, integrate into Deals page with Live toggle)"
+      "DEALS v1 UX redesign LOCKED + approved (2026-06-13): mockup signed off, blueprint acceptance contract written (6 done-conditions)",
+      "Blueprint ready for /build-loop approval to enter sequential build-verify-test-drive-fix cycle",
+      "Recurring cash workstream DOCUMENTED: Step 1 data verified (Whop per-installment + monthly bucketing), direction locked (integrate Live into Deals, no separate Library)"
     ],
     "immediate_next_steps": [
-      "RECURRING CASH — Step 2: Blueprint monthly-cash backend model (per-month net revenue + per-rep attribution in new Deals page context)",
-      "RECURRING CASH — Step 3: Finalize FE mockup for Deals/Historical vs Deals/Live toggle + monthly month-nav selector",
-      "RECURRING CASH — Step 4: Build backend + frontend together (relocation from P&L + rep fallback logic + clarity labels)"
+      "DEALS v1: Await /build-loop approval signature",
+      "DEALS v1: Execute sequential build->verify->test-drive->fix until 6 acceptance criteria pass",
+      "RECURRING CASH Step 2: Blueprint monthly-cash backend model (per-month + per-rep) — READY TO BLUEPRINT, deferred pending Deals v1 deploy",
+      "RECURRING CASH Step 3-4: FE + build together after Deals v1 ships"
     ],
     "known_issues": [
       {
