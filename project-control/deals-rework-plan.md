@@ -165,3 +165,23 @@ amount + cadence). Find this out in 10 minutes BEFORE blueprinting, not after.
   (currently cannot flip months — Lloyd flagged).
 - LOCKED 2026-06-11: default lens = Live; reuse Historical table rep-filter for cross-month rep lookup.
 - Mockup approved in shape (3 lenses/states rendered) pending the recurring additions above.
+
+### RECURRING — STEP 1 RESULT (2026-06-11): GREEN LIGHT ✅
+Verified against live Whop payments for 3 internal-plan deals:
+- Sara Downey/Jason Bern (mem_ypwZeyThuSjgJ4): 3×$5,000 paid 2026-03-20, 04-19, 05-19 (3 months)
+- Diane Primo/Ryan (mem_hcMP2G9lsj6hBP): 2×$8,997 paid 2026-05-05, 06-04 (June = recurring)
+- ZeroMils/Melissa (mem_Jrn8npTVQUsLed): 2×$5,000 paid 2026-04-01, 05-01
+CONFIRMED: each collected installment is a SEPARATE payment row with its own paid_at/created_at
+date; installments span different months; proc=multi_psp; tied to membership->deal->rep. We CAN
+bucket cash by collection-month and split net-new (deal closed this month) vs recurring (closed prior).
+No plan B needed. Proceeding to Step 2 (blueprint backend).
+
+### RECURRING — STEP 2 ARCHITECTURE DIRECTION (for the blueprint)
+- NEW table (per-payment ledger): one row per Whop payment — membership_id, ghl_opportunity_id,
+  paid_date, gross_amount, fee_pct, net_amount, processor. Idempotency key = whop payment id.
+- POPULATION: extend the existing refresh/match path to upsert per-payment rows (we already fetch
+  _fetch_membership_payments; today we only aggregate). Backfill historical.
+- QUERY (monthly): for month M -> sum net by paid_date in M, split by deal.first_payment_date==M
+  (net-new) vs <M (recurring); group by rep. Contract realized = contract value of deals closed in M.
+- ENDPOINT: extend GET /pnl/whop-live response: { net_new:{per_rep,totals}, recurring:{per_rep or list,total}, totals:{net_new_cash, recurring_cash, total_cash, contract_realized} }.
+- Rep fallback (Call-2 appointment assignedUserId) folds into attribution.
