@@ -2,7 +2,7 @@
   "project_name": "QS Revenue Dashboard",
   "description": "Internal sales performance dashboard — call volume, show rates, qualification, lead source attribution, compliance tracking, funnel economics",
   "business_entity": "quantum_scaling",
-  "last_updated": "2026-06-12T02:00:00Z",
+  "last_updated": "2026-06-14T23:59:00Z",
   "current_state": {
     "phase_name": "Phase 1 - Live & Iterating",
     "status": "live"
@@ -13,7 +13,7 @@
     "end_state": "A comprehensive revenue intelligence platform with real-time KPIs, financial integration (Xero for actual revenue vs pipeline), automated anomaly detection, and API endpoints that feed the OpenClaw agent layer for cross-app synthesis.",
     "current_summary": "Dashboard is live and in daily use across 5 tabs: Sales Performance, Lead Quality by Channel, Pipeline Intelligence, Funnel Economics, and Compliance. Xero invoice sync LIVE — Contract Value on P&L page updates monthly from actual ACCREC invoices with EUR→USD conversion. RORI columns display but require manual period financial inputs (Phase 2 will auto-pull from Xero). Show rate, compliance tracking, and lead quality distribution all working. Lloyd has real-time visibility into rep performance and pipeline economics."
   },
-  "resume_here": "DEALS REWORK v1 SHIPPED + VERIFIED LIVE (2026-06-12, commit a0d89d6) via /build-loop (Round 0, all 6 criteria pass). Live Whop view RELOCATED to the Deals page (/deals): Live·This-Month default + Historical·Reconciled toggle; deal-driven month picker (GET /pnl/whop-live/months) defaults to current month + reaches May/June (fixed the unreachable-month bug); explicit Cash-collected/Contract labels per row; Live section REMOVED from /pnl. Verified on Railway: month picker=40 months default 2026-06, 3 rep buckets, labels render. REP FALLBACK built + deployed (sync_engine Call-2 appointment assignedUserId + POST /api/sync/backfill-appointment-owners) — CORRECT but recovered 0/20: the current owner-less deals (Dwight Crain, Abdul verified) have NO appointments in GHL at all, so genuinely rep-less/unrecoverable; fallback will attribute any FUTURE owner-less deal that has a Call-2 appointment. v2 cash-ledger (net-new vs recurring) DEFERRED, fully spec'd in blueprints/monthly_cash_ledger_blueprint_v2.md. Historical month-nav deferred to main UX redesign.",
+  "resume_here": "DEALS v1 SHIPPED + VERIFIED LIVE (2026-06-14, commit 9977ae2). Live Whop relocated to Deals page with Historical/Live toggle + deal-driven month picker (defaults current month, reaches May/June). All 6 acceptance criteria verified on Railway: month-picker=40 months (2026-06 default), 3 rep buckets, cash/contract labels render, P&L Live section removed. Rep fallback deployed (sync_engine Call-2 assignedUserId) — recovered 0/20 because current owner-less deals (Dwight Crain, Abdul) have zero GHL appointments; fallback is correct and will attribute future owner-less+appointment deals. Recurring-cash workstream (v2, net-new vs recurring with decay model) fully spec'd (blueprints/monthly_cash_ledger_blueprint_v2.md), Step 2 awaiting /ux-design.",
   "current_phase": {
     "name": "Phase 1 - Live & Iterating",
     "goal": "Full internal dashboard for Lloyd to monitor sales team performance: call volume per rep, show rates, qualification breakdowns, lead source attribution, compliance tracking, funnel economics with RORI",
