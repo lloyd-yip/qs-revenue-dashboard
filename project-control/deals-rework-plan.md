@@ -112,3 +112,56 @@ Two plausible mechanisms for the unresolved IDs (can't pre-verify: no local GHL 
 2. **Backfill (reuse existing jobs — no new loop):** after deploy, trigger a **full sync** (re-resolves `opportunity_owner_name` for all opps via the fixed `get_users`) → then **Run Match** (copies names onto `DealWhopMatch.ghl_owner_name`). Fallback if full sync is too heavy/timeout-prone: a set-based `UPDATE opportunities SET owner_name = map[owner_id] WHERE owner_name IS NULL AND owner_id IS NOT NULL` (bulk, idempotent — NOT a row loop) + join-update to deal_whop_matches.
 3. **Verify:** `GET /api/dashboard/deals/matches` → Judith DeFeo & Michael now show owner "Ryan" (was Unassigned); `GET /pnl/whop-live?month=2026-04` → Unassigned bucket shrinks, real rep buckets appear; sanity-check total distinct reps is plausible (not inflated/duplicated).
 4. **Rollback:** fix is additive + idempotent; re-runnable. To revert, restore prior `get_users` and re-sync. No schema change, no migration.
+
+---
+
+## RECURRING CASH WORKSTREAM (added 2026-06-11, from mockup feedback)
+
+### Confirmed business model (Lloyd, 2026-06-11)
+- NO true monthly subscriptions. All "recurring" = internal payment plans, usually 2-3 months.
+- Splitit & ClarityPay: realized as PAY-IN-FULL upfront (QS receives 100% upfront minus the 15% fee = the discount). NEVER recurring.
+- The ONLY recurring source = internally-financed plan installments landing in months AFTER the close month.
+
+### Key insight (why this matters)
+The "numbers aren't clear" complaint AND the recurring requirement are the SAME root problem:
+attributing each payment to the month it actually landed. Today a deal shows in its CLOSE month
+with its ALL-TIME cash number — fine for upfront deals, WRONG for multi-month internal plans
+(close-month view shows cash that trickles in over 2-3 months). Cannot fix clarity without
+monthly attribution; monthly attribution IS the recurring feature. One job, not two.
+
+### The model the Live view needs
+- Net-new cash (this month)        = cash from deals that CLOSED this month.
+- Recurring cash (this month)      = installments landing this month from PRIOR-month internal-plan deals.
+- Total cash collected (this month)= net-new + recurring.
+- Contract value realized (month)  = contract value of deals closed this month.
+- Live view layout: Net-New section (per-rep) + a SEPARATE Recurring cash display + a clear
+  totals strip: Net-New Cash / Recurring Cash / Total Cash / Contract Realized.
+
+### SEQUENCING — DO IN THIS ORDER (backend-first, because the UI depends on uncertain data)
+1. VERIFY DATA (read-only, ~10 min): pull real Whop payment records for known internal-plan deals
+   that are several months into their plan; confirm per-installment paid-dates EXIST, are
+   bucketable by month, and attributable to a rep. NOTE from earlier probe: Whop does NOT
+   pre-create future installment records — only COLLECTED installments appear as payment rows,
+   each with its own paid date. Need to confirm multiple collected installments show distinct
+   monthly dates. This greenlights the clean path OR forces plan B.
+2. BLUEPRINT BACKEND: monthly-cash data model + new-vs-recurring logic + endpoint shape.
+   (We currently store only all-time total_paid per deal — this adds per-payment-month tracking.)
+3. FINALIZE FRONTEND MOCKUP against the now-known data shape (net-new + recurring sections +
+   unambiguous Cash/Contract labels). Re-confirm with Lloyd.
+4. BUILD AS ONE: Deals-page relocation + rep fallback + historical month-nav all ride along,
+   so the Live view is designed once, correctly.
+
+### Failure mode to watch (why step 1 comes first)
+If Whop does NOT expose clean per-payment dates -> recurring split is much harder -> pivot to
+inferring installments from the plan schedule (split_pay_required_payments + per-installment
+amount + cadence). Find this out in 10 minutes BEFORE blueprinting, not after.
+
+### Other mockup feedback folded into the BUILD (step 4)
+- CLARITY: each deal row explicitly labels "Cash collected $X" and "Contract $Y"; totals strip
+  spells out Net-New / Recurring / Total / Contract Realized (no bare ambiguous numbers).
+- REP FALLBACK: for deals with no opportunity owner, use the Call-2 appointment's assignedUserId
+  (CONFIRMED present in appointment data earlier) -> recovers Dwight Crain + most residual Unassigned.
+- HISTORICAL MONTH-NAV: the Historical/reconciliation lens needs its OWN month navigation
+  (currently cannot flip months — Lloyd flagged).
+- LOCKED 2026-06-11: default lens = Live; reuse Historical table rep-filter for cross-month rep lookup.
+- Mockup approved in shape (3 lenses/states rendered) pending the recurring additions above.

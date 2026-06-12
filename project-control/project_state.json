@@ -2,7 +2,7 @@
   "project_name": "QS Revenue Dashboard",
   "description": "Internal sales performance dashboard — call volume, show rates, qualification, lead source attribution, compliance tracking, funnel economics",
   "business_entity": "quantum_scaling",
-  "last_updated": "2026-06-11T21:45:00Z",
+  "last_updated": "2026-06-11T22:30:00Z",
   "current_state": {
     "phase_name": "Phase 1 - Live & Iterating",
     "status": "live"
@@ -13,7 +13,7 @@
     "end_state": "A comprehensive revenue intelligence platform with real-time KPIs, financial integration (Xero for actual revenue vs pipeline), automated anomaly detection, and API endpoints that feed the OpenClaw agent layer for cross-app synthesis.",
     "current_summary": "Dashboard is live and in daily use across 5 tabs: Sales Performance, Lead Quality by Channel, Pipeline Intelligence, Funnel Economics, and Compliance. Xero invoice sync LIVE — Contract Value on P&L page updates monthly from actual ACCREC invoices with EUR→USD conversion. RORI columns display but require manual period financial inputs (Phase 2 will auto-pull from Xero). Show rate, compliance tracking, and lead quality distribution all working. Lloyd has real-time visibility into rep performance and pipeline economics."
   },
-  "resume_here": "Rep attribution FIXED + VERIFIED + SECURED (2026-06-11). Root cause: get_users() name resolution gap → FIXED (commit be9837d: firstName+lastName+email fallback). One-shot backfill endpoint shipped (commit f1de326): POST /api/sync/trigger?sync_type=full (set-based, idempotent, FAST). Ran backfill: 76 users resolved, 3513 opportunities, 123 deals filled. Results verified: Ryan Matsumori 107 matched deals; April Unassigned 10→2 (residual 2 are legitimately owner-less, no assignedTo in GHL). SECURITY: Gmail SMTP credentials moved from source code to .env (commit f82abf8, gitignored). NEXT (Step 3 of deals-rework-plan.md): Deals-page IA redesign — move Live Whop view from P&L to Deals page (Historical + Live lenses), remove from P&L. First: run /ux-design on Deals page (top-nav consolidation deferred).",
+  "resume_here": "ACTIVE: Deals Rework — read project-control/deals-rework-plan.md (esp. RECURRING CASH WORKSTREAM). Mockup of relocated Live view approved in shape; feedback expanded scope. CONFIRMED model: no true subscriptions; all recurring = internal payment plans (2-3mo); Splitit/ClarityPay = pay-in-full upfront (never recurring). KEY INSIGHT: the 'numbers unclear' complaint AND recurring requirement are one problem = attributing each payment to the month it landed (today we store only all-time total_paid per deal). ORDER (backend-first, doing now): (1) VERIFY DATA read-only — pull Whop payments for internal-plan deals, confirm per-installment dates bucketable by month + rep [IN PROGRESS]; (2) blueprint backend monthly-cash model; (3) finalize FE mockup; (4) build as one (relocation + rep fallback via Call-2 appointment assignedUserId + historical month-nav + clarity labels all ride along). Failure mode: if Whop lacks clean per-payment dates -> infer from plan schedule.",
   "current_phase": {
     "name": "Phase 1 - Live & Iterating",
     "goal": "Full internal dashboard for Lloyd to monitor sales team performance: call volume per rep, show rates, qualification breakdowns, lead source attribution, compliance tracking, funnel economics with RORI",
