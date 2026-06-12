@@ -54,3 +54,10 @@ Live DB: of 215 deals with both dates, **101 (47%) have first_payment_date in a 
 - Reconciliation: endpoint `total_cash` for a month == SUM(net_amount) of paid ledger rows in that month == (within cents) legacy `get_whop_live_summary_for_month` total. If off by ~$2M → Stripe not ingested.
 - Decay check: after a clean backfill, advance one month with NO new backfill → recurring must NOT drop to ~0 (proves open-plan refresh works).
 - Idempotency: sync same payment twice → COUNT==1, monthly total unchanged.
+
+## DECISIONS RESOLVED (2026-06-11, Lloyd)
+- SCOPE: PHASE IT. v1 (Deals-page relocation + UX fixes, uses EXISTING data) ships first; v2 (this ledger) deferred but fully spec'd above.
+- RECURRING DISPLAY: portfolio total + drill-down (NOT per-rep).
+- CLOSE-MONTH ANCHOR (v2): ghl_close_date — VERIFIED 100% populated on high/medium (218/218), MORE complete than first_payment_date (215). 47% diverge in month. Confirm VALUE-accuracy at v2 build (historical dates back-entered); first_payment_date is the fallback.
+- STRIPE: ledger must ingest Whop + Stripe (required; Whop-only drops ~$2M).
+## V2 STATUS: DEFERRED — spec complete; build after v1 ships.
