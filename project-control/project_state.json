@@ -2,7 +2,7 @@
   "project_name": "QS Revenue Dashboard",
   "description": "Internal sales performance dashboard — call volume, show rates, qualification, lead source attribution, compliance tracking, funnel economics",
   "business_entity": "quantum_scaling",
-  "last_updated": "2026-06-13T23:45:00Z",
+  "last_updated": "2026-06-14T00:30:00Z",
   "current_state": {
     "phase_name": "Phase 1 - Live & Iterating",
     "status": "live"
@@ -13,17 +13,18 @@
     "end_state": "A comprehensive revenue intelligence platform with real-time KPIs, financial integration (Xero for actual revenue vs pipeline), automated anomaly detection, and API endpoints that feed the OpenClaw agent layer for cross-app synthesis.",
     "current_summary": "Dashboard is live and in daily use across 5 tabs: Sales Performance, Lead Quality by Channel, Pipeline Intelligence, Funnel Economics, and Compliance. Xero invoice sync LIVE — Contract Value on P&L page updates monthly from actual ACCREC invoices with EUR→USD conversion. RORI columns display but require manual period financial inputs (Phase 2 will auto-pull from Xero). Show rate, compliance tracking, and lead quality distribution all working. Lloyd has real-time visibility into rep performance and pipeline economics."
   },
-  "resume_here": "ACTIVE: Deals Rework — read project-control/deals-rework-plan.md (esp. RECURRING CASH WORKSTREAM). Mockup of relocated Live view approved in shape; feedback expanded scope. CONFIRMED model: no true subscriptions; all recurring = internal payment plans (2-3mo); Splitit/ClarityPay = pay-in-full upfront (never recurring). KEY INSIGHT: the 'numbers unclear' complaint AND recurring requirement are one problem = attributing each payment to the month it landed (today we store only all-time total_paid per deal). ORDER (backend-first, doing now): (1) VERIFY DATA read-only — pull Whop payments for internal-plan deals, confirm per-installment dates bucketable by month + rep [IN PROGRESS]; (2) blueprint backend monthly-cash model; (3) finalize FE mockup; (4) build as one (relocation + rep fallback via Call-2 appointment assignedUserId + historical month-nav + clarity labels all ride along). Failure mode: if Whop lacks clean per-payment dates -> infer from plan schedule.",
+  "resume_here": "RECURRING CASH WORKSTREAM SCOPED & VERIFIED (2026-06-14). CONFIRMED: 'numbers unclear' + recurring requirement = single problem: attributing monthly installments to the month they landed (not all-time totals). Data model: Whop API returns per-payment dates in webhook payload; internal-plan deals store plan schedule; Splitit/ClarityPay settle 100% upfront as single payment. VERIFIED Step 1 DATA: Whop per-installment dates bucketable by month + rep-attribution. NEXT STEPS (backend-first): (1) Blueprint monthly-cash model (revenue_line_items historical by month + per-rep net cash by month); (2) Finalize FE mockup (Deals page Historical/Live toggle); (3) Build backend + frontend together (relocation + monthly nav + rep fallback via Call-2 assignedUserId). READ: deals-rework-plan.md for full context.",
   "current_phase": {
     "name": "Phase 1 - Live & Iterating",
     "goal": "Full internal dashboard for Lloyd to monitor sales team performance: call volume per rep, show rates, qualification breakdowns, lead source attribution, compliance tracking, funnel economics with RORI",
     "current_focus": [
-      "One-shot rep-attribution backfill endpoint shipped (2026-06-13, commit f1de326): call POST /api/sync/trigger?sync_type=full once to sync all deals",
-      "Dashboard is live and mature — next real phase is Phase 3 (analytics) once data history accrues"
+      "Rep-attribution backfill COMPLETE (commit f1de326): dashboard accuracy verified + locked",
+      "ACTIVE: Recurring cash workstream — verified Step 1 DATA (Whop per-installment dates, monthly + rep-bucketing confirmed) + locked direction (no separate Recipe Library, integrate into Deals page with Live toggle)"
     ],
     "immediate_next_steps": [
-      "Monitor attribution consistency weekly (no manual action required)",
-      "Collect 4-6 weeks of data for Phase 3 advanced analytics"
+      "RECURRING CASH — Step 2: Blueprint monthly-cash backend model (per-month net revenue + per-rep attribution in new Deals page context)",
+      "RECURRING CASH — Step 3: Finalize FE mockup for Deals/Historical vs Deals/Live toggle + monthly month-nav selector",
+      "RECURRING CASH — Step 4: Build backend + frontend together (relocation from P&L + rep fallback logic + clarity labels)"
     ],
     "known_issues": [
       {
