@@ -2,7 +2,7 @@
   "project_name": "QS Revenue Dashboard",
   "description": "Internal sales performance dashboard — call volume, show rates, qualification, lead source attribution, compliance tracking, funnel economics",
   "business_entity": "quantum_scaling",
-  "last_updated": "2026-06-14T23:59:59Z",
+  "last_updated": "2026-06-14T18:00:00Z",
   "current_state": {
     "phase_name": "Phase 1 - Live & Iterating",
     "status": "live"
@@ -13,7 +13,7 @@
     "end_state": "A comprehensive revenue intelligence platform with real-time KPIs, financial integration (Xero for actual revenue vs pipeline), automated anomaly detection, and API endpoints that feed the OpenClaw agent layer for cross-app synthesis.",
     "current_summary": "Dashboard is live and in daily use across 5 tabs: Sales Performance, Lead Quality by Channel, Pipeline Intelligence, Funnel Economics, and Compliance. Xero invoice sync LIVE — Contract Value on P&L page updates monthly from actual ACCREC invoices with EUR→USD conversion. RORI columns display but require manual period financial inputs (Phase 2 will auto-pull from Xero). Show rate, compliance tracking, and lead quality distribution all working. Lloyd has real-time visibility into rep performance and pipeline economics."
   },
-  "resume_here": "DEALS v1 REWORK: UX mockup LOCKED + approved (2026-06-13, commit 619ea91). Blueprint acceptance contract locked: 6 observable done-conditions. Ready for /build-loop. v1 scope = relocate Live Whop view to Deals page (Live default + Historical toggle), deal-driven month picker (default current), rep fallback via Call-2 appointment assignedUserId, explicit Cash/Contract labels, remove Live from P&L page. No backend changes. Historical month-nav + v2 cash-ledger both DEFERRED. NEXT: /build-loop approval -> sequential build->verify->test-drive cycle until 6 criteria pass, then deploy.",
+  "resume_here": "DEALS v1 REWORK locked (2026-06-13): UX mockup approved, blueprint acceptance contract with 6 done-conditions, awaiting /build-loop sign-off. Scope: relocate Live Whop to Deals page (Historical/Live toggle), month picker tied to Whop data (default current), rep fallback, Cash/Contract labels, remove from P&L. FE-only (no backend). Monthly cash ledger v2 spec'd + deferred. NEXT: /build-loop approval -> sequential build-verify-test-drive until 6 criteria pass -> deploy.",
   "current_phase": {
     "name": "Phase 1 - Live & Iterating",
     "goal": "Full internal dashboard for Lloyd to monitor sales team performance: call volume per rep, show rates, qualification breakdowns, lead source attribution, compliance tracking, funnel economics with RORI",
