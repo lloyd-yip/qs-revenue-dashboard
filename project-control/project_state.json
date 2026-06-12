@@ -2,7 +2,7 @@
   "project_name": "QS Revenue Dashboard",
   "description": "Internal sales performance dashboard — call volume, show rates, qualification, lead source attribution, compliance tracking, funnel economics",
   "business_entity": "quantum_scaling",
-  "last_updated": "2026-06-12T00:10:00Z",
+  "last_updated": "2026-06-13T23:30:00Z",
   "current_state": {
     "phase_name": "Phase 1 - Live & Iterating",
     "status": "live"
@@ -136,10 +136,10 @@
   ],
   "decision_log": [
     {
-      "decision": "Phase 2 (Xero financial autopull) CANCELLED — Funnel Economics inputs remain manual",
-      "reasoning": "Xero data is only accurate AFTER human reconciliation (~10-day lag post-month-close). Auto-pulling unreconciled numbers would feed the dashboard confidently-wrong figures every period — worse than transparent manual entry. The cash-collected half shipped as Whop Live Revenue (verified 2026-06-11). The spend/comp half is NOT a build — it's a data-accuracy gate. Funnel Economics is correctly a trailing/reconciled metric. Dashboard is mature and live.",
+      "decision": "Phase 2 (Xero financial autopull) CANCELLED — Funnel Economics inputs remain manual. v1 DEALS REWORK LOCKED: relocate Live Whop to Deals page (2-lens toggle: Live default, Historical reconciled), rep fallback + Cash/Contract labels, month picker keyed to Whop data not P&L (fixes May/June unreachable).",
+      "reasoning": "Xero data is only accurate AFTER human reconciliation (~10-day lag post-month-close). Auto-pulling unreconciled numbers would feed the dashboard confidently-wrong figures every period — worse than transparent manual entry. The cash-collected half shipped as Whop Live Revenue (verified 2026-06-11). The spend/comp half is NOT a build — it's a data-accuracy gate. Funnel Economics is correctly a trailing/reconciled metric. v1 Deals redesign ships first (front-loads user-facing UX-fixes + unlocks May/June visibility); v2 monthly cash ledger (net-new vs recurring with recurring-decay model) fully spec'd in blueprints/monthly_cash_ledger_blueprint_v2.md but deferred. Mockup approved 2026-06-13.",
       "phase": "Phase 1 - Live & Iterating",
-      "date": "2026-06-12"
+      "date": "2026-06-13"
     },
     {
       "decision": "Never auto-pull financials from Xero into the dashboard. Real-time inputs come from operational systems (Whop for cash, ad platforms for spend); Xero is reconciled-only.",
