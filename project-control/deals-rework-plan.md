@@ -185,3 +185,23 @@ No plan B needed. Proceeding to Step 2 (blueprint backend).
   (net-new) vs <M (recurring); group by rep. Contract realized = contract value of deals closed in M.
 - ENDPOINT: extend GET /pnl/whop-live response: { net_new:{per_rep,totals}, recurring:{per_rep or list,total}, totals:{net_new_cash, recurring_cash, total_cash, contract_realized} }.
 - Rep fallback (Call-2 appointment assignedUserId) folds into attribution.
+
+---
+
+## V1 EXECUTION PATH (locked 2026-06-12 — build via /build-loop)
+Lloyd chose to drive v1 with /build-loop (wraps /build-verify static + /test-drive runtime). build-loop needs an APPROVED blueprint (frozen acceptance contract) first. Order:
+
+1. FINALIZE V1 MOCKUP — add explicit "Cash collected $X" + "Contract $Y" labels per deal row (fixes the ambiguous-number complaint). prototypes/deals-redesign.html. Lloyd thumbs-up. [CURRENT]
+2. /ux-design Step 10b/10c — create the frontend-gate marker (.ux-approved) + persist project-control/specs/ux-design.md (wireframe + IA decisions). Unlocks frontend writes.
+3. WRITE V1 BLUEPRINT — blueprints/deals_v1_relocation_blueprint_v2.md. Acceptance contract = the 5 done-conditions:
+   (a) Live lens on deals.html renders per-rep net cash for the selected month (existing data);
+   (b) deal-driven month picker (GET /api/dashboard/pnl/whop-live/months) defaults to current month, reaches May/June;
+   (c) rep fallback: opp with no owner -> Call-2 appointment assignedUserId (recovers Unassigned);
+   (d) Historical lens has month-nav (uses existing /deals/matches month_start/month_end);
+   (e) Live section REMOVED from pnl.html; per-row Cash/Contract labels explicit.
+   Files: FE static/deals.html, static/pnl.html; BE api/routers/whop_live.py (+months endpoint), db/queries/whop_live.py (get_available_deal_months), sync attribution (rep fallback). Lloyd approves ONCE.
+4. /build-loop — seal contract -> build -> /build-verify (static conformance) -> /test-drive (drive RUNNING app: Railway post-deploy; optionally static prototype for pure-FE journeys) -> targeted fix -> re-check, until acceptance contract passes or circuit-breaker.
+5. DEPLOY + final live verify + state update.
+
+CAVEAT: FastAPI app needs prod env -> /test-drive drives the DEPLOYED Railway app, so each loop iteration includes a ~2-3 min deploy. Not unattended-for-hours.
+SCOPE NOTE: v1 keeps "all-time cash for the deal, shown in its close month", clearly LABELED as cash collected. The net-new-vs-recurring monthly split is v2 (blueprints/monthly_cash_ledger_blueprint_v2.md, deferred).
