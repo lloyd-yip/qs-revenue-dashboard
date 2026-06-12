@@ -2,7 +2,7 @@
   "project_name": "QS Revenue Dashboard",
   "description": "Internal sales performance dashboard — call volume, show rates, qualification, lead source attribution, compliance tracking, funnel economics",
   "business_entity": "quantum_scaling",
-  "last_updated": "2026-06-14T02:30:00Z",
+  "last_updated": "2026-06-14T23:59:59Z",
   "current_state": {
     "phase_name": "Phase 1 - Live & Iterating",
     "status": "live"
