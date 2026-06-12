@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>QS — Unified Nav (mockup)</title>
+<style>
+  *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
+  :root {
+    --bg:#0f1117; --surface:#1a1d27; --surface2:#222636; --border:#2a2d3e;
+    --text:#e2e8f0; --muted:#8892a4; --accent:#6c63ff; --green:#22c55e; --radius:8px;
+    --font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  }
+  body { background:var(--bg); color:var(--text); font-family:var(--font); font-size:14px; }
+
+  /* ── Unified nav ── */
+  nav {
+    display:flex; align-items:center; gap:8px; padding:0 24px; height:52px;
+    background:var(--surface); border-bottom:1px solid var(--border);
+    position:sticky; top:0;
+  }
+  .brand { font-weight:700; font-size:15px; color:var(--text); letter-spacing:-0.2px; margin-right:18px; }
+  .tabs { display:flex; gap:4px; }
+  .tab {
+    color:var(--muted); text-decoration:none; padding:7px 14px; border-radius:var(--radius);
+    font-size:13.5px; font-weight:500; transition:background .15s, color .15s;
+  }
+  .tab:hover { background:var(--surface2); color:var(--text); }
+  .tab.active { background:var(--accent); color:#fff; }
+  .nav-right { margin-left:auto; display:flex; gap:6px; align-items:center; }
+  .util {
+    color:var(--muted); text-decoration:none; font-size:12.5px; padding:6px 11px;
+    border-radius:var(--radius); border:1px solid transparent; display:flex; align-items:center; gap:6px;
+    transition:all .15s;
+  }
+  .util:hover { background:var(--surface2); border-color:var(--border); color:var(--text); }
+  .util .ic { font-size:13px; opacity:.85; }
+
+  /* page body just to show context */
+  .page { max-width:1040px; margin:0 auto; padding:32px 24px; }
+  .h1 { font-size:24px; font-weight:700; letter-spacing:-0.4px; margin-bottom:6px; }
+  .sub { color:var(--muted); font-size:13px; margin-bottom:28px; }
+  .ph { background:var(--surface); border:1px solid var(--border); border-radius:12px; height:120px;
+        display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:13px; }
+  .note { margin-top:26px; font-size:12px; color:var(--muted); line-height:1.7; }
+  .note b { color:var(--text); }
+  .switch { margin-top:22px; display:flex; gap:8px; }
+  .switch button { background:var(--surface2); border:1px solid var(--border); color:var(--muted);
+    padding:6px 12px; border-radius:6px; font-size:12px; cursor:pointer; font-family:var(--font); }
+  .switch button.on { color:#fff; background:var(--accent); border-color:var(--accent); }
+</style>
+</head>
+<body>
+
+<nav>
+  <span class="brand">QS Revenue Dashboard</span>
+  <div class="tabs" id="tabs">
+    <a class="tab" data-k="sales">Sales</a>
+    <a class="tab" data-k="pnl">P&amp;L</a>
+    <a class="tab active" data-k="deals">Deals</a>
+  </div>
+  <div class="nav-right">
+    <a class="util"><span class="ic">🔍</span>Data Quality</a>
+    <a class="util"><span class="ic">🔄</span>Sync</a>
+  </div>
+</nav>
+
+<div class="page">
+  <div class="h1">🤝 Deals</div>
+  <div class="sub">Same nav on every page · active tab highlighted · utility buttons stay quiet on the right</div>
+  <div class="ph">— page content —</div>
+
+  <div class="switch">
+    <span style="color:var(--muted);font-size:12px;align-self:center;margin-right:4px;">Preview active tab:</span>
+    <button data-k="sales" onclick="setActive(this,'sales')">Sales</button>
+    <button data-k="pnl" onclick="setActive(this,'pnl')">P&amp;L</button>
+    <button data-k="deals" class="on" onclick="setActive(this,'deals')">Deals</button>
+  </div>
+
+  <div class="note">
+    <b>3 main tabs</b> — Sales · P&amp;L · Deals (the things you navigate to)<br>
+    <b>2 quiet utility buttons</b> — Data Quality · Sync (occasional/ops, top-right)<br>
+    <b>Removed</b> — Expenses (now lives inside P&amp;L) · SLWA (unused)<br>
+    <b>Text-only</b>, identical on every page, broken SLWA route link fixed.
+  </div>
+</div>
+
+<script>
+  function setActive(btn, k){
+    document.querySelectorAll('#tabs .tab').forEach(t => t.classList.toggle('active', t.dataset.k===k));
+    document.querySelectorAll('.switch button').forEach(b => b.classList.toggle('on', b===btn));
+    document.querySelector('.h1').textContent = (k==='sales'?'📊 Sales Performance':k==='pnl'?'💰 P&L':'🤝 Deals');
+  }
+</script>
+</body>
+</html>

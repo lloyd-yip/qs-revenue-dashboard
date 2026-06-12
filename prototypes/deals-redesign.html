@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>QS — Deals (mockup)</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:#0f1117; --surface:#1a1d27; --surface2:#22263a; --border:#2e3347;
+    --accent:#6366f1; --accent2:#818cf8; --text:#e2e8f0; --text2:#94a3b8; --text3:#64748b;
+    --green:#22c55e; --green-dim:rgba(34,197,94,0.12);
+    --yellow:#f59e0b; --yellow-dim:rgba(245,158,11,0.12);
+    --red:#ef4444; --radius:10px; --font:'Inter',system-ui,-apple-system,sans-serif;
+  }
+  body { background:var(--bg); color:var(--text); font-family:var(--font); font-size:14px; min-height:100vh; }
+
+  /* nav */
+  header { display:flex; align-items:center; gap:24px; padding:16px 24px; border-bottom:1px solid var(--border); background:var(--surface); }
+  header h1 { font-size:18px; font-weight:600; letter-spacing:-0.3px; }
+  .nav-links { display:flex; gap:8px; }
+  .nav-link { color:var(--text2); text-decoration:none; font-size:13px; padding:5px 12px; border-radius:6px; border:1px solid transparent; }
+  .nav-link.active { color:#fff; background:var(--accent); border-color:var(--accent); }
+
+  main { padding:24px; max-width:1040px; margin:0 auto; }
+  .page-title { font-size:26px; font-weight:700; letter-spacing:-0.5px; margin-bottom:16px; display:flex; align-items:center; gap:10px; }
+
+  /* lens segmented toggle */
+  .lens { display:inline-flex; gap:2px; padding:3px; background:var(--surface2); border:1px solid var(--border); border-radius:9px; margin-bottom:22px; }
+  .lens button { background:transparent; border:none; color:var(--text2); font-family:var(--font); font-size:13px; font-weight:500;
+                 padding:7px 16px; border-radius:7px; cursor:pointer; display:flex; align-items:center; gap:7px; }
+  .lens button.active { background:var(--accent); color:#fff; }
+  .lens .dot { width:6px; height:6px; border-radius:50%; }
+  .lens button.active .dot.live { background:#fff; }
+  .lens .dot.live { background:var(--green); }
+
+  /* live: month nav */
+  .month-nav { display:flex; align-items:center; gap:10px; margin-bottom:16px; }
+  .month-nav .arrow { width:30px; height:30px; border-radius:7px; border:1px solid var(--border); background:var(--surface2); color:var(--text); cursor:pointer; font-size:15px; }
+  .month-nav select { background:var(--surface2); border:1px solid var(--border); color:var(--text); padding:6px 12px; border-radius:7px; font-size:14px; font-weight:600; font-family:var(--font); cursor:pointer; }
+  .month-nav .refreshed { margin-left:auto; font-size:12px; color:var(--text3); }
+
+  /* totals strip */
+  .totals { display:flex; gap:28px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px 20px; margin-bottom:14px; }
+  .totals .ti { display:flex; flex-direction:column; gap:3px; }
+  .totals .tl { font-size:11px; color:var(--text3); text-transform:uppercase; letter-spacing:0.05em; }
+  .totals .tv { font-size:19px; font-weight:700; letter-spacing:-0.3px; }
+
+  /* rep buckets */
+  .bucket { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); margin-bottom:10px; overflow:hidden; }
+  .bucket-header { display:flex; align-items:center; justify-content:space-between; padding:15px 18px; cursor:pointer; }
+  .bucket-header:hover { background:var(--surface2); }
+  .bh-left { display:flex; align-items:center; gap:10px; }
+  .chev { width:16px; height:16px; transition:transform .15s; color:var(--text3); }
+  .bucket.open .chev { transform:rotate(90deg); }
+  .bucket-name { font-weight:600; font-size:15px; }
+  .bucket-count { font-size:11px; color:var(--text3); background:var(--surface2); padding:2px 8px; border-radius:5px; }
+  .bucket-total { font-weight:700; font-size:16px; }
+  .bucket-body { display:none; border-top:1px solid var(--border); }
+  .bucket.open .bucket-body { display:block; }
+  .item-row { display:flex; align-items:center; justify-content:space-between; padding:12px 18px 12px 40px; border-bottom:1px solid rgba(46,51,71,0.5); }
+  .item-row:last-child { border-bottom:none; }
+  .item-name { font-size:14px; display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
+  .item-meta { font-size:12px; color:var(--text3); margin-top:3px; }
+  .item-amount { font-weight:600; font-size:15px; }
+  .item-amt-wrap { text-align:right; flex-shrink:0; }
+  .amt-label { font-size:10px; color:var(--text3); text-transform:uppercase; letter-spacing:0.04em; margin-top:1px; }
+  .badge { font-size:10px; font-weight:600; padding:1px 6px; border-radius:4px; text-transform:uppercase; letter-spacing:.04em; }
+  .badge.high { color:var(--green); background:var(--green-dim); }
+  .badge.fee { color:var(--yellow); background:var(--yellow-dim); text-transform:none; }
+
+  .empty { text-align:center; color:var(--text3); padding:48px 20px; font-size:14px; }
+  .empty .ic { font-size:30px; display:block; margin-bottom:10px; opacity:.6; }
+
+  /* historical */
+  .cards { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:18px; }
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px 18px; }
+  .card .cl { font-size:11px; color:var(--text3); text-transform:uppercase; letter-spacing:.05em; margin-bottom:7px; }
+  .card .cv { font-size:24px; font-weight:700; }
+  .card .cs { font-size:11px; color:var(--text3); margin-top:3px; }
+  .filters { display:flex; gap:10px; margin-bottom:14px; }
+  .filters select, .filters input { background:var(--surface2); border:1px solid var(--border); color:var(--text); padding:7px 12px; border-radius:7px; font-size:13px; font-family:var(--font); }
+  .filters input { flex:1; }
+  table { width:100%; border-collapse:collapse; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
+  th { text-align:left; font-size:11px; color:var(--text3); text-transform:uppercase; letter-spacing:.04em; padding:11px 14px; border-bottom:1px solid var(--border); }
+  td { padding:12px 14px; font-size:13px; border-bottom:1px solid rgba(46,51,71,0.5); }
+  td.num { text-align:right; font-variant-numeric:tabular-nums; }
+  tr:last-child td { border-bottom:none; }
+  .hidden { display:none; }
+  .note { font-size:11px; color:var(--text3); margin:18px 0 6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>QS Revenue Dashboard</h1>
+  <nav class="nav-links">
+    <a class="nav-link">Sales</a>
+    <a class="nav-link">P&amp;L</a>
+    <a class="nav-link active">Deals</a>
+    <a class="nav-link">SLWA</a>
+    <a class="nav-link">Sync</a>
+  </nav>
+</header>
+
+<main>
+  <div class="page-title">🤝 Deals</div>
+
+  <div class="lens">
+    <button id="tab-live" class="active" onclick="setLens('live')"><span class="dot live"></span>Live · This Month</button>
+    <button id="tab-hist" onclick="setLens('hist')"><span class="dot"></span>Historical · Reconciled</button>
+  </div>
+
+  <!-- ===== LIVE LENS ===== -->
+  <section id="lens-live">
+    <div class="month-nav">
+      <button class="arrow" onclick="stepMonth(-1)">‹</button>
+      <select id="monthSel" onchange="renderLive()">
+        <option value="2026-06" selected>June 2026 (current)</option>
+        <option value="2026-05">May 2026</option>
+        <option value="2026-04">April 2026</option>
+        <option value="2026-03">March 2026</option>
+        <option value="2026-02">February 2026</option>
+      </select>
+      <button class="arrow" onclick="stepMonth(1)">›</button>
+      <span class="refreshed" id="refreshed">As of 6/11/2026, 10:21 PM · Whop-settled only · refreshed nightly</span>
+    </div>
+    <div id="liveBody"></div>
+  </section>
+
+  <!-- ===== HISTORICAL LENS ===== -->
+  <section id="lens-hist" class="hidden">
+    <div class="cards">
+      <div class="card"><div class="cl">Total Won Deals</div><div class="cv">290</div><div class="cs">in database</div></div>
+      <div class="card"><div class="cl">Matched (High)</div><div class="cv" style="color:var(--green)">218</div><div class="cs">75.2% match rate</div></div>
+      <div class="card"><div class="cl">Matched (Medium)</div><div class="cv" style="color:var(--yellow)">0</div><div class="cs">partial confidence</div></div>
+      <div class="card"><div class="cl">Unmatched</div><div class="cv" style="color:var(--red)">72</div><div class="cs">no Whop member found</div></div>
+    </div>
+    <div class="filters">
+      <select><option>All confidence</option><option>High</option><option>Medium</option><option>Unmatched</option></select>
+      <select><option>All reps</option><option>Ryan Matsumori</option><option>Armando Valencia</option><option>Melissa Fredericks</option></select>
+      <input placeholder="Search deals or contacts…" />
+    </div>
+    <div class="note">Filter by rep here to see ALL of a rep's deals across every month (e.g. Armando → all 4).</div>
+    <table>
+      <thead><tr><th>Deal</th><th>Rep</th><th>Confidence</th><th class="num">Contract</th><th class="num">Net Cash</th><th>Close Date</th></tr></thead>
+      <tbody>
+        <tr><td>Kelly Painter</td><td>Armando Valencia</td><td><span class="badge high">high</span></td><td class="num">$18,000</td><td class="num">$15,300</td><td>2026-06-04</td></tr>
+        <tr><td>Russell Logan</td><td>Armando Valencia</td><td><span class="badge high">high</span></td><td class="num">$6,000</td><td class="num">$6,000</td><td>2026-05-18</td></tr>
+        <tr><td>Judith DeFeo</td><td>Ryan Matsumori</td><td><span class="badge high">high</span></td><td class="num">$18,000</td><td class="num">$15,296</td><td>2026-04-30</td></tr>
+        <tr><td>Dana Mahoney</td><td>Armando Valencia</td><td><span class="badge high">high</span></td><td class="num">$4,500</td><td class="num">$4,500</td><td>2026-05-15</td></tr>
+        <tr><td>Marc Adams</td><td>Armando Valencia</td><td><span class="badge high">high</span></td><td class="num">$7,700</td><td class="num">$7,700</td><td>2024-12-26</td></tr>
+      </tbody>
+    </table>
+  </section>
+</main>
+
+<script>
+  const DATA = {
+    "2026-06": { totals:{net:55599, gross:43950, deals:5, flagged:0}, reps:[
+      {name:"Ryan Matsumori", total:24999, deals:[
+        {n:"Stephen F Lovell", net:5000, meta:"contract $5,000 · 2026-06-09", badges:['high']},
+        {n:"Veronica Vaida", net:12000, meta:"contract $12,000 · 2026-06-06", badges:['high']},
+        {n:"Priya N.", net:7999, meta:"contract $9,410 · 2026-06-02", badges:['high','fee:Splitit −15%']},
+      ]},
+      {name:"Armando Valencia", total:15300, deals:[
+        {n:"Kelly Painter", net:15300, meta:"contract $18,000 · 2026-06-04", badges:['high','fee:Splitit −15%']},
+      ]},
+      {name:"Unassigned", total:15300, deals:[
+        {n:"Dwight Crain", net:15300, meta:"contract $18,000 · 2026-06-03 · no rep set in GHL", badges:['high','fee:Splitit −15%']},
+      ]},
+    ]},
+    "2026-05": { totals:{net:49069, gross:60200, deals:6, flagged:2}, reps:[
+      {name:"Ryan Matsumori", total:25694, deals:[
+        {n:"Karl B.", net:18694, meta:"contract $22,000 · 2026-05-21", badges:['high','fee:Splitit −15%']},
+        {n:"Dina O.", net:7000, meta:"contract $7,000 · 2026-05-09", badges:['high']},
+      ]},
+      {name:"Armando Valencia", total:10500, deals:[
+        {n:"Russell Logan", net:6000, meta:"contract $6,000 · 2026-05-18", badges:['high']},
+        {n:"Dana Mahoney", net:4500, meta:"contract $15,000 · 2026-05-15 · 6-pmt plan", badges:['high']},
+      ]},
+      {name:"Unassigned", total:10000, deals:[
+        {n:"Sergiy K.", net:10000, meta:"contract $11,250 · 2026-05-04 · no rep set in GHL", badges:['high']},
+      ]},
+      {name:"Alex Amor Gesell", total:2875, deals:[
+        {n:"Morgan T.", net:2875, meta:"contract $11,250 · 2026-05-02 · 6-pmt plan", badges:['high']},
+      ]},
+    ]},
+    "2026-04": { totals:{net:87613, gross:89150, deals:11, flagged:0}, reps:[
+      {name:"Ryan Matsumori", total:42674, deals:[
+        {n:"Judith DeFeo", net:15296, meta:"contract $18,000 · 2026-04-30", badges:['high','fee:Splitit −15%']},
+        {n:"Michael Niemann", net:5000, meta:"contract $15,000 · 2026-04-22", badges:['high']},
+      ]},
+      {name:"Melissa Fredericks", total:36667, deals:[
+        {n:"ZeroMils", net:10000, meta:"contract $11,250 · 2026-04-01", badges:['high']},
+      ]},
+      {name:"Unassigned", total:8273, deals:[
+        {n:"Two deals — no rep set in GHL", net:8273, meta:"2026-04", badges:[]},
+      ]},
+    ]},
+    "2026-03": { totals:{net:0, gross:0, deals:0, flagged:0}, reps:[] },
+    "2026-02": { totals:{net:0, gross:0, deals:0, flagged:0}, reps:[] },
+  };
+
+  const fmt = n => "$" + Math.round(n).toLocaleString();
+
+  function setLens(which){
+    document.getElementById('tab-live').classList.toggle('active', which==='live');
+    document.getElementById('tab-hist').classList.toggle('active', which==='hist');
+    document.getElementById('lens-live').classList.toggle('hidden', which!=='live');
+    document.getElementById('lens-hist').classList.toggle('hidden', which!=='hist');
+  }
+
+  function stepMonth(dir){
+    const sel = document.getElementById('monthSel');
+    let i = sel.selectedIndex + dir;
+    if(i<0) i=0; if(i>=sel.options.length) i=sel.options.length-1;
+    sel.selectedIndex = i; renderLive();
+  }
+
+  function badge(b){
+    if(b==='high') return '<span class="badge high">high</span>';
+    if(b.startsWith('fee:')) return '<span class="badge fee">'+b.slice(4)+'</span>';
+    return '';
+  }
+
+  function renderLive(){
+    const m = document.getElementById('monthSel').value;
+    const d = DATA[m]; const body = document.getElementById('liveBody');
+    if(!d || d.reps.length===0){
+      body.innerHTML = '<div class="empty"><span class="ic">📭</span>No Whop-settled deals closed this month yet.<br>They\'ll appear here as they close, refreshed nightly.</div>';
+      return;
+    }
+    let h = '<div class="totals">'
+      + '<div class="ti"><span class="tl">Net Cash Collected</span><span class="tv">'+fmt(d.totals.net)+'</span></div>'
+      + '<div class="ti"><span class="tl">Gross Contract</span><span class="tv">'+fmt(d.totals.gross)+'</span></div>'
+      + '<div class="ti"><span class="tl">Deals</span><span class="tv">'+d.totals.deals+'</span></div>'
+      + '<div class="ti"><span class="tl">Flagged</span><span class="tv">'+d.totals.flagged+'</span></div>'
+      + '</div>';
+    d.reps.forEach((r,i)=>{
+      const rows = r.deals.map(dl=>{
+        const badges = dl.badges.map(badge).join(' ');
+        const metaLabeled = dl.meta.replace(/contract/i, 'Contract');
+        return '<div class="item-row"><div><div class="item-name">'+dl.n+' '+badges+'</div><div class="item-meta">'+metaLabeled+'</div></div><div class="item-amt-wrap"><div class="item-amount">'+fmt(dl.net)+'</div><div class="amt-label">cash collected</div></div></div>';
+      }).join('');
+      h += '<div class="bucket'+(i===0?' open':'')+'" id="b'+i+'">'
+        + '<div class="bucket-header" onclick="document.getElementById(\'b'+i+'\').classList.toggle(\'open\')">'
+        + '<div class="bh-left"><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>'
+        + '<span class="bucket-name">'+r.name+'</span><span class="bucket-count">'+r.deals.length+' deal'+(r.deals.length!==1?'s':'')+'</span></div>'
+        + '<span class="bucket-total">'+fmt(r.total)+'</span></div>'
+        + '<div class="bucket-body">'+rows+'</div></div>';
+    });
+    body.innerHTML = h;
+  }
+  renderLive();
+</script>
+</body>
+</html>
