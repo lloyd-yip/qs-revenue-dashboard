@@ -2,7 +2,7 @@
   "project_name": "QS Revenue Dashboard",
   "description": "Internal sales performance dashboard — call volume, show rates, qualification, lead source attribution, compliance tracking, funnel economics",
   "business_entity": "quantum_scaling",
-  "last_updated": "2026-06-14T23:59:00Z",
+  "last_updated": "2026-06-15T00:30:00Z",
   "current_state": {
     "phase_name": "Phase 1 - Live & Iterating",
     "status": "live"
@@ -13,7 +13,7 @@
     "end_state": "A comprehensive revenue intelligence platform with real-time KPIs, financial integration (Xero for actual revenue vs pipeline), automated anomaly detection, and API endpoints that feed the OpenClaw agent layer for cross-app synthesis.",
     "current_summary": "Dashboard is live and in daily use across 5 tabs: Sales Performance, Lead Quality by Channel, Pipeline Intelligence, Funnel Economics, and Compliance. Xero invoice sync LIVE — Contract Value on P&L page updates monthly from actual ACCREC invoices with EUR→USD conversion. RORI columns display but require manual period financial inputs (Phase 2 will auto-pull from Xero). Show rate, compliance tracking, and lead quality distribution all working. Lloyd has real-time visibility into rep performance and pipeline economics."
   },
-  "resume_here": "DEALS v1 SHIPPED + VERIFIED LIVE (2026-06-14, commit 9977ae2). Live Whop relocated to Deals page with Historical/Live toggle + deal-driven month picker (defaults current month, reaches May/June). All 6 acceptance criteria verified on Railway: month-picker=40 months (2026-06 default), 3 rep buckets, cash/contract labels render, P&L Live section removed. Rep fallback deployed (sync_engine Call-2 assignedUserId) — recovered 0/20 because current owner-less deals (Dwight Crain, Abdul) have zero GHL appointments; fallback is correct and will attribute future owner-less+appointment deals. Recurring-cash workstream (v2, net-new vs recurring with decay model) fully spec'd (blueprints/monthly_cash_ledger_blueprint_v2.md), Step 2 awaiting /ux-design.",
+  "resume_here": "DEALS v1 SHIPPED + VERIFIED LIVE (2026-06-14, commit 9977ae2). Live Whop relocated to Deals page, Historical/Live toggle, deal-driven month picker (2026-06 default, reaches May/June). Acceptance criteria verified: month-picker 40-month span, 3 rep buckets, cash/contract/Splitit labels render, P&L Live section removed. Rep fallback (sync_engine Call-2 assignedUserId) correct. Recurring-cash v2 fully spec'd (monthly net + decay model). NEXT: Deploy Deals v1, then recurring-cash Step 2 /ux-design.",
   "current_phase": {
     "name": "Phase 1 - Live & Iterating",
     "goal": "Full internal dashboard for Lloyd to monitor sales team performance: call volume per rep, show rates, qualification breakdowns, lead source attribution, compliance tracking, funnel economics with RORI",
