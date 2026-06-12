@@ -2,7 +2,7 @@
   "project_name": "QS Revenue Dashboard",
   "description": "Internal sales performance dashboard — call volume, show rates, qualification, lead source attribution, compliance tracking, funnel economics",
   "business_entity": "quantum_scaling",
-  "last_updated": "2026-06-12T00:40:00Z",
+  "last_updated": "2026-06-12T01:10:00Z",
   "current_state": {
     "phase_name": "Phase 1 - Live & Iterating",
     "status": "live"
@@ -13,7 +13,7 @@
     "end_state": "A comprehensive revenue intelligence platform with real-time KPIs, financial integration (Xero for actual revenue vs pipeline), automated anomaly detection, and API endpoints that feed the OpenClaw agent layer for cross-app synthesis.",
     "current_summary": "Dashboard is live and in daily use across 5 tabs: Sales Performance, Lead Quality by Channel, Pipeline Intelligence, Funnel Economics, and Compliance. Xero invoice sync LIVE — Contract Value on P&L page updates monthly from actual ACCREC invoices with EUR→USD conversion. RORI columns display but require manual period financial inputs (Phase 2 will auto-pull from Xero). Show rate, compliance tracking, and lead quality distribution all working. Lloyd has real-time visibility into rep performance and pipeline economics."
   },
-  "resume_here": "ACTIVE = DEALS REWORK v1 build via /build-loop. Full path in project-control/deals-rework-plan.md 'V1 EXECUTION PATH'. ORDER: (1) finalize v1 mockup prototypes/deals-redesign.html with explicit Cash-collected/Contract labels [CURRENT] -> (2) /ux-design Step 10b/c (.ux-approved marker + project-control/specs/ux-design.md) -> (3) write v1 blueprint blueprints/deals_v1_relocation_blueprint_v2.md with the 5 acceptance criteria (Live lens on deals.html, deal-driven month picker GET /pnl/whop-live/months default current, rep fallback via Call-2 appointment assignedUserId, Historical month-nav, remove Live from pnl.html + Cash/Contract labels) -> Lloyd approves once -> (4) /build-loop (build -> /build-verify static -> /test-drive on deployed Railway -> fix -> loop) -> (5) deploy+verify. v2 cash-ledger DEFERRED (blueprints/monthly_cash_ledger_blueprint_v2.md, fully spec'd, $2M Stripe gap + recurring-decay caught). test-drive runs vs Railway (no local env), ~2-3min/iter.",
+  "resume_here": "ACTIVE = DEALS REWORK v1. Mockup LOCKED (.ux-approved + project-control/specs/ux-design.md). v1 BLUEPRINT written: blueprints/deals_v1_relocation_blueprint_v2.md (READ IT — it's the build-loop acceptance contract, 6 observable done-conditions). AWAITING LLOYD's ONE approval of the blueprint -> then /build-loop drives build->/build-verify->/test-drive(Railway)->fix until the 6 criteria pass. v1 = relocate Live view to deals.html (Live default + Historical toggle), deal-driven month picker (GET /pnl/whop-live/months) default current, rep fallback via Call-2 appointment assignedUserId (+POST /api/sync/backfill-appointment-owners), explicit Cash-collected/Contract labels, remove Live from pnl.html. Historical month-nav DEFERRED to main UX redesign. v2 cash-ledger DEFERRED (blueprints/monthly_cash_ledger_blueprint_v2.md).",
   "current_phase": {
     "name": "Phase 1 - Live & Iterating",
     "goal": "Full internal dashboard for Lloyd to monitor sales team performance: call volume per rep, show rates, qualification breakdowns, lead source attribution, compliance tracking, funnel economics with RORI",
