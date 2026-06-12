@@ -5,10 +5,11 @@ the resolved names onto matched deals. Set-based and idempotent — only touches
 whose owner name is still NULL, so re-running is a no-op once resolved.
 """
 
-from sqlalchemy import text, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Opportunity
+from sync.ghl_client import DEAL_WON_STAGE_ID
 
 
 async def backfill_opportunity_owner_names(
@@ -47,3 +48,26 @@ async def propagate_owner_names_to_deal_matches(session: AsyncSession) -> int:
     )
     await session.commit()
     return result.rowcount or 0
+
+
+async def get_ownerless_won_deals(session: AsyncSession) -> list[tuple[str, str]]:
+    """Return (ghl_opportunity_id, ghl_contact_id) for won opportunities that have no owner name."""
+    rows = (await session.execute(
+        select(Opportunity.ghl_opportunity_id, Opportunity.ghl_contact_id)
+        .where(Opportunity.opportunity_owner_name.is_(None))
+        .where(Opportunity.ghl_contact_id.isnot(None))
+        .where(Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID)
+    )).all()
+    return [(r[0], r[1]) for r in rows]
+
+
+async def set_opportunity_owner(
+    session: AsyncSession, ghl_opportunity_id: str, owner_id: str, owner_name: str
+) -> None:
+    """Set the resolved owner id + name on one opportunity row."""
+    await session.execute(
+        update(Opportunity)
+        .where(Opportunity.ghl_opportunity_id == ghl_opportunity_id)
+        .values(opportunity_owner_id=owner_id, opportunity_owner_name=owner_name)
+    )
+    await session.commit()

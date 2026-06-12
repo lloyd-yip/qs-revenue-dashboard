@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.queries.whop_live import get_whop_live_summary_for_month
+from db.queries.whop_live import get_available_deal_months, get_whop_live_summary_for_month
 from db.session import get_db
 from sync.whop_refresh import refresh_current_month_payment_metrics
 
@@ -96,6 +96,12 @@ async def pnl_whop_live(
         totals=data["totals"],
         last_refreshed=data["last_refreshed"],
     )
+
+
+@router.get("/pnl/whop-live/months")
+async def whop_live_months(db: AsyncSession = Depends(get_db)) -> list[str]:
+    """Return the deal-months ('YYYY-MM') that drive the Live lens month picker — current month included."""
+    return await get_available_deal_months(db)
 
 
 @router.post("/pnl/whop-refresh")

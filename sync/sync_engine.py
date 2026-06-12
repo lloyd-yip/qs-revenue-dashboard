@@ -241,6 +241,15 @@ async def _build_opportunity_row(
                 call1_appointment_date=call1_date,
             )
 
+    # Rep fallback: if the opportunity has no owner, attribute to the rep who ran the
+    # Call-2 (decision) call — the follow-up appointment's assigned user. Recovers deals
+    # the closer never got set as Opportunity Owner on (e.g. owner-less GHL opps).
+    if owner_id is None and followup_appt:
+        appt_user = followup_appt.get("assignedUserId")
+        if isinstance(appt_user, str) and appt_user:
+            owner_id = appt_user
+            owner_name = user_map.get(appt_user)
+
     return {
         "ghl_opportunity_id": opp["id"],
         "ghl_contact_id": opp.get("contactId"),

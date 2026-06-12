@@ -10,7 +10,7 @@ These three functions serve the daily-refreshed "Live Whop Revenue" section:
 All three operate on deal_whop_matches. None touch identity or is_confirmed columns.
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -163,3 +163,16 @@ async def get_whop_live_summary_for_month(
         "totals": totals,
         "last_refreshed": last_refreshed.isoformat() if last_refreshed else None,
     }
+
+
+async def get_available_deal_months(session: AsyncSession) -> list[str]:
+    """Return distinct YYYY-MM that have high/medium deals, newest first, current month always included."""
+    rows = (await session.execute(
+        select(func.to_char(DealWhopMatch.first_payment_date, "YYYY-MM"))
+        .where(DealWhopMatch.first_payment_date.isnot(None))
+        .where(DealWhopMatch.match_confidence.in_(LIVE_CONFIDENCE_TIERS))
+        .distinct()
+    )).scalars().all()
+    months = {m for m in rows if m}
+    months.add(datetime.now(timezone.utc).strftime("%Y-%m"))
+    return sorted(months, reverse=True)

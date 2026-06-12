@@ -6,14 +6,17 @@ NULL opportunity owner names, then propagates them onto matched deals. Fast (one
 rep attribution needs fixing.
 """
 
+import asyncio
 import logging
 
 from db.queries.attribution_backfill import (
     backfill_opportunity_owner_names,
+    get_ownerless_won_deals,
     propagate_owner_names_to_deal_matches,
+    set_opportunity_owner,
 )
 from db.session import AsyncSessionLocal
-from sync.ghl_client import GHLClient
+from sync.ghl_client import FOLLOW_UP_CALENDAR_IDS, GHLClient
 
 logger = logging.getLogger(__name__)
 
@@ -37,3 +40,38 @@ async def backfill_rep_attribution() -> dict:
         "opportunities_updated": opps_updated,
         "deal_matches_updated": deals_updated,
     }
+
+
+async def backfill_owner_from_appointments() -> dict:
+    """Recover owner for owner-less won deals using the Call-2 (follow-up) appointment's assigned rep."""
+    ghl = GHLClient()
+    user_map = await ghl.get_users()
+    stats = {"checked": 0, "recovered": 0, "still_unassigned": 0, "errors": 0}
+
+    async with AsyncSessionLocal() as session:
+        deals = await get_ownerless_won_deals(session)
+        logger.info("[appt-owner-backfill] start — %d owner-less won deals", len(deals))
+
+        for opp_id, contact_id in deals:
+            try:
+                appts = await ghl.get_contact_appointments(contact_id)
+                followup = next(
+                    (a for a in appts if a.get("calendarId") in FOLLOW_UP_CALENDAR_IDS), None
+                )
+                uid = followup.get("assignedUserId") if followup else None
+                name = user_map.get(uid) if uid else None
+                stats["checked"] += 1
+                if uid and name:
+                    await set_opportunity_owner(session, opp_id, uid, name)
+                    stats["recovered"] += 1
+                else:
+                    stats["still_unassigned"] += 1
+                await asyncio.sleep(0.12)
+            except Exception as exc:
+                logger.error("[appt-owner-backfill] error on %s: %s", opp_id, exc, exc_info=True)
+                stats["errors"] += 1
+
+        await propagate_owner_names_to_deal_matches(session)
+
+    logger.info("[appt-owner-backfill] done — %s", stats)
+    return stats

@@ -278,6 +278,45 @@
       flex-wrap: wrap;
     }
     .legend span { display: flex; align-items: center; gap: 6px; }
+
+    /* ── Live lens (Whop cash, relocated from P&L) ── */
+    .wl-lens { display:inline-flex; gap:2px; padding:3px; background:var(--surface2); border:1px solid var(--border); border-radius:9px; margin-bottom:20px; }
+    .wl-lens button { background:transparent; border:none; color:var(--muted); font-family:inherit; font-size:13px; font-weight:500; padding:7px 16px; border-radius:7px; cursor:pointer; display:flex; align-items:center; gap:7px; }
+    .wl-lens button.active { background:var(--accent); color:#fff; }
+    .wl-dot { width:6px; height:6px; border-radius:50%; background:var(--green); }
+    .wl-lens button.active .wl-dot { background:#fff; }
+    .wl-monthnav { display:flex; align-items:center; gap:10px; margin-bottom:16px; }
+    .wl-arrow { width:30px; height:30px; border-radius:7px; border:1px solid var(--border); background:var(--surface2); color:var(--text); cursor:pointer; font-size:15px; }
+    #wlMonthSel { background:var(--surface2); border:1px solid var(--border); color:var(--text); padding:6px 12px; border-radius:7px; font-size:14px; font-weight:600; font-family:inherit; cursor:pointer; min-width:190px; }
+    .wl-refreshed { margin-left:auto; font-size:12px; color:var(--muted); }
+    .wl-totals { display:flex; gap:28px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px 20px; margin-bottom:14px; flex-wrap:wrap; }
+    .wl-ti { display:flex; flex-direction:column; gap:3px; }
+    .wl-tl { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
+    .wl-tv { font-size:19px; font-weight:700; letter-spacing:-.3px; }
+    .wl-bucket { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); margin-bottom:10px; overflow:hidden; }
+    .wl-bh { display:flex; align-items:center; justify-content:space-between; padding:15px 18px; cursor:pointer; }
+    .wl-bh:hover { background:var(--surface2); }
+    .wl-bh-left { display:flex; align-items:center; gap:10px; }
+    .wl-chev { transition:transform .15s; color:var(--muted); display:inline-block; font-size:12px; }
+    .wl-bucket.open .wl-chev { transform:rotate(90deg); }
+    .wl-name { font-weight:600; font-size:15px; }
+    .wl-count { font-size:11px; color:var(--muted); background:var(--surface2); padding:2px 8px; border-radius:5px; }
+    .wl-total { font-weight:700; font-size:16px; }
+    .wl-body { display:none; border-top:1px solid var(--border); }
+    .wl-bucket.open .wl-body { display:block; }
+    .wl-row { display:flex; align-items:center; justify-content:space-between; padding:12px 18px 12px 40px; border-bottom:1px solid rgba(42,45,62,0.5); gap:12px; }
+    .wl-row:last-child { border-bottom:none; }
+    .wl-rname { font-size:14px; display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
+    .wl-meta { font-size:12px; color:var(--muted); margin-top:3px; }
+    .wl-amt-wrap { text-align:right; flex-shrink:0; }
+    .wl-amt { font-weight:600; font-size:15px; }
+    .wl-amt-label { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin-top:1px; }
+    .wl-badge { font-size:10px; font-weight:600; padding:1px 6px; border-radius:4px; text-transform:uppercase; letter-spacing:.04em; }
+    .wl-badge.high { color:var(--green); background:rgba(34,197,94,0.12); }
+    .wl-badge.medium { color:var(--yellow); background:rgba(245,158,11,0.12); }
+    .wl-badge.fee { color:var(--yellow); background:rgba(245,158,11,0.12); text-transform:none; }
+    .wl-empty { text-align:center; color:var(--muted); padding:40px 20px; font-size:14px; }
+    .wl-hidden { display:none; }
   </style>
 </head>
 <body>
@@ -305,6 +344,26 @@
       <div class="last-run" id="lastRun">Last run: —</div>
     </div>
   </div>
+
+  <!-- Lens toggle -->
+  <div class="wl-lens">
+    <button id="wl-tab-live" class="active" onclick="wlSetLens('live')"><span class="wl-dot"></span>Live · This Month</button>
+    <button id="wl-tab-hist" onclick="wlSetLens('hist')">Historical · Reconciled</button>
+  </div>
+
+  <!-- LIVE lens (relocated from P&L) -->
+  <section id="lens-live">
+    <div class="wl-monthnav">
+      <button class="wl-arrow" onclick="wlStepMonth(-1)">‹</button>
+      <select id="wlMonthSel" onchange="loadWhopLive()"></select>
+      <button class="wl-arrow" onclick="wlStepMonth(1)">›</button>
+      <span class="wl-refreshed" id="wlRefreshed">Whop-settled deals only · refreshed nightly</span>
+    </div>
+    <div id="wlBody"><div class="wl-empty">Loading…</div></div>
+  </section>
+
+  <!-- HISTORICAL lens (existing reconciliation) -->
+  <section id="lens-historical" class="wl-hidden">
 
   <!-- Summary cards -->
   <div class="cards" id="cards">
@@ -376,6 +435,7 @@
       </tbody>
     </table>
   </div>
+  </section>
 </div>
 
 <div id="toast"></div>
@@ -390,8 +450,76 @@ let sortDir = -1; // -1 = desc
 
 // ── Boot ───────────────────────────────────────────────────────────────────
 (async () => {
-  await Promise.all([loadSummary(), loadDeals()]);
+  await loadMonths();
+  await Promise.all([loadWhopLive(), loadSummary(), loadDeals()]);
 })();
+
+// ── Live lens (Whop cash, relocated from P&L) ────────────────────────────────
+function wlCurMonth(){ return new Date().toISOString().slice(0,7); }
+function wlMonthLabel(m){ const p=m.split('-'); return new Date(+p[0], +p[1]-1, 1).toLocaleString('en-US',{month:'long',year:'numeric'}); }
+
+async function loadMonths(){
+  let months = [];
+  try { const r = await fetch(`${API}/pnl/whop-live/months`); if (r.ok) months = await r.json(); } catch(e){}
+  const cur = wlCurMonth();
+  if (!months.includes(cur)) months.unshift(cur);
+  el('wlMonthSel').innerHTML = months.map(m =>
+    `<option value="${m}"${m===cur?' selected':''}>${wlMonthLabel(m)}${m===cur?' (current)':''}</option>`).join('');
+}
+function wlStepMonth(dir){ const s=el('wlMonthSel'); let i=s.selectedIndex+dir; if(i<0)i=0; if(i>=s.options.length)i=s.options.length-1; s.selectedIndex=i; loadWhopLive(); }
+
+async function loadWhopLive(){
+  const s = el('wlMonthSel'); const month = (s && s.value) || wlCurMonth();
+  const body = el('wlBody'); body.innerHTML = '<div class="wl-empty">Loading…</div>';
+  try {
+    const r = await fetch(`${API}/pnl/whop-live?month=${month}`);
+    if (!r.ok) throw new Error('HTTP '+r.status);
+    wlRender(await r.json());
+  } catch(e){ body.innerHTML = '<div class="wl-empty">Could not load live Whop data ('+e.message+')</div>'; }
+}
+function wlBadges(d){
+  let b = '<span class="wl-badge '+(d.match_confidence==='high'?'high':'medium')+'">'+d.match_confidence+'</span>';
+  if (d.is_splitit) b += ' <span class="wl-badge fee">Splitit −15%</span>';
+  if (d.is_claritypay) b += ' <span class="wl-badge fee">ClarityPay −15%</span>';
+  if (d.plan_months_flag) b += ' <span class="wl-badge fee">⚠ '+(d.total_installments||'')+'-pmt plan</span>';
+  return b;
+}
+function wlRepBucket(rep, i){
+  const rows = rep.deals.map(d => {
+    const gross = d.gross_contract_value!=null ? 'Contract '+fmtUSD(d.gross_contract_value) : '';
+    const fpd = d.first_payment_date ? ' · '+d.first_payment_date : '';
+    const net = d.net_cash_collected!=null ? fmtUSD(d.net_cash_collected) : '—';
+    return '<div class="wl-row"><div><div class="wl-rname">'+(d.ghl_opportunity_name||d.ghl_opportunity_id)+' '+wlBadges(d)
+      +'</div><div class="wl-meta">'+gross+fpd+'</div></div>'
+      +'<div class="wl-amt-wrap"><div class="wl-amt">'+net+'</div><div class="wl-amt-label">cash collected</div></div></div>';
+  }).join('');
+  const id='wlb'+i;
+  return '<div class="wl-bucket'+(i===0?' open':'')+'" id="'+id+'">'
+    +'<div class="wl-bh" onclick="document.getElementById(\''+id+'\').classList.toggle(\'open\')">'
+    +'<div class="wl-bh-left"><span class="wl-chev">▶</span><span class="wl-name">'+rep.rep_name+'</span>'
+    +'<span class="wl-count">'+rep.deal_count+' deal'+(rep.deal_count!==1?'s':'')+'</span></div>'
+    +'<span class="wl-total">'+fmtUSD(rep.net_cash_collected)+'</span></div>'
+    +'<div class="wl-body">'+rows+'</div></div>';
+}
+function wlRender(data){
+  const body = el('wlBody'); const reps = data.reps||[]; const t = data.totals||{};
+  const asOf = data.last_refreshed ? 'As of '+new Date(data.last_refreshed).toLocaleString()+' · ' : '';
+  el('wlRefreshed').textContent = asOf+'Whop-settled deals only · refreshed nightly';
+  if (!reps.length){ body.innerHTML = '<div class="wl-empty">No Whop-settled deals closed this month yet — they\'ll appear here as they close.</div>'; return; }
+  let h = '<div class="wl-totals">'
+    +'<div class="wl-ti"><span class="wl-tl">Net Cash Collected</span><span class="wl-tv">'+fmtUSD(t.net_cash_collected||0)+'</span></div>'
+    +'<div class="wl-ti"><span class="wl-tl">Gross Contract</span><span class="wl-tv">'+fmtUSD(t.gross_contract_value||0)+'</span></div>'
+    +'<div class="wl-ti"><span class="wl-tl">Deals</span><span class="wl-tv">'+(t.deal_count||0)+'</span></div>'
+    +'<div class="wl-ti"><span class="wl-tl">Flagged</span><span class="wl-tv">'+(t.flagged_count||0)+'</span></div></div>';
+  reps.forEach((r,i)=>{ h += wlRepBucket(r,i); });
+  body.innerHTML = h;
+}
+function wlSetLens(which){
+  el('wl-tab-live').classList.toggle('active', which==='live');
+  el('wl-tab-hist').classList.toggle('active', which==='hist');
+  el('lens-live').classList.toggle('wl-hidden', which!=='live');
+  el('lens-historical').classList.toggle('wl-hidden', which!=='hist');
+}
 
 // ── API calls ───────────────────────────────────────────────────────────────
 async function loadSummary() {

@@ -90,6 +90,19 @@ async def backfill_attribution():
         return {"ok": False, "error": str(exc)}
 
 
+@router.post("/backfill-appointment-owners")
+async def backfill_appointment_owners():
+    """One-shot: recover rep for owner-less deals via the Call-2 appointment's assigned rep. Idempotent."""
+    from sync.attribution_backfill import backfill_owner_from_appointments
+
+    try:
+        stats = await backfill_owner_from_appointments()
+        return {"ok": True, "stats": stats}
+    except Exception as exc:
+        logger.error("Appointment-owner backfill failed: %s", exc)
+        return {"ok": False, "error": str(exc)}
+
+
 async def _run_sync_background(sync_type: str) -> None:
     try:
         await run_sync(sync_type)
