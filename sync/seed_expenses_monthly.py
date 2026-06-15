@@ -31,11 +31,17 @@ BUCKET OVERRIDES (move from Xero account default):
 """
 
 import json
-import urllib.request
+import os
 import urllib.error
+import urllib.request
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).parent.parent / ".env")
 
 RAILWAY_URL = "https://qs-revenue-dashboard-production.up.railway.app/api/dashboard/expenses/upsert"
-BEARER = "RAILWAY_BEARER_REMOVED"
+BEARER = os.environ["API_BEARER_TOKEN"]
 
 # ── Categorization rules ──────────────────────────────────────────────────────
 

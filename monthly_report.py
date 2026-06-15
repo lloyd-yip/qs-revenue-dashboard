@@ -13,11 +13,16 @@ from datetime import date, datetime, timedelta, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
+import os
+
 import requests
+from dotenv import load_dotenv
+
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 # ── Config ────────────────────────────────────────────────────────────────────
 API_BASE  = "https://qs-revenue-dashboard-production.up.railway.app"
-API_TOKEN = "RAILWAY_BEARER_REMOVED"
+API_TOKEN = os.environ["API_BEARER_TOKEN"]
 from email_config import SMTP_USER, SMTP_PASS  # loaded from .env (gitignored) — never hardcode
 
 RECIPIENTS = ["lloyd@attractandscale.com", "scott@quantum-scaling.com", "alex@quantum-scaling.com"]

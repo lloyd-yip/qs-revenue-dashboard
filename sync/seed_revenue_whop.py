@@ -24,10 +24,15 @@ from collections import defaultdict
 from datetime import datetime, timezone
 
 # ── Config ────────────────────────────────────────────────────────────────────
+import os
+from pathlib import Path
+from dotenv import load_dotenv
 
-WHOP_API_KEY = "WHOP_KEY_REMOVED"
-RAILWAY_URL = "https://qs-revenue-dashboard-production.up.railway.app"
-RAILWAY_TOKEN = "RAILWAY_BEARER_REMOVED"
+load_dotenv(Path(__file__).parent.parent / ".env")
+
+WHOP_API_KEY  = os.environ["WHOP_API_KEY"]
+RAILWAY_URL   = "https://qs-revenue-dashboard-production.up.railway.app"
+RAILWAY_TOKEN = os.environ["API_BEARER_TOKEN"]
 
 # Only seed these months (Oct 2025 → Apr 2026) — May 2026 excluded (unreconciled)
 INCLUDE_MONTHS = {

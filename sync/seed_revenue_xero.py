@@ -15,11 +15,17 @@ Replaces any existing revenue data for each month (Whop or Xero) — idempotent.
 """
 
 import json
+import os
 import subprocess
 import sys
+from pathlib import Path
 
-RAILWAY_URL = "https://qs-revenue-dashboard-production.up.railway.app"
-RAILWAY_TOKEN = "RAILWAY_BEARER_REMOVED"
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).parent.parent / ".env")
+
+RAILWAY_URL   = "https://qs-revenue-dashboard-production.up.railway.app"
+RAILWAY_TOKEN = os.environ["API_BEARER_TOKEN"]
 
 # ── Xero income data (EUR) pulled 2026-05-11 ─────────────────────────────────
 # Source: GET /api.xro/2.0/Reports/ProfitAndLoss?fromDate=...&toDate=...

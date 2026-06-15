@@ -7,11 +7,12 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, Security, status
+from fastapi import Depends, FastAPI, HTTPException, Request, Security, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 
 from api.routers import metrics, sync as sync_router
@@ -113,6 +114,7 @@ app.include_router(xero_invoices_router.router)
 
 # Serve dashboard.html at root
 _STATIC_DIR = Path(__file__).parent.parent / "static"
+_templates = Jinja2Templates(directory=str(_STATIC_DIR))
 
 @app.get("/", include_in_schema=False)
 @app.get("/dashboard", include_in_schema=False)
@@ -159,17 +161,19 @@ async def serve_expenses():
 
 
 @app.get("/pnl", include_in_schema=False)
-async def serve_pnl():
-    return FileResponse(
-        _STATIC_DIR / "pnl.html",
+async def serve_pnl(request: Request):
+    return _templates.TemplateResponse(
+        "pnl.html",
+        {"request": request, "api_token": settings.api_bearer_token},
         headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
     )
 
 
 @app.get("/deals", include_in_schema=False)
-async def serve_deals():
-    return FileResponse(
-        _STATIC_DIR / "deals.html",
+async def serve_deals(request: Request):
+    return _templates.TemplateResponse(
+        "deals.html",
+        {"request": request, "api_token": settings.api_bearer_token},
         headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
     )
 

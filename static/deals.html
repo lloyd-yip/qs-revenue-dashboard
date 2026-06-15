@@ -31,31 +31,6 @@
       line-height: 1.5;
     }
 
-    /* ── Nav ───────────────────────────────────────────────────────────── */
-    nav {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 0 24px;
-      height: 52px;
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
-      position: sticky;
-      top: 0;
-      z-index: 100;
-    }
-    nav a {
-      color: var(--muted);
-      text-decoration: none;
-      padding: 6px 12px;
-      border-radius: var(--radius);
-      font-size: 13px;
-      transition: background 0.15s, color 0.15s;
-    }
-    nav a:hover { background: var(--surface2); color: var(--text); }
-    nav a.active { background: var(--surface2); color: var(--text); }
-    .nav-brand { font-weight: 700; color: var(--text); margin-right: 8px; }
-
     /* ── Page layout ───────────────────────────────────────────────────── */
     .page { max-width: 1600px; margin: 0 auto; padding: 28px 24px 48px; }
     .page-header {
@@ -321,14 +296,12 @@
 </head>
 <body>
 
-<nav>
-  <span class="nav-brand">QS</span>
-  <a href="/">📊 Dashboard</a>
-  <a href="/pnl">💰 P&amp;L</a>
-  <a href="/expenses">📋 Expenses</a>
-  <a href="/deals" class="active">🤝 Deals</a>
-  <a href="/data-quality">🔍 Data Quality</a>
-</nav>
+<div class="subbar">
+  <div class="wl-lens">
+    <button id="wl-tab-live" class="active" onclick="wlSetLens('live')"><span class="wl-dot"></span>Live · This Month</button>
+    <button id="wl-tab-hist" onclick="wlSetLens('hist')">Historical · Reconciled</button>
+  </div>
+</div>
 
 <div class="page">
 
@@ -343,12 +316,6 @@
       </button>
       <div class="last-run" id="lastRun">Last run: —</div>
     </div>
-  </div>
-
-  <!-- Lens toggle -->
-  <div class="wl-lens">
-    <button id="wl-tab-live" class="active" onclick="wlSetLens('live')"><span class="wl-dot"></span>Live · This Month</button>
-    <button id="wl-tab-hist" onclick="wlSetLens('hist')">Historical · Reconciled</button>
   </div>
 
   <!-- LIVE lens (relocated from P&L) -->
@@ -442,7 +409,7 @@
 
 <script>
 const API = '/api/dashboard';
-const BEARER = 'RAILWAY_BEARER_REMOVED';
+const BEARER = '{{ api_token }}';
 
 let allRows = [];
 let sortKey = 'first_payment_date';
@@ -767,5 +734,6 @@ function showToast(msg, type = 'info') {
   toastTimer = setTimeout(() => { t.className = ''; }, type === 'success' ? 6000 : 10000);
 }
 </script>
+<script src="/static/nav.js"></script>
 </body>
 </html>

@@ -32,8 +32,13 @@ from db.queries.vendor_classification import classify_vendor  # noqa: E402
 XERO_TENANT_ID = "3bead22e-28ff-4eb1-92cd-9b9d648e188a"
 XERO_PNL_URL   = "https://api.xero.com/api.xro/2.0/Reports/ProfitAndLoss"
 
+import os as _os
+from pathlib import Path as _Path
+from dotenv import load_dotenv as _load_dotenv
+_load_dotenv(_Path(__file__).parent.parent / ".env")
+
 RAILWAY_BASE  = "https://qs-revenue-dashboard-production.up.railway.app"
-RAILWAY_TOKEN = "RAILWAY_BEARER_REMOVED"
+RAILWAY_TOKEN = _os.environ["API_BEARER_TOKEN"]
 
 # ECB monthly average EUR/USD rates — updated as new months are confirmed
 EUR_USD_RATES: dict[str, float] = {

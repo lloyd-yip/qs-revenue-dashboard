@@ -44,13 +44,6 @@
     }
     .header-left { display: flex; align-items: center; gap: 16px; }
     header h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.3px; }
-    .nav-links { display: flex; gap: 8px; }
-    .nav-link {
-      color: var(--text2); text-decoration: none; font-size: 13px; padding: 5px 12px;
-      border-radius: 6px; border: 1px solid transparent; transition: all 0.15s;
-    }
-    .nav-link:hover { color: var(--text); background: var(--surface2); border-color: var(--border); }
-    .nav-link.active { color: #fff; background: var(--accent); border-color: var(--accent); }
 
     /* ── Filters bar ── */
     .filters {
@@ -184,13 +177,6 @@
 <header>
   <div class="header-left">
     <h1>QS Revenue Dashboard</h1>
-    <nav class="nav-links">
-      <a class="nav-link" href="/dashboard">Sales</a>
-      <a class="nav-link active" href="/pnl">P&amp;L</a>
-      <a class="nav-link" href="/deals">Deals</a>
-      <a class="nav-link" href="/slwa-dashboard">SLWA</a>
-      <a class="nav-link" href="/sync-history">Sync</a>
-    </nav>
   </div>
 </header>
 
@@ -480,7 +466,7 @@
   // ── Sync from Xero ───────────────────────────────────────────────────────────
   // Pulls the latest P&L data from Xero for the currently selected month,
   // then reloads the dashboard automatically. Token is the Railway API bearer token.
-  const SYNC_TOKEN = "RAILWAY_BEARER_REMOVED";
+  const SYNC_TOKEN = "{{ api_token }}";
 
   async function syncFromXero() {
     const val = periodEl.value;
@@ -533,5 +519,6 @@
   loadPeriods();
 </script>
 
+<script src="/static/nav.js"></script>
 </body>
 </html>
