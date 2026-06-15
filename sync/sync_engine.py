@@ -7,6 +7,7 @@ Guarantees:
 - Auditable: every sync creates a sync_runs record with full stats.
 """
 
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -164,6 +165,7 @@ async def _build_opportunity_row(
     call1_booking_date: datetime | None = None
     contact_id = opp.get("contactId")
     all_appointments: list[dict] = []
+    followup_appt: dict | None = None
 
     if contact_id and not is_upsell:
         # Upsell pipeline has no 1st/2nd call appointments — skip these expensive calls.
@@ -463,7 +465,7 @@ async def run_sync(sync_type: str = "incremental") -> dict:
                 "completed_at": completed_at,
                 "synced": synced_count,
                 "errors": error_count,
-                "details": str(error_details) if error_details else None,
+                "details": json.dumps(error_details) if error_details else None,
                 "id": str(sync_run_id),
             },
         )
