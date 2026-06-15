@@ -2,7 +2,7 @@
   "project_name": "QS Revenue Dashboard",
   "description": "Internal sales performance dashboard — call volume, show rates, qualification, lead source attribution, compliance tracking, funnel economics",
   "business_entity": "quantum_scaling",
-  "last_updated": "2026-06-16T23:59:59Z",
+  "last_updated": "2026-06-17T08:30:00Z",
   "current_state": {
     "phase_name": "Phase 1 - Live & Iterating",
     "status": "NAV UNIFICATION SHIPPED (2026-06-15, commit 41def90, design PASS) + SYNC_ENGINE BUGS FIXED (2026-06-16, commit c4c3a4d). Nav unification deployed: all 9 pages consolidated under shared nav.js (Tier-1 bar), 4 divergent navs removed. Sync engine followup_appt UnboundLocalError + error_details JSON serialization issues fixed, healthcheckTimeout 120→300 for Railway stability. Dashboard stable and live. Recurring-cash Step 1 verified (monthly installments bucketable); Step 2 /ux-design ready. Next: deploy any pending Railway changes, build recurring-cash backend model."
@@ -13,13 +13,13 @@
     "end_state": "A comprehensive revenue intelligence platform with real-time KPIs, financial integration (Xero for actual revenue vs pipeline), automated anomaly detection, and API endpoints that feed the OpenClaw agent layer for cross-app synthesis.",
     "current_summary": "Dashboard is live and in daily use across 5 tabs: Sales Performance, Lead Quality by Channel, Pipeline Intelligence, Funnel Economics, and Compliance. Xero invoice sync LIVE — Contract Value on P&L page updates monthly from actual ACCREC invoices with EUR→USD conversion. RORI columns display but require manual period financial inputs (Phase 2 will auto-pull from Xero). Show rate, compliance tracking, and lead quality distribution all working. Lloyd has real-time visibility into rep performance and pipeline economics."
   },
-  "resume_here": "NAV UNIFICATION SHIPPED + design verified (2026-06-15, commit 41def90). Sync engine bugs fixed (2026-06-16, commit c4c3a4d). All 9 pages consolidated under shared nav.js. 4 divergent navs removed. Design PASS: tokens exact, theme parity verified. Sync engine followup_appt UnboundLocalError resolved, error_details JSON serialization fixed, healthcheckTimeout 120→300. Dashboard stable and live. Next: (A) confirm nav deployed, (B) RECURRING CASH Step 2 /ux-design for monthly-net per-rep backend model.",
+  "resume_here": "Dashboard unified + stable (2026-06-16). Nav consolidated across all 9 pages under shared nav.js (commit 41def90, design PASS). Sync engine bugs fixed: followup_appt UnboundLocalError + error_details JSON serialization resolved, healthcheckTimeout 120→300 (commit c4c3a4d). Dashboard is live and operational. Next: RECURRING CASH Step 2 — /ux-design for monthly-net per-rep backend model + monthly-installment tracking.",
   "current_phase": {
     "name": "Phase 1 - Live & Iterating",
     "goal": "Full internal dashboard for Lloyd to monitor sales team performance: call volume per rep, show rates, qualification breakdowns, lead source attribution, compliance tracking, funnel economics with RORI",
     "current_focus": [
-      "NAV UNIFICATION + SYNC FIXES LIVE (2026-06-16): shared nav.js deployed across 9 pages, sync engine bugs resolved, dashboard stable",
-      "Recurring cash workstream ready: Step 1 verified + locked, Step 2 (monthly net per-rep backend) ready for /ux-design"
+      "NAV UNIFICATION + SYNC ENGINE FIXES LIVE (2026-06-16): All 9 pages now use shared nav.js (single source of truth, consistent UX); 4 divergent navs removed. Sync engine dependencies resolved (followup_appt UnboundLocalError, JSON serialization, healthcheck timeout). Dashboard is stable and fully operational.",
+      "Recurring cash workstream: Step 1 verified (monthly installments bucketable from deal data), Step 2 (monthly-net per-rep backend model) ready for /ux-design"
     ],
     "immediate_next_steps": [
       "Confirm nav unification + sync fixes are live on Railway production",
