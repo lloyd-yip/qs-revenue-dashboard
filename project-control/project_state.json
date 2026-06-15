@@ -2,10 +2,10 @@
   "project_name": "QS Revenue Dashboard",
   "description": "Internal sales performance dashboard — call volume, show rates, qualification, lead source attribution, compliance tracking, funnel economics",
   "business_entity": "quantum_scaling",
-  "last_updated": "2026-06-15T17:27:49Z",
+  "last_updated": "2026-06-16T23:59:59Z",
   "current_state": {
     "phase_name": "Phase 1 - Live & Iterating",
-    "status": "DEALS v1 SHIPPED + VERIFIED LIVE (2026-06-14, commit 9977ae2). Live Whop relocated from P&L to Deals page with Historical/Live toggle, deal-driven month picker (defaults to current month, decoupled from P&L revenue periods), cash/contract/Splitit labels. Rep fallback (unassigned deals → Call-2 assignee, commit be9837d) correct. All 6 acceptance criteria verified. P&L page cleaned. Recurring-cash v2 fully spec'd (monthly net + decay model), Step 2 ready for /ux-design."
+    "status": "NAV UNIFICATION SHIPPED (2026-06-15, commit 41def90) — design verified, deployment pending. All 9 pages now consolidated under shared nav.js (Tier-1 unified bar), 4 divergent navs removed, Sales subbar + Deals lens preserved via config. Design PASS (tokens exact vs mockup, theme verified). Deployment to Railway (git push qs-dashboard subtree) required. Recurring-cash Step 1 data verified (monthly installments bucketable); Step 2 /ux-design ready (backend monthly-net model). Dashboard mature; next real work is recurring-cash 2-step design + build."
   },
   "project_overview": {
     "what": "The QS Revenue Dashboard pulls sales data from GoHighLevel (CRM) and turns it into a real-time performance dashboard. It tracks call volume, show rates, close rates, lead source attribution, rep-level performance, compliance, and funnel economics (RORI per rep once financial data is entered).",
@@ -13,7 +13,7 @@
     "end_state": "A comprehensive revenue intelligence platform with real-time KPIs, financial integration (Xero for actual revenue vs pipeline), automated anomaly detection, and API endpoints that feed the OpenClaw agent layer for cross-app synthesis.",
     "current_summary": "Dashboard is live and in daily use across 5 tabs: Sales Performance, Lead Quality by Channel, Pipeline Intelligence, Funnel Economics, and Compliance. Xero invoice sync LIVE — Contract Value on P&L page updates monthly from actual ACCREC invoices with EUR→USD conversion. RORI columns display but require manual period financial inputs (Phase 2 will auto-pull from Xero). Show rate, compliance tracking, and lead quality distribution all working. Lloyd has real-time visibility into rep performance and pipeline economics."
   },
-  "resume_here": "NAV UNIFICATION SHIPPED (2026-06-15, commit 41def90). Unified Tier-1 nav bar across all 9 pages (Sales, P&L, Deals, Data Quality, Sync utility, Expenses, Debug, slwa, detail pages). 4 divergent navs consolidated, back-links removed, Sales 7-tab .subbar + Deals segmented lens preserved. Design PASS: tokens exact vs mockup, theme parity verified. Next: Deploy nav unification to Railway, then proceed with RECURRING CASH Step 2 UX design (monthly net per-rep backend model).",
+  "resume_here": "NAV UNIFICATION SHIPPED + design verified (2026-06-15, commit 41def90). Unified shared nav.js across all 9 pages (Sales, P&L, Deals, Data Quality, Sync, Expenses, Debug, slwa, rep-detail). 4 divergent navs consolidated into single Tier-1 bar, Sales 7-tab .subbar + Deals segmented lens preserved via data-config. Design PASS: tokens exact, theme parity verified. NOT YET DEPLOYED to Railway. Next: (A) Deploy nav unification (git push qs-dashboard subtree), (B) RECURRING CASH Step 2 /ux-design for monthly-net per-rep backend model.",
   "current_phase": {
     "name": "Phase 1 - Live & Iterating",
     "goal": "Full internal dashboard for Lloyd to monitor sales team performance: call volume per rep, show rates, qualification breakdowns, lead source attribution, compliance tracking, funnel economics with RORI",
@@ -70,8 +70,8 @@
   ],
   "recent_milestones": [
     {
-      "description": "Unified navigation across all 9 pages shipped (2026-06-15, commit 41def90). All pages now share a common Tier-1 nav bar: Sales, P&L, Deals, Data Quality, Sync utility, Expenses, Debug, slwa detail view, and rep-detail pages now have consistent navigation. Four divergent navbar implementations consolidated into a single shared nav.js module. Sales 7-tab subbar + Deals segmented lens view preserved. Design PASS: token alignment with mockup, theme parity verified. Navigation is now the single source of truth across the entire dashboard — removes duplication, ensures consistency, and fixes navigation inconsistencies Lloyd had reported.",
-      "date": "2026-06-15"
+      "description": "Unified navigation shipped (2026-06-15, commit 41def90). Shared nav.js module across all 9 pages: Sales, P&L, Deals, Data Quality, Sync, Expenses, Debug, slwa, rep-detail. Four divergent navbar implementations consolidated into single Tier-1 bar. Sales 7-tab .subbar + Deals segmented lens preserved via data-config (page-level variations decoupled from shared nav). Design verified: Tailwind tokens exact vs mockup, light-mode theme parity confirmed. Navigation is single source of truth across entire dashboard — removes duplication, ensures consistency. Deployment to Railway (git push qs-dashboard subtree) pending.",
+      "date": "2026-06-16"
     },
     {
       "description": "DEALS v1 UX relocate shipped (2026-06-14, commit 9977ae2). Live Whop moved from P&L to Deals page with Historical/Live toggle and deal-driven month picker (decoupled from P&L revenue periods, defaults to current month). Fixes critical UX flaw where May/June Whop deals were unreachable. Rep fallback deployed (unassigned opportunity → Call-2 assignee). Pure frontend relocation — no schema/API changes. All 6 acceptance criteria verified. Lloyd can now browse recent deal activity + cash-in alongside historical reconciled deals in one place.",
