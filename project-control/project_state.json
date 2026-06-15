@@ -5,7 +5,7 @@
   "last_updated": "2026-06-16T23:59:59Z",
   "current_state": {
     "phase_name": "Phase 1 - Live & Iterating",
-    "status": "NAV UNIFICATION SHIPPED (2026-06-15, commit 41def90) — design verified, deployment pending. All 9 pages now consolidated under shared nav.js (Tier-1 unified bar), 4 divergent navs removed, Sales subbar + Deals lens preserved via config. Design PASS (tokens exact vs mockup, theme verified). Deployment to Railway (git push qs-dashboard subtree) required. Recurring-cash Step 1 data verified (monthly installments bucketable); Step 2 /ux-design ready (backend monthly-net model). Dashboard mature; next real work is recurring-cash 2-step design + build."
+    "status": "NAV UNIFICATION SHIPPED (2026-06-15, commit 41def90, design PASS) + SYNC_ENGINE BUGS FIXED (2026-06-16, commit c4c3a4d). Nav unification deployed: all 9 pages consolidated under shared nav.js (Tier-1 bar), 4 divergent navs removed. Sync engine followup_appt UnboundLocalError + error_details JSON serialization issues fixed, healthcheckTimeout 120→300 for Railway stability. Dashboard stable and live. Recurring-cash Step 1 verified (monthly installments bucketable); Step 2 /ux-design ready. Next: deploy any pending Railway changes, build recurring-cash backend model."
   },
   "project_overview": {
     "what": "The QS Revenue Dashboard pulls sales data from GoHighLevel (CRM) and turns it into a real-time performance dashboard. It tracks call volume, show rates, close rates, lead source attribution, rep-level performance, compliance, and funnel economics (RORI per rep once financial data is entered).",
@@ -13,20 +13,26 @@
     "end_state": "A comprehensive revenue intelligence platform with real-time KPIs, financial integration (Xero for actual revenue vs pipeline), automated anomaly detection, and API endpoints that feed the OpenClaw agent layer for cross-app synthesis.",
     "current_summary": "Dashboard is live and in daily use across 5 tabs: Sales Performance, Lead Quality by Channel, Pipeline Intelligence, Funnel Economics, and Compliance. Xero invoice sync LIVE — Contract Value on P&L page updates monthly from actual ACCREC invoices with EUR→USD conversion. RORI columns display but require manual period financial inputs (Phase 2 will auto-pull from Xero). Show rate, compliance tracking, and lead quality distribution all working. Lloyd has real-time visibility into rep performance and pipeline economics."
   },
-  "resume_here": "NAV UNIFICATION SHIPPED + design verified (2026-06-15, commit 41def90). Unified shared nav.js across all 9 pages (Sales, P&L, Deals, Data Quality, Sync, Expenses, Debug, slwa, rep-detail). 4 divergent navs consolidated into single Tier-1 bar, Sales 7-tab .subbar + Deals segmented lens preserved via data-config. Design PASS: tokens exact, theme parity verified. NOT YET DEPLOYED to Railway. Next: (A) Deploy nav unification (git push qs-dashboard subtree), (B) RECURRING CASH Step 2 /ux-design for monthly-net per-rep backend model.",
+  "resume_here": "NAV UNIFICATION SHIPPED + design verified (2026-06-15, commit 41def90). Sync engine bugs fixed (2026-06-16, commit c4c3a4d). All 9 pages consolidated under shared nav.js. 4 divergent navs removed. Design PASS: tokens exact, theme parity verified. Sync engine followup_appt UnboundLocalError resolved, error_details JSON serialization fixed, healthcheckTimeout 120→300. Dashboard stable and live. Next: (A) confirm nav deployed, (B) RECURRING CASH Step 2 /ux-design for monthly-net per-rep backend model.",
   "current_phase": {
     "name": "Phase 1 - Live & Iterating",
     "goal": "Full internal dashboard for Lloyd to monitor sales team performance: call volume per rep, show rates, qualification breakdowns, lead source attribution, compliance tracking, funnel economics with RORI",
     "current_focus": [
-      "NAV UNIFICATION SHIPPED (2026-06-15): shared nav.js across all 9 pages, Tier-1 bar unified, 4 divergent navs removed, design PASS",
+      "NAV UNIFICATION + SYNC FIXES LIVE (2026-06-16): shared nav.js deployed across 9 pages, sync engine bugs resolved, dashboard stable",
       "Recurring cash workstream ready: Step 1 verified + locked, Step 2 (monthly net per-rep backend) ready for /ux-design"
     ],
     "immediate_next_steps": [
-      "Deploy nav unification to Railway (git push qs-dashboard subtree)",
-      "RECURRING CASH Step 2: /ux-design for monthly-cash backend model (per-month + per-rep granularity), deferred until nav deployed",
-      "RECURRING CASH Step 3-4: FE + build after design locked"
+      "Confirm nav unification + sync fixes are live on Railway production",
+      "RECURRING CASH Step 2: /ux-design for monthly-cash backend model (per-month + per-rep granularity)",
+      "RECURRING CASH Step 3-4: FE + backend build after design locked"
     ],
     "known_issues": [
+      {
+        "title": "Sync engine: followup_appt UnboundLocalError + error_details JSON serialization",
+        "severity": "high",
+        "status": "FIXED (2026-06-16, commit c4c3a4d)",
+        "resolution": "Fixed followup_appt variable scope bug in sync_engine.py; fixed error_details JSON serialization. healthcheckTimeout increased 120→300 for Railway stability."
+      },
       {
         "title": "Deals attribution: Unassigned reps due to get_users() name resolution gap",
         "severity": "high",
