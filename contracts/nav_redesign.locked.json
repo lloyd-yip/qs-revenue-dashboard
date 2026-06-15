@@ -1,0 +1,21 @@
+{
+  "feature": "nav_redesign",
+  "hash": "v2-bf21552",
+  "sealed": "2026-06-15",
+  "acceptance_criteria": [
+    {"id":"C1","desc":"every served page renders Tier-1 bar from nav.js, identical markup"},
+    {"id":"C2","desc":"Tier-1 = Sales/P&L/Deals filled + DataQuality/Sync outline; active=activeKeyForPath incl detail->parent"},
+    {"id":"C3","desc":"no page retains own top-nav markup (except slwa/debug JS-wired #back-link carve-out)"},
+    {"id":"C4","desc":"no link to dead /slwa-dashboard path"},
+    {"id":"C5","desc":"Sales=7 underline .stab in .subbar; Deals=segmented .wl-lens in .subbar; P&L+utility collapse strip"},
+    {"id":"C6","desc":"sticky theads on dq/sync/debug offset to top:var(--qs-nav-h)"},
+    {"id":"C7","desc":"zero NAV console errors; Deals lens still switches Live/Historical (offline: ignore /api fetch failures)"},
+    {"id":"C8","desc":"activeKeyForPath unit cases pass; / and /dashboard both -> sales"}
+  ],
+  "visual_contract": {
+    "mockup_ref": "prototypes/nav-dashboard-mockup.html",
+    "tokens": {"theme":"dark","page_bg":"#0f1117","surface":"#1a1d27","border":"#2e3347","accent":"#6366f1","accent2":"#818cf8","green":"#22c55e","nav_h":"52px"},
+    "coarse_ref": "project-control/specs/nav-coarse-ref.png"
+  },
+  "explicitly_excluded": ["expenses/slwa route retirement","Deals-vs-Dead-Deals rename","backend changes","mobile responsive"]
+}

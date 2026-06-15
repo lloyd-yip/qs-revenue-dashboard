@@ -50,11 +50,6 @@
     .badge-clean { background: var(--green); }
     .badge-warn { background: var(--orange); }
     .badge-bad { background: var(--red); }
-    .back-link {
-      color: var(--accent2); text-decoration: none; font-size: 13px;
-      display: inline-flex; align-items: center; gap: 4px; margin-bottom: 4px;
-    }
-    .back-link:hover { text-decoration: underline; }
 
     /* Anomaly summary bar */
     .anomaly-summary {
@@ -118,7 +113,7 @@
     /* Table */
     .table-wrap { padding: 0 28px 28px; overflow-x: auto; }
     table { width: 100%; border-collapse: collapse; margin-top: 0; }
-    thead { position: sticky; top: 0; z-index: 10; }
+    thead { position: sticky; top: var(--qs-nav-h); z-index: 10; }
     th {
       background: var(--surface2); color: var(--text2); font-size: 11px; font-weight: 600;
       text-transform: uppercase; letter-spacing: 0.5px; padding: 10px 12px; text-align: left;
@@ -187,7 +182,6 @@
 
 <div class="dq-header">
   <div class="dq-header-left">
-    <a class="back-link" href="/">← Back to Dashboard</a>
     <h1>Data Quality Audit</h1>
     <div class="subtitle" id="page-subtitle">
       <span>Scanning all active opportunities for GHL inconsistencies</span>
@@ -650,5 +644,6 @@ async function init() {
 
 init();
 </script>
+<script src="/static/nav.js"></script>
 </body>
 </html>

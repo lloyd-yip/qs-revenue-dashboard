@@ -33,11 +33,6 @@
     }
     header h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.3px; }
     .header-left { display: flex; align-items: center; gap: 14px; }
-    .back-link {
-      color: var(--accent2); text-decoration: none; font-size: 13px;
-      display: inline-flex; align-items: center; gap: 4px; transition: color 0.15s;
-    }
-    .back-link:hover { color: var(--text); }
 
     .content { padding: 24px; max-width: 1200px; margin: 0 auto; }
 
@@ -64,7 +59,7 @@
     th {
       background: var(--surface2); color: var(--text2); font-size: 11px; font-weight: 600;
       text-transform: uppercase; letter-spacing: 0.4px; padding: 10px 14px; text-align: left;
-      position: sticky; top: 0;
+      position: sticky; top: var(--qs-nav-h);
     }
     td { padding: 10px 14px; border-top: 1px solid var(--border); font-size: 13px; }
     tr:hover td { background: var(--surface2); }
@@ -114,7 +109,6 @@
     <h1>Sync History</h1>
     <span id="tz-label" style="font-size: 11px; color: var(--text2); margin-left: 4px;"></span>
   </div>
-  <a class="back-link" href="/">← Back to Dashboard</a>
 </header>
 
 <div class="content">
@@ -267,5 +261,6 @@ function escHtml(str) {
 
 loadSyncHistory();
 </script>
+<script src="/static/nav.js"></script>
 </body>
 </html>
