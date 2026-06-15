@@ -2,7 +2,7 @@
   "project_name": "QS Revenue Dashboard",
   "description": "Internal sales performance dashboard — call volume, show rates, qualification, lead source attribution, compliance tracking, funnel economics",
   "business_entity": "quantum_scaling",
-  "last_updated": "2026-06-12T20:24:50Z",
+  "last_updated": "2026-06-15T17:27:49Z",
   "current_state": {
     "phase_name": "Phase 1 - Live & Iterating",
     "status": "DEALS v1 SHIPPED + VERIFIED LIVE (2026-06-14, commit 9977ae2). Live Whop relocated from P&L to Deals page with Historical/Live toggle, deal-driven month picker (defaults to current month, decoupled from P&L revenue periods), cash/contract/Splitit labels. Rep fallback (unassigned deals → Call-2 assignee, commit be9837d) correct. All 6 acceptance criteria verified. P&L page cleaned. Recurring-cash v2 fully spec'd (monthly net + decay model), Step 2 ready for /ux-design."
@@ -13,17 +13,17 @@
     "end_state": "A comprehensive revenue intelligence platform with real-time KPIs, financial integration (Xero for actual revenue vs pipeline), automated anomaly detection, and API endpoints that feed the OpenClaw agent layer for cross-app synthesis.",
     "current_summary": "Dashboard is live and in daily use across 5 tabs: Sales Performance, Lead Quality by Channel, Pipeline Intelligence, Funnel Economics, and Compliance. Xero invoice sync LIVE — Contract Value on P&L page updates monthly from actual ACCREC invoices with EUR→USD conversion. RORI columns display but require manual period financial inputs (Phase 2 will auto-pull from Xero). Show rate, compliance tracking, and lead quality distribution all working. Lloyd has real-time visibility into rep performance and pipeline economics."
   },
-  "resume_here": "DEALS v1 SHIPPED + VERIFIED LIVE (2026-06-14, commit 9977ae2). Live Whop relocated to Deals page (from P&L), Historical/Live lens toggle, deal-driven month picker (decoupled from P&L revenue periods, defaults to current month). Rep fallback deployed (commit be9837d): unassigned deals resolve to Call-2 assignedUserId. All 6 acceptance criteria verified. Recurring-cash Step 1 verified, Step 2 (monthly net backend model) ready for /ux-design. NEXT: Deploy Deals v1 to Railway, then step into recurring-cash Step 2 UX design.",
+  "resume_here": "NAV UNIFICATION SHIPPED (2026-06-15, commit 41def90). Unified Tier-1 nav bar across all 9 pages (Sales, P&L, Deals, Data Quality, Sync utility, Expenses, Debug, slwa, detail pages). 4 divergent navs consolidated, back-links removed, Sales 7-tab .subbar + Deals segmented lens preserved. Design PASS: tokens exact vs mockup, theme parity verified. Next: Deploy nav unification to Railway, then proceed with RECURRING CASH Step 2 UX design (monthly net per-rep backend model).",
   "current_phase": {
     "name": "Phase 1 - Live & Iterating",
     "goal": "Full internal dashboard for Lloyd to monitor sales team performance: call volume per rep, show rates, qualification breakdowns, lead source attribution, compliance tracking, funnel economics with RORI",
     "current_focus": [
-      "DEALS v1 SHIPPED (2026-06-14): Live Whop on Deals page, P&L cleaned, month picker working",
-      "Recurring cash workstream ready: Step 1 verified + locked, Step 2 (monthly net per-rep) ready for /ux-design"
+      "NAV UNIFICATION SHIPPED (2026-06-15): shared nav.js across all 9 pages, Tier-1 bar unified, 4 divergent navs removed, design PASS",
+      "Recurring cash workstream ready: Step 1 verified + locked, Step 2 (monthly net per-rep backend) ready for /ux-design"
     ],
     "immediate_next_steps": [
-      "Deploy Deals v1 to Railway (git push qs-dashboard subtree)",
-      "RECURRING CASH Step 2: /ux-design for monthly-cash backend model (per-month + per-rep granularity), deferred until Deals v1 deployed",
+      "Deploy nav unification to Railway (git push qs-dashboard subtree)",
+      "RECURRING CASH Step 2: /ux-design for monthly-cash backend model (per-month + per-rep granularity), deferred until nav deployed",
       "RECURRING CASH Step 3-4: FE + build after design locked"
     ],
     "known_issues": [
@@ -69,6 +69,10 @@
     }
   ],
   "recent_milestones": [
+    {
+      "description": "Unified navigation across all 9 pages shipped (2026-06-15, commit 41def90). All pages now share a common Tier-1 nav bar: Sales, P&L, Deals, Data Quality, Sync utility, Expenses, Debug, slwa detail view, and rep-detail pages now have consistent navigation. Four divergent navbar implementations consolidated into a single shared nav.js module. Sales 7-tab subbar + Deals segmented lens view preserved. Design PASS: token alignment with mockup, theme parity verified. Navigation is now the single source of truth across the entire dashboard — removes duplication, ensures consistency, and fixes navigation inconsistencies Lloyd had reported.",
+      "date": "2026-06-15"
+    },
     {
       "description": "DEALS v1 UX relocate shipped (2026-06-14, commit 9977ae2). Live Whop moved from P&L to Deals page with Historical/Live toggle and deal-driven month picker (decoupled from P&L revenue periods, defaults to current month). Fixes critical UX flaw where May/June Whop deals were unreachable. Rep fallback deployed (unassigned opportunity → Call-2 assignee). Pure frontend relocation — no schema/API changes. All 6 acceptance criteria verified. Lloyd can now browse recent deal activity + cash-in alongside historical reconciled deals in one place.",
       "date": "2026-06-14"
@@ -139,6 +143,12 @@
     }
   ],
   "decision_log": [
+    {
+      "decision": "Navigation consolidation: all 9 pages now use shared nav.js (single Tier-1 bar) — removed 4 divergent navbar implementations. Page-specific subnav handling (Sales 7-tab .subbar, Deals segmented lens, etc.) preserved via data-config, not separate HTML/JS.",
+      "reasoning": "Duplicate navbar code across pages created maintenance burden and UX inconsistency (some pages missing nav items). Single shared module reduces code duplication, centralizes nav state, and ensures visual/behavioral consistency. Sales 7-tab subbar + Deals segmented lens are preserved as page-level details, not part of shared Tier-1 nav. Shipped as commit 41def90 with design PASS (tokens exact, theme parity verified).",
+      "phase": "Phase 1 - Live & Iterating",
+      "date": "2026-06-15"
+    },
     {
       "decision": "Phase 2 (Xero financial autopull) CANCELLED — Funnel Economics inputs remain manual. v1 DEALS REWORK LOCKED: relocate Live Whop to Deals page (2-lens toggle: Live default, Historical reconciled), rep fallback + Cash/Contract labels, month picker keyed to Whop data not P&L (fixes May/June unreachable).",
       "reasoning": "Xero data is only accurate AFTER human reconciliation (~10-day lag post-month-close). Auto-pulling unreconciled numbers would feed the dashboard confidently-wrong figures every period — worse than transparent manual entry. The cash-collected half shipped as Whop Live Revenue (verified 2026-06-11). The spend/comp half is NOT a build — it's a data-accuracy gate. Funnel Economics is correctly a trailing/reconciled metric. v1 Deals redesign ships first (front-loads user-facing UX-fixes + unlocks May/June visibility); v2 monthly cash ledger (net-new vs recurring with recurring-decay model) fully spec'd in blueprints/monthly_cash_ledger_blueprint_v2.md but deferred. Mockup approved 2026-06-13.",
