@@ -2,7 +2,7 @@
   "project_name": "QS Revenue Dashboard",
   "description": "Internal sales performance dashboard — call volume, show rates, qualification, lead source attribution, compliance tracking, funnel economics",
   "business_entity": "quantum_scaling",
-  "last_updated": "2026-06-17T08:30:00Z",
+  "last_updated": "2026-06-17T14:30:00Z",
   "current_state": {
     "phase_name": "Phase 1 - Live & Iterating",
     "status": "NAV UNIFICATION SHIPPED (2026-06-15, commit 41def90, design PASS) + SYNC_ENGINE BUGS FIXED (2026-06-16, commit c4c3a4d). Nav unification deployed: all 9 pages consolidated under shared nav.js (Tier-1 bar), 4 divergent navs removed. Sync engine followup_appt UnboundLocalError + error_details JSON serialization issues fixed, healthcheckTimeout 120→300 for Railway stability. Dashboard stable and live. Recurring-cash Step 1 verified (monthly installments bucketable); Step 2 /ux-design ready. Next: deploy any pending Railway changes, build recurring-cash backend model."
@@ -13,7 +13,7 @@
     "end_state": "A comprehensive revenue intelligence platform with real-time KPIs, financial integration (Xero for actual revenue vs pipeline), automated anomaly detection, and API endpoints that feed the OpenClaw agent layer for cross-app synthesis.",
     "current_summary": "Dashboard is live and in daily use across 5 tabs: Sales Performance, Lead Quality by Channel, Pipeline Intelligence, Funnel Economics, and Compliance. Xero invoice sync LIVE — Contract Value on P&L page updates monthly from actual ACCREC invoices with EUR→USD conversion. RORI columns display but require manual period financial inputs (Phase 2 will auto-pull from Xero). Show rate, compliance tracking, and lead quality distribution all working. Lloyd has real-time visibility into rep performance and pipeline economics."
   },
-  "resume_here": "Dashboard unified + stable (2026-06-16). Nav consolidated across all 9 pages under shared nav.js (commit 41def90, design PASS). Sync engine bugs fixed: followup_appt UnboundLocalError + error_details JSON serialization resolved, healthcheckTimeout 120→300 (commit c4c3a4d). Dashboard is live and operational. Next: RECURRING CASH Step 2 — /ux-design for monthly-net per-rep backend model + monthly-installment tracking.",
+  "resume_here": "Dashboard FULLY OPERATIONAL (2026-06-17). Nav unified across all 9 pages (shared nav.js, commit 41def90, design PASS). Sync-engine stability fixed (followup_appt UnboundLocalError, JSON serialization, healthcheck 120→300, commit c4c3a4d). Jinja2 dependency committed to resolve prod deploy crashes (1ec245b). Lloyd has real-time visibility: sales performance per rep, lead quality distribution, compliance tracking, Xero contract value, Whop live cash per rep. Next: RECURRING CASH Step 2 — /ux-design for monthly-net per-rep model (distinguish new vs monthly-recurring base); then Step 3-4 (FE + backend build monthly-cash ledger).",
   "current_phase": {
     "name": "Phase 1 - Live & Iterating",
     "goal": "Full internal dashboard for Lloyd to monitor sales team performance: call volume per rep, show rates, qualification breakdowns, lead source attribution, compliance tracking, funnel economics with RORI",
@@ -74,7 +74,10 @@
       "prerequisites": "Enough historical data for trends to be meaningful (4-6 weeks of synced data minimum)."
     }
   ],
-  "recent_milestones": [
+    {
+      "description": "Navigation unification LIVE (2026-06-15/17, commits 41def90 + c4c3a4d). Shared nav.js consolidates all 9 pages (Sales/P&L/Deals/Data Quality/Sync/Expenses/Debug/slwa/rep-detail) under single Tier-1 bar — removed 4 separate navbar implementations. Sales 7-tab subbar + Deals segmented lens preserved via data-config (page-level variations don't split code). Design verified exact vs mockup (tokens pixel-perfect, light-mode parity confirmed). Navigation is single source of truth — eliminates duplication, ensures UX consistency. Sync-engine stability fix landed same push (followup_appt UnboundLocalError in sync_engine.py, error_details JSON serialization, healthcheck timeout 120→300). Dashboard now stable production endpoint for Lloyd's daily ops.",
+      "date": "2026-06-17"
+    },
     {
       "description": "Unified navigation shipped (2026-06-15, commit 41def90). Shared nav.js module across all 9 pages: Sales, P&L, Deals, Data Quality, Sync, Expenses, Debug, slwa, rep-detail. Four divergent navbar implementations consolidated into single Tier-1 bar. Sales 7-tab .subbar + Deals segmented lens preserved via data-config (page-level variations decoupled from shared nav). Design verified: Tailwind tokens exact vs mockup, light-mode theme parity confirmed. Navigation is single source of truth across entire dashboard — removes duplication, ensures consistency. Deployment to Railway (git push qs-dashboard subtree) pending.",
       "date": "2026-06-16"
