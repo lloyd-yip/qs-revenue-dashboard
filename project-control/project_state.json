@@ -2,7 +2,7 @@
   "project_name": "QS Revenue Dashboard",
   "description": "Internal sales performance dashboard — call volume, show rates, qualification, lead source attribution, compliance tracking, funnel economics",
   "business_entity": "quantum_scaling",
-  "last_updated": "2026-06-17T14:30:00Z",
+  "last_updated": "2026-06-17T22:15:00Z",
   "current_state": {
     "phase_name": "Phase 1 - Live & Iterating",
     "status": "NAV UNIFICATION SHIPPED (2026-06-15, commit 41def90, design PASS) + SYNC_ENGINE BUGS FIXED (2026-06-16, commit c4c3a4d). Nav unification deployed: all 9 pages consolidated under shared nav.js (Tier-1 bar), 4 divergent navs removed. Sync engine followup_appt UnboundLocalError + error_details JSON serialization issues fixed, healthcheckTimeout 120→300 for Railway stability. Dashboard stable and live. Recurring-cash Step 1 verified (monthly installments bucketable); Step 2 /ux-design ready. Next: deploy any pending Railway changes, build recurring-cash backend model."
@@ -13,7 +13,7 @@
     "end_state": "A comprehensive revenue intelligence platform with real-time KPIs, financial integration (Xero for actual revenue vs pipeline), automated anomaly detection, and API endpoints that feed the OpenClaw agent layer for cross-app synthesis.",
     "current_summary": "Dashboard is live and in daily use across 5 tabs: Sales Performance, Lead Quality by Channel, Pipeline Intelligence, Funnel Economics, and Compliance. Xero invoice sync LIVE — Contract Value on P&L page updates monthly from actual ACCREC invoices with EUR→USD conversion. RORI columns display but require manual period financial inputs (Phase 2 will auto-pull from Xero). Show rate, compliance tracking, and lead quality distribution all working. Lloyd has real-time visibility into rep performance and pipeline economics."
   },
-  "resume_here": "Dashboard FULLY OPERATIONAL (2026-06-17). Nav unified across all 9 pages (shared nav.js, commit 41def90, design PASS). Sync-engine stability fixed (followup_appt UnboundLocalError, JSON serialization, healthcheck 120→300, commit c4c3a4d). Jinja2 dependency committed to resolve prod deploy crashes (1ec245b). Lloyd has real-time visibility: sales performance per rep, lead quality distribution, compliance tracking, Xero contract value, Whop live cash per rep. Next: RECURRING CASH Step 2 — /ux-design for monthly-net per-rep model (distinguish new vs monthly-recurring base); then Step 3-4 (FE + backend build monthly-cash ledger).",
+  "resume_here": "Dashboard FULLY OPERATIONAL + SYNC STABLE (2026-06-17). Jinja2 dependency fix SHIPPED + verified (2026-06-17, commit 1ec245b): git-triggered deploys were crashing on boot (main.py asserts jinja2 at import); committed + redeployed, verified live on Railway. Nav unified across all 9 pages (commit 41def90). Sync-engine stable (followup_appt + JSON serialization + healthcheck 300, commit c4c3a4d). Full sync completed 2026-06-17 00:58Z: 3,907 opportunities synced cleanly (0 errors), current as of sync timestamp. Lloyd has real-time visibility: sales performance per rep, lead quality distribution, compliance tracking, Xero P&L (monthly contract value from invoices), Whop live cash per rep. Known issue: scheduled incremental syncs stuck at 'running' (discovered 2026-06-17) — auto-refresh is dormant between manual syncs; diagnosis needed (restart orphans vs logic bug). Next: confirm incremental syncs re-stabilize; RECURRING CASH Step 2 — /ux-design for monthly-net per-rep model.",
   "current_phase": {
     "name": "Phase 1 - Live & Iterating",
     "goal": "Full internal dashboard for Lloyd to monitor sales team performance: call volume per rep, show rates, qualification breakdowns, lead source attribution, compliance tracking, funnel economics with RORI",
@@ -44,6 +44,18 @@
         "severity": "medium",
         "status": "open",
         "resolution": "Enter period data via the collapsible Period Financial Inputs panel on the Funnel Economics tab. Data needed: total marketing spend per period, per-rep total comp per period."
+      },
+      {
+        "title": "Jinja2 dependency not committed — git-triggered deploys crash on boot",
+        "severity": "high",
+        "status": "FIXED (2026-06-17, commit 1ec245b)",
+        "resolution": "jinja2 was in venv but not in requirements.txt; main.py asserts jinja2 at import; git-triggered deploys fail before app boots. Fixed by committing jinja2 to requirements.txt + redeploying via railway up; verified live."
+      },
+      {
+        "title": "Scheduled incremental syncs stuck at 'running' (2026-06-17)",
+        "severity": "high",
+        "status": "discovered (requires diagnosis)",
+        "resolution": "Every 2-hourly incremental sync (10:18Z→22:18Z) sits at running forever; no completion. Full syncs work (00:58Z completed cleanly). Either (a) orphaned by restart + restart-recovery stuck, or (b) logic bug in incremental path. Diagnosis: trigger 1 clean incremental manually, watch to completion, then decide if restart-recovery healing works or code fix needed. Dashboard auto-refresh is effectively dead between manual syncs."
       },
       {
         "title": "Railway deploy requires manual subtree push — origin push does NOT redeploy qs-dashboard",
