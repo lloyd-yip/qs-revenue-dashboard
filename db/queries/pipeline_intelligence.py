@@ -30,6 +30,7 @@ from sync.ghl_client import DEAL_WON_STAGE_ID
 GROUP_BY_MAP = {
     "rep": (Opportunity.opportunity_owner_name, "Rep"),
     "channel": (Opportunity.canonical_channel, "Channel"),
+    "funnel": (Opportunity.first_call_funnel, "First-Call Funnel"),
     "lead_quality": (Opportunity.lead_quality, "Lead Quality"),
     "intent": (Opportunity.intent_to_transform, "Intent to Transform"),
     "indoctrination": (Opportunity.pre_call_indoctrination, "Pre-Call Indoctrination"),

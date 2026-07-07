@@ -306,6 +306,18 @@
 
 <!-- TAB: Lead Quality by Channel -->
 <div id="tab-channels" class="tab-content">
+  <div style="display:flex; align-items:center; gap:12px; margin-bottom:16px; flex-wrap:wrap;">
+    <div>
+      <label style="font-size:12px; color:var(--text2); margin-right:8px;">Group by</label>
+      <select id="ch-group-by" onchange="renderChannels()" style="background:var(--surface2); border:1px solid var(--border); color:var(--text); padding:7px 12px; border-radius:6px; font-size:13px; cursor:pointer;">
+        <option value="channel">Lead Channel</option>
+        <option value="funnel">First-Call Funnel</option>
+      </select>
+    </div>
+    <div style="font-size:12px; color:var(--text2); padding:7px 12px; background:rgba(99,102,241,0.08); border:1px solid rgba(99,102,241,0.2); border-radius:6px;">
+      Funnel: webinar (Business Evaluation) · outreach (QuantumSCALE Demo) · referral (Referral Call)
+    </div>
+  </div>
   <div class="charts-row" style="grid-template-columns: 1fr;">
     <div class="chart-box">
       <h3>Channel Distribution</h3>
@@ -358,6 +370,7 @@
       <select id="pi-group-by" onchange="renderPipelineIntelligence()" style="background:var(--surface2); border:1px solid var(--border); color:var(--text); padding:7px 12px; border-radius:6px; font-size:13px; cursor:pointer;">
         <option value="rep">Rep</option>
         <option value="channel">Lead Channel</option>
+        <option value="funnel">First-Call Funnel</option>
         <option value="lead_quality">Lead Quality</option>
         <option value="intent">Intent to Transform</option>
         <option value="indoctrination">Pre-Call Indoctrination</option>
@@ -1383,13 +1396,19 @@ function renderRepBreakdown(reps) {
 // ─── Tab 2: Lead Quality by Channel ──────────────────────────────────────────
 async function renderChannels() {
   const repParam = AppState.repId ? `&rep_id=${AppState.repId}` : '';
+  const groupBy = document.getElementById('ch-group-by')?.value || 'channel';
   try {
-    const channels = await apiFetch(`/api/dashboard/channels?${qs()}${repParam}`);
+    const channels = await apiFetch(`/api/dashboard/channels?${qs()}${repParam}&group_by=${groupBy}`);
     renderChannelDistChart(channels.data);
-    renderChannelTable(channels.data);
+    renderChannelTable(channels.data, groupBy);
   } catch (e) {
     document.getElementById('channel-table').innerHTML = `<div class="empty">Failed to load. ${e.message}</div>`;
   }
+}
+// Prettify a funnel key (webinar/outreach/referral) for display.
+function funnelLabel(v) {
+  if (!v || v === 'Unknown') return 'Unknown / no 1st-call';
+  return v.charAt(0).toUpperCase() + v.slice(1);
 }
 
 function renderChannelDistChart(data) {
@@ -1414,18 +1433,22 @@ function renderChannelDistChart(data) {
   });
 }
 
-function renderChannelTable(data) {
+function renderChannelTable(data, groupBy = 'channel') {
+  const isFunnel = groupBy === 'funnel';
+  const colLabel = isFunnel ? 'Funnel' : 'Channel';
   if (!data.length) {
-    document.getElementById('channel-table').innerHTML = '<div class="empty">No channel data for this period.</div>';
+    document.getElementById('channel-table').innerHTML = `<div class="empty">No ${colLabel.toLowerCase()} data for this period.</div>`;
     return;
   }
   const rows = data.map(d => {
     const showRate = d.total_ops > 0 ? d.shows / d.total_ops : null;
-    const isSlwa = d.channel === 'Slack / WhatsApp / SMS';
+    const label = isFunnel ? funnelLabel(d.channel) : d.channel;
+    const isSlwa = !isFunnel && d.channel === 'Slack / WhatsApp / SMS';
     const channelCell = isSlwa
-      ? `<a class="closes-link" href="${channelDetailUrl('overall')}" title="Open Slack / WhatsApp / SMS detail">${d.channel} ↗</a>`
-      : d.channel;
-    const closesCell = d.units_closed > 0
+      ? `<a class="closes-link" href="${channelDetailUrl('overall')}" title="Open Slack / WhatsApp / SMS detail">${label} ↗</a>`
+      : label;
+    // Closes drill-down keys off canonical_channel; only wire it in channel mode.
+    const closesCell = (!isFunnel && d.units_closed > 0)
       ? `<span class="closes-link" onclick="showClosesModal('${d.channel.replace(/'/g, "\\'")}'); event.stopPropagation();">↗ ${num(d.units_closed)}</span>`
       : num(d.units_closed);
     return `
@@ -1450,7 +1473,7 @@ function renderChannelTable(data) {
   document.getElementById('channel-table').innerHTML = `
     <table style="min-width: 1200px;">
       <thead><tr>
-        <th>Channel</th><th class="num">Total Opps</th><th class="num">Shows</th><th class="num">Show Rate</th><th class="num">Units Closed</th>
+        <th>${colLabel}</th><th class="num">Total Opps</th><th class="num">Shows</th><th class="num">Show Rate</th><th class="num">Units Closed</th>
         <th class="num" style="color:var(--green);" title="Coming soon">Contract Value</th>
         <th class="num" style="color:var(--green);" title="Coming soon">Cash Collected</th>
         <th class="num">Qual Rate</th><th class="num">DQ Rate</th>

@@ -63,6 +63,10 @@ class Opportunity(Base):
     # Booking-time timestamp for the first call, derived from the matched calendar appointment.
     # Used by the SLWA weekly dashboards to mirror workbook cohorting by "Date of Booking".
     call1_booking_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    # Reporting funnel for the 1st call, derived from the 1st-call calendar name:
+    #   'webinar' (Business Evaluation) | 'outreach' (QuantumSCALE Demo) | 'referral' (Referral Call) | NULL.
+    # Powers the Lead-Quality-by-Channel funnel toggle and the Pipeline-Intelligence funnel segment.
+    first_call_funnel: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
 
 
     # Qualification fields (dropdowns on Opportunity)

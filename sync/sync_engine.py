@@ -25,6 +25,7 @@ from sync.ghl_client import (
     classify_calendar,
     extract_attributions,
     extract_custom_fields,
+    funnel_of_calendar,
 )
 
 # Pipeline IDs — used to loop over both pipelines in run_sync
@@ -124,6 +125,7 @@ def _derive_calls_from_appointments(
         "call1_date": None, "call1_status": None, "call1_booking_date": None,
         "call2_date": None, "call2_status": None,
         "followup_appt": None, "first_call_attempts": len(firsts),
+        "first_call_funnel": None,
     }
 
     if firsts:
@@ -135,10 +137,14 @@ def _derive_calls_from_appointments(
              if _normalize_appt_status(a.get("appointmentStatus") or "") == "Showed"),
             None,
         )
-        primary_dt, _ = showed if showed else firsts[0]
+        primary_dt, primary_appt = showed if showed else firsts[0]
         result["call1_date"] = primary_dt
         # Booking date = when they FIRST booked (earliest attempt) — drives date_by='booked'.
         result["call1_booking_date"] = _appointment_booking_date(firsts[0][1])
+        # Reporting funnel (webinar / outreach / referral) from the 1st-call calendar.
+        result["first_call_funnel"] = funnel_of_calendar(
+            calendar_names.get(primary_appt.get("calendarId"))
+        )
 
     if followups:
         chosen = None
@@ -217,6 +223,7 @@ async def _build_opportunity_row(
     call1_booking_date: datetime | None = None
     call2_date: datetime | None = None
     call2_status: str | None = None
+    first_call_funnel: str | None = None
     contact_id = opp.get("contactId")
     all_appointments: list[dict] = []
     followup_appt: dict | None = None
@@ -228,6 +235,7 @@ async def _build_opportunity_row(
         followup_appt = derived["followup_appt"]
         call2_date = derived["call2_date"]
         call2_status = derived["call2_status"]
+        first_call_funnel = derived["first_call_funnel"]
         if derived["first_call_attempts"] > 0:
             call1_date = derived["call1_date"]
             call1_status = derived["call1_status"]
@@ -333,6 +341,7 @@ async def _build_opportunity_row(
         "call1_appointment_date": call1_date,
         "call2_appointment_date": call2_date,
         "call1_booking_date": call1_booking_date,
+        "first_call_funnel": first_call_funnel,
         "lead_quality": custom.get("lead_quality"),
         "financial_qual": custom.get("financial_qual"),
         "intent_to_transform": custom.get("intent_to_transform"),

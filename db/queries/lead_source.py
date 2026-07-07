@@ -17,13 +17,22 @@ async def get_lead_source_breakdown(
     end: date,
     date_by: str,
     rep_id: str | None = None,
+    group_by: str = "channel",
 ) -> list[dict]:
-    """Attribution breakdown by canonical_channel.
+    """Attribution breakdown grouped by canonical_channel (default) or first_call_funnel.
+
+    group_by: 'channel' → Opportunity.canonical_channel
+              'funnel'  → Opportunity.first_call_funnel (webinar / outreach / referral)
 
     Returns counts for: total ops, shows, units closed, projected value,
     qual_rate, dq_rate. Sorted by total ops descending.
     """
     from sync.ghl_client import DEAL_WON_STAGE_ID, DISQUALIFIED_STAGE_ID
+
+    group_col = (
+        Opportunity.first_call_funnel if group_by == "funnel"
+        else Opportunity.canonical_channel
+    )
 
     bf = base_filter(start, end, date_by, rep_id)
     is_1st = has_1st_call(start, end, date_by)
@@ -31,7 +40,7 @@ async def get_lead_source_breakdown(
 
     result = await session.execute(
         select(
-            func.coalesce(Opportunity.canonical_channel, "Unknown").label("channel"),
+            func.coalesce(group_col, "Unknown").label("channel"),
             func.count(Opportunity.id).label("total_ops"),
             func.count(case((and_(is_1st, showed_1st), 1))).label("shows"),
             func.count(
@@ -102,7 +111,7 @@ async def get_lead_source_breakdown(
             ).label("missing_data_count"),
         )
         .where(bf)
-        .group_by(Opportunity.canonical_channel)
+        .group_by(group_col)
         .order_by(func.count(Opportunity.id).desc())
     )
 

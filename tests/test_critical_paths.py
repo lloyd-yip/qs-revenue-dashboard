@@ -436,6 +436,7 @@ class TestDeriveCallsFromAppointments:
 
     CAL = {
         "be": "QS Institute: Business Evaluation Call (P)",   # first / webinar
+        "demo": "QuantumSCALE 15 minutes Demo",               # first / outreach
         "fu": "Follow Up 20 min: Melissa",                    # followup
         "tech": "Tech Call 2 - A w. Jose Velez",              # exclude
     }
@@ -485,3 +486,16 @@ class TestDeriveCallsFromAppointments:
         r = _derive_calls_from_appointments(appts, self.CAL)
         assert r["first_call_attempts"] == 1
         assert r["call1_status"] == "No Show"
+
+    def test_first_call_funnel_webinar(self):
+        r = _derive_calls_from_appointments([self._appt("be", 10, "showed")], self.CAL)
+        assert r["first_call_funnel"] == "webinar"
+
+    def test_first_call_funnel_outreach(self):
+        r = _derive_calls_from_appointments([self._appt("demo", 10, "showed")], self.CAL)
+        assert r["first_call_funnel"] == "outreach"
+
+    def test_no_first_call_funnel_is_none(self):
+        # Delivery-only contact → no 1st call → no funnel.
+        r = _derive_calls_from_appointments([self._appt("tech", 5, "showed")], self.CAL)
+        assert r["first_call_funnel"] is None

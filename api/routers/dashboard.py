@@ -151,12 +151,18 @@ async def time_series(
 @router.get("/channels", response_model=LeadSourceResponse)
 async def channels(
     rep_id: str | None = Query(None),
+    group_by: str = Query("channel", description="Group rows by 'channel' or 'funnel'"),
     params: tuple = Depends(_date_params),
     db: AsyncSession = Depends(get_db),
 ):
-    """Channel distribution + conversion metrics — for the channel tab."""
+    """Channel distribution + conversion metrics — for the channel tab.
+
+    group_by='funnel' splits by first-call funnel (webinar / outreach / referral).
+    """
     start, end, date_by = params
-    data = await get_lead_source_breakdown(db, start, end, date_by, rep_id)
+    if group_by not in ("channel", "funnel"):
+        group_by = "channel"
+    data = await get_lead_source_breakdown(db, start, end, date_by, rep_id, group_by=group_by)
     return LeadSourceResponse(data=data, meta=_meta(start, end, date_by))
 
 
@@ -386,7 +392,7 @@ async def rep_rankings(
 
 # ── Pipeline Intelligence ─────────────────────────────────────────────────────
 
-VALID_GROUP_BY = {"rep", "channel", "lead_quality", "intent", "indoctrination",
+VALID_GROUP_BY = {"rep", "channel", "funnel", "lead_quality", "intent", "indoctrination",
                   "business_fit", "pain_goal", "industry", "current_revenue"}
 
 
