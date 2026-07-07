@@ -79,6 +79,11 @@
     });
     html += '</div>';
     bar.innerHTML = html;
+    // Theme toggle (Auto/Light/Dark) lives at the right edge of the util group.
+    if (window.QSTheme && typeof window.QSTheme.createToggle === 'function') {
+      var util = bar.querySelector('.qs-util-group');
+      if (util) util.appendChild(window.QSTheme.createToggle());
+    }
     document.body.insertBefore(bar, document.body.firstChild);
   }
 
