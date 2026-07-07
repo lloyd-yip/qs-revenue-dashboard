@@ -384,3 +384,104 @@ class TestParseGhlDatetime:
 
     def test_garbage_returns_none(self):
         assert parse_ghl_datetime("not-a-date") is None
+
+
+# ── 6. Calendar Classification Tests (F1 fix) ────────────────────────────────
+
+from sync.ghl_client import classify_calendar, funnel_of_calendar
+from sync.sync_engine import _derive_calls_from_appointments
+
+
+class TestClassifyCalendar:
+    """Name-based sales-call classification — the source of truth for the funnel."""
+
+    def test_business_evaluation_is_first(self):
+        assert classify_calendar("QS Institute: Business Evaluation Call (P)") == "first"
+
+    def test_quantumscale_demo_is_first_outreach(self):
+        assert classify_calendar("QuantumSCALE 15 minutes Demo") == "first"
+        assert funnel_of_calendar("QuantumSCALE 15 minutes Demo") == "outreach"
+
+    def test_referral_call_is_first_referral(self):
+        assert classify_calendar("quantumSCALE Institute: Referral Call") == "first"
+        assert funnel_of_calendar("quantumSCALE Institute: Referral Call") == "referral"
+
+    def test_follow_up_is_followup(self):
+        assert classify_calendar("Follow Up 60 min: Armando Valencia") == "followup"
+
+    def test_custom_demo_is_followup_not_first(self):
+        # "demo" appears in the first-call set, but "custom demo" must win as follow-up.
+        assert classify_calendar("QS Institute: Custom Demo with Armando (Webinar+Calendar)") == "followup"
+
+    def test_nth_meeting_is_followup(self):
+        assert classify_calendar("QS Institute: 3rd Meeting with Ryan") == "followup"
+
+    def test_enrollment_is_followup(self):
+        assert classify_calendar("Enrollment Call into QuantumScaling w/ Ryan") == "followup"
+
+    def test_delivery_calls_excluded(self):
+        for name in ("Tech Call 2 - A w. Jose Velez",
+                     "Client Commitment Check-in w. Daniel O. King",
+                     "Strategy Call 3 w. Scott Conway",
+                     "Lloyd Yip's Personal Calendar"):
+            assert classify_calendar(name) == "exclude", name
+
+    def test_empty_and_none_excluded(self):
+        assert classify_calendar(None) == "exclude"
+        assert classify_calendar("") == "exclude"
+
+
+class TestDeriveCallsFromAppointments:
+    """Per-opportunity positional model with outcome-aware 1st-call status (D1)."""
+
+    CAL = {
+        "be": "QS Institute: Business Evaluation Call (P)",   # first / webinar
+        "fu": "Follow Up 20 min: Melissa",                    # followup
+        "tech": "Tech Call 2 - A w. Jose Velez",              # exclude
+    }
+
+    @staticmethod
+    def _appt(cal, day, status, deleted=False):
+        return {
+            "id": f"{cal}{day}", "calendarId": cal,
+            "startTime": f"2026-06-{day:02d}T15:00:00+00:00",
+            "appointmentStatus": status,
+            "createdAt": f"2026-05-{day:02d}T09:00:00+00:00",
+            "deleted": deleted,
+        }
+
+    def test_single_showed(self):
+        r = _derive_calls_from_appointments([self._appt("be", 10, "showed")], self.CAL)
+        assert r["first_call_attempts"] == 1
+        assert r["call1_status"] == "Showed"
+        assert r["call1_date"].day == 10
+
+    def test_reschedule_outcome_aware(self):
+        # Cancelled first, then showed on reschedule → Showed, dated on the showed call.
+        appts = [self._appt("be", 10, "cancelled"), self._appt("be", 17, "showed")]
+        r = _derive_calls_from_appointments(appts, self.CAL)
+        assert r["call1_status"] == "Showed"
+        assert r["call1_date"].day == 17          # showed attempt's date
+        assert r["call1_booking_date"].day == 10  # first booked
+
+    def test_no_show_only(self):
+        r = _derive_calls_from_appointments([self._appt("be", 10, "noshow")], self.CAL)
+        assert r["call1_status"] == "No Show"
+
+    def test_followup_derived(self):
+        appts = [self._appt("be", 10, "showed"), self._appt("fu", 20, "showed")]
+        r = _derive_calls_from_appointments(appts, self.CAL)
+        assert r["call2_date"].day == 20
+        assert r["call2_status"] == "Showed"
+
+    def test_delivery_only_falls_through(self):
+        # No sales appointment → attempts 0 so the caller uses the custom-field fallback.
+        r = _derive_calls_from_appointments([self._appt("tech", 5, "showed")], self.CAL)
+        assert r["first_call_attempts"] == 0
+        assert r["call1_date"] is None
+
+    def test_deleted_ignored(self):
+        appts = [self._appt("be", 10, "showed", deleted=True), self._appt("be", 12, "noshow")]
+        r = _derive_calls_from_appointments(appts, self.CAL)
+        assert r["first_call_attempts"] == 1
+        assert r["call1_status"] == "No Show"

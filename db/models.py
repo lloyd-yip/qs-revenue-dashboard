@@ -159,9 +159,10 @@ class Appointment(Base):
 
     Populated during sync from GET /contacts/{id}/appointments.
     Upserted on ghl_appointment_id — safe to re-run.
-    appointment_type is derived from calendar_id:
-      'call_1' if calendar_id is NOT in FOLLOW_UP_CALENDAR_IDS,
-      'call_2' if calendar_id IS in FOLLOW_UP_CALENDAR_IDS.
+    appointment_type is derived from the calendar NAME via classify_calendar():
+      'call_1' for 1st-call calendars (Business Evaluation / QuantumSCALE Demo / Referral),
+      'call_2' for follow-up calendars (Follow Up / Nth Meeting / Enrollment / Custom Demo),
+      'other'  for post-sale delivery / internal calendars (excluded from call metrics).
     """
     __tablename__ = "appointments"
 

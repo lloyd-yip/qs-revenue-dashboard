@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 from datetime import datetime, timezone
 from typing import AsyncGenerator
 
@@ -69,6 +70,63 @@ FOLLOW_UP_CALENDAR_IDS = {
     "usW7UX5bzbjDidlDRgIn",  # Follow Up 5 Min: Ryan McNichol (inactive)
     "zvec4paWrmy98caYEW3a",  # Follow Up 20 min: Melissa
 }
+
+# ---- Calendar classification (name-based) ---------------------------------
+# The team restructures calendars regularly (new per-rep "Business Evaluation"
+# calendars appear, and the whole 1st-call flow was migrated in June 2026), so we
+# classify by calendar NAME rather than a static ID list — the ID list rots.
+# Rules approved with Lloyd 2026-07-07. See project-control/f1-fix-scope.md.
+
+
+def classify_calendar(name: str | None) -> str:
+    """Classify a calendar by its name into its sales-call role.
+
+    Returns 'first' | 'followup' | 'exclude':
+      first    — 1st sales call: "Business Evaluation" (webinar funnel);
+                 "QuantumSCALE … Demo" (Slack/WhatsApp/SMS outreach funnel);
+                 "Referral Call" (referral funnel).
+      followup — later sales call: "Follow Up"; "Nth Meeting with Armando/Ryan";
+                 "Enrollment Call into QuantumScaling"; "Custom Demo with Armando/Ryan".
+      exclude  — post-sale delivery / internal: Tech, Strategy, Coaching, Onboarding,
+                 Check-In, Client Commitment, Mastermind, Presentation Success,
+                 Personal calendars, Interviews, Scaling Map, Webinar Slides, etc.
+    """
+    n = (name or "").lower().strip()
+    if not n:
+        return "exclude"
+    # Follow-up patterns first — some contain tokens ("demo") that also appear in the
+    # first-call set, so they must take precedence.
+    if "custom demo" in n:
+        return "followup"
+    if "follow up" in n or "follow-up" in n:
+        return "followup"
+    if re.search(r"\b(2nd|3rd|4th|5th|6th)\s+meeting", n):
+        return "followup"
+    if "enrollment call into quantumscaling" in n:
+        return "followup"
+    # First-call patterns
+    if "business evaluation" in n or "business growth evaluation" in n:
+        return "first"
+    if "quantumscale" in n and "demo" in n:  # QuantumSCALE 15/30-min Demo (outreach)
+        return "first"
+    if "referral call" in n:  # referral funnel
+        return "first"
+    return "exclude"
+
+
+def funnel_of_calendar(name: str | None) -> str | None:
+    """Reporting funnel for a 1st-call calendar (phase-2 dimension, not yet used by
+    metrics). Returns 'webinar' | 'outreach' | 'referral' | None (None = not a 1st call).
+    """
+    n = (name or "").lower().strip()
+    if "business evaluation" in n or "business growth evaluation" in n:
+        return "webinar"
+    if "quantumscale" in n and "demo" in n:
+        return "outreach"
+    if "referral call" in n:
+        return "referral"
+    return None
+
 
 # Opportunity custom field IDs
 CUSTOM_FIELD_IDS = {
@@ -184,6 +242,23 @@ class GHLClient:
             except Exception as exc:
                 logger.warning("Failed to fetch appointments for contact %s: %s", contact_id, exc)
                 return []
+
+    async def get_calendars(self) -> dict[str, str]:
+        """Fetch all calendars for this location. Returns {calendar_id: name} map.
+
+        Called once per sync run so appointments can be classified by calendar NAME
+        (robust to new per-rep calendars) via classify_calendar(). Returns {} on failure.
+        """
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                data = await self._get(client, "/calendars/", {"locationId": self._location_id})
+                cals = data.get("calendars", [])
+                result = {c["id"]: (c.get("name") or "") for c in cals if c.get("id")}
+                logger.info("get_calendars: loaded %d calendars", len(result))
+                return result
+            except Exception as exc:
+                logger.warning("Failed to fetch calendars: %s", exc)
+                return {}
 
     async def update_appointment_status(self, appointment_id: str, status: str) -> None:
         """Update a calendar appointment status.

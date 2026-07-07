@@ -20,9 +20,9 @@ from db.models import Appointment, Opportunity, SourceNormalization, SyncRun
 from db.session import AsyncSessionLocal
 from sync.ghl_client import (
     DEAL_WON_STAGE_ID,
-    FOLLOW_UP_CALENDAR_IDS,
     GHLClient,
     SHOWED_STAGE_IDS,
+    classify_calendar,
     extract_attributions,
     extract_custom_fields,
 )
@@ -72,38 +72,86 @@ def _normalize_appt_status(raw: str) -> str | None:
     return mapping.get(raw.lower().strip()) if raw else None
 
 
-def _find_appointment_for_date(appointments: list[dict], target_dt: datetime) -> dict | None:
-    """Find the calendar appointment whose date matches target_dt (within ±1 day tolerance)."""
-    if not appointments or not target_dt:
-        return None
-    target_date = target_dt.date()
-    for appt in appointments:
-        start = appt.get("startTime")
-        if not start:
-            continue
-        appt_dt = parse_ghl_datetime(start)
-        if appt_dt and appt_dt.date() == target_date:
-            return appt
-    return None
-
-
-def _find_first_followup_appointment(appointments: list[dict]) -> dict | None:
-    """Return the chronologically first non-deleted Follow Up calendar appointment."""
-    candidates = [
-        a for a in appointments
-        if a.get("calendarId") in FOLLOW_UP_CALENDAR_IDS
-        and not a.get("deleted", False)
-    ]
-    if not candidates:
-        return None
-    return min(candidates, key=lambda a: a.get("startTime") or "")
-
-
 def _appointment_booking_date(appt: dict | None) -> datetime | None:
     """Return the booking timestamp for a matched calendar appointment when present."""
     if not appt:
         return None
     return parse_ghl_datetime(appt.get("createdAt") or appt.get("dateAdded"))
+
+
+# Outcome priority for the outcome-aware 1st-call status (D1, Lloyd 2026-07-07).
+_STATUS_PRIORITY = ["Showed", "No Show", "Cancelled", "Confirmed"]
+
+
+def _derive_calls_from_appointments(
+    appointments: list[dict],
+    calendar_names: dict[str, str],
+) -> dict:
+    """Derive call1/call2 date+status from the contact's CALENDAR appointments.
+
+    Approved per-opportunity positional model (F1 fix, Lloyd 2026-07-07 —
+    see project-control/f1-fix-scope.md):
+      - 1st call = the contact's earliest 'first' appointment (Business Evaluation /
+        QuantumSCALE Demo / Referral). Status is OUTCOME-AWARE: Showed if any 1st-call
+        attempt showed, else No Show, else Cancelled, else Confirmed. call1_date is the
+        showed attempt's date when present, otherwise the earliest attempt's date.
+        call1_booking_date is the earliest attempt's booking time (when first booked).
+      - 2nd call = earliest 'followup' appointment (>= call1 date when available).
+
+    Returns keys: call1_date, call1_status, call1_booking_date, call2_date,
+    call2_status, followup_appt, first_call_attempts. first_call_attempts == 0 means
+    the contact has no classifiable 1st-call appointment, so the caller can fall back
+    to the legacy custom field.
+    """
+    firsts: list[tuple[datetime, dict]] = []
+    followups: list[tuple[datetime, dict]] = []
+    for appt in appointments:
+        if appt.get("deleted"):
+            continue
+        start = parse_ghl_datetime(appt.get("startTime"))
+        if start is None:
+            continue
+        role = classify_calendar(calendar_names.get(appt.get("calendarId")))
+        if role == "first":
+            firsts.append((start, appt))
+        elif role == "followup":
+            followups.append((start, appt))
+
+    firsts.sort(key=lambda x: x[0])
+    followups.sort(key=lambda x: x[0])
+
+    result: dict = {
+        "call1_date": None, "call1_status": None, "call1_booking_date": None,
+        "call2_date": None, "call2_status": None,
+        "followup_appt": None, "first_call_attempts": len(firsts),
+    }
+
+    if firsts:
+        statuses = [_normalize_appt_status(a.get("appointmentStatus") or "") for _, a in firsts]
+        result["call1_status"] = next((s for s in _STATUS_PRIORITY if s in statuses), None)
+        # Date: prefer the showed attempt (when the call actually happened), else earliest.
+        showed = next(
+            ((dt, a) for dt, a in firsts
+             if _normalize_appt_status(a.get("appointmentStatus") or "") == "Showed"),
+            None,
+        )
+        primary_dt, _ = showed if showed else firsts[0]
+        result["call1_date"] = primary_dt
+        # Booking date = when they FIRST booked (earliest attempt) — drives date_by='booked'.
+        result["call1_booking_date"] = _appointment_booking_date(firsts[0][1])
+
+    if followups:
+        chosen = None
+        if result["call1_date"] is not None:
+            chosen = next(((dt, a) for dt, a in followups if dt >= result["call1_date"]), None)
+        if chosen is None:
+            chosen = followups[0]
+        fdt, fappt = chosen
+        result["call2_date"] = fdt
+        result["call2_status"] = _normalize_appt_status(fappt.get("appointmentStatus") or "")
+        result["followup_appt"] = fappt
+
+    return result
 
 
 async def _build_opportunity_row(
@@ -113,6 +161,7 @@ async def _build_opportunity_row(
     user_map: dict[str, str] | None = None,
     pipeline_id: str | None = None,
     is_upsell: bool = False,
+    calendar_names: dict[str, str] | None = None,
 ) -> dict:
     """Transform a raw GHL opportunity payload into a dict ready for DB upsert.
 
@@ -121,6 +170,7 @@ async def _build_opportunity_row(
     """
     custom = extract_custom_fields(opp)
     attrs = extract_attributions(opp)
+    calendar_names = calendar_names or {}
 
     # Opportunity name (lead/contact name from GHL)
     opportunity_name = opp.get("name")
@@ -136,10 +186,14 @@ async def _build_opportunity_row(
     user_map = user_map or {}
     owner_name = user_map.get(owner_id) if owner_id else None
 
-    # Appointment dates
-    # call1: from custom fields (rescheduled date preferred over initial)
-    call1_date_raw = custom.get("call1_appointment_date") or custom.get("call1_initial_appointment_date")
-    call1_date = parse_ghl_datetime(call1_date_raw)
+    # Legacy custom-field call1 — kept ONLY as a fallback for contacts with no
+    # classifiable calendar appointment. The custom field is unreliable (~50-60%
+    # populated; collapsed after the June-2026 calendar restructure), so the calendar
+    # is now the source of truth. See project-control/f1-fix-scope.md (F1).
+    cf_call1_date = parse_ghl_datetime(
+        custom.get("call1_appointment_date") or custom.get("call1_initial_appointment_date")
+    )
+    cf_call1_status = custom.get("call1_appointment_status")
 
     # Attribution
     op_book_source = custom.get("op_book_campaign_source")
@@ -154,15 +208,15 @@ async def _build_opportunity_row(
         raw_ghl_source=raw_ghl_source,
     )
 
-    # call1 status from custom field (rep-entered)
-    call1_status = custom.get("call1_appointment_status")
-
-    # call2 date + status from GHL calendar — specifically the first Follow Up appointment.
-    # Custom field call2_appointment_date is unreliable: it gets overwritten every time a
-    # new follow-up is booked, so it tracks the LATEST follow-up, not the first.
+    # call1 + call2 date/status derive from the GHL CALENDAR (appointments) using the
+    # approved per-opportunity positional model (earliest 1st-call = call1, outcome-aware
+    # status; earliest follow-up = call2). Falls back to the legacy custom field only when
+    # the contact has no classifiable 1st-call appointment.
+    call1_date: datetime | None = None
+    call1_status: str | None = None
+    call1_booking_date: datetime | None = None
     call2_date: datetime | None = None
     call2_status: str | None = None
-    call1_booking_date: datetime | None = None
     contact_id = opp.get("contactId")
     all_appointments: list[dict] = []
     followup_appt: dict | None = None
@@ -170,12 +224,22 @@ async def _build_opportunity_row(
     if contact_id and not is_upsell:
         # Upsell pipeline has no 1st/2nd call appointments — skip these expensive calls.
         all_appointments = await ghl_client.get_contact_appointments(contact_id)
-        call1_appt = _find_appointment_for_date(all_appointments, call1_date) if call1_date else None
-        call1_booking_date = _appointment_booking_date(call1_appt)
-        followup_appt = _find_first_followup_appointment(all_appointments)
-        if followup_appt:
-            call2_date = parse_ghl_datetime(followup_appt.get("startTime"))
-            call2_status = _normalize_appt_status(followup_appt.get("appointmentStatus") or "")
+        derived = _derive_calls_from_appointments(all_appointments, calendar_names)
+        followup_appt = derived["followup_appt"]
+        call2_date = derived["call2_date"]
+        call2_status = derived["call2_status"]
+        if derived["first_call_attempts"] > 0:
+            call1_date = derived["call1_date"]
+            call1_status = derived["call1_status"]
+            call1_booking_date = derived["call1_booking_date"]
+        else:
+            # No calendar 1st-call for this contact — fall back to the legacy custom field.
+            call1_date = cf_call1_date
+            call1_status = cf_call1_status
+    else:
+        # Upsell pipeline (no calls fetched) — nothing to derive from the calendar.
+        call1_date = cf_call1_date
+        call1_status = cf_call1_status
 
     # contact_created_at: fetch from GHL contact record (dateAdded).
     # Only fetched if not already stored — incremental syncs avoid re-fetching.
@@ -338,6 +402,9 @@ async def run_sync(sync_type: str = "incremental") -> dict:
     user_map = await ghl_client.get_users()
     logger.info("Loaded %d users for rep name resolution", len(user_map))
 
+    # Calendar id→name map — drives name-based appointment classification (F1 fix).
+    calendar_names = await ghl_client.get_calendars()
+
     # Loop over both pipelines — sales first, then upsell.
     pipeline_configs = [
         {"pipeline_id": SALES_PIPELINE_ID,  "is_upsell": False},
@@ -356,6 +423,7 @@ async def run_sync(sync_type: str = "incremental") -> dict:
                     row = await _build_opportunity_row(
                         raw_opp, normalization_map, ghl_client, user_map,
                         pipeline_id=pid, is_upsell=is_upsell,
+                        calendar_names=calendar_names,
                     )
 
                     # Pull appointments out before DB insert — not a DB column
@@ -383,7 +451,11 @@ async def run_sync(sync_type: str = "incremental") -> dict:
                             if not appt_id:
                                 continue
                             cal_id = appt.get("calendarId")
-                            appt_type = "call_2" if cal_id in FOLLOW_UP_CALENDAR_IDS else "call_1"
+                            # Name-based classification (F1 fix): 'first'→call_1,
+                            # 'followup'→call_2, delivery/internal→'other' (excluded
+                            # from call metrics). Robust to new per-rep calendars.
+                            _role = classify_calendar(calendar_names.get(cal_id))
+                            appt_type = {"first": "call_1", "followup": "call_2"}.get(_role, "other")
                             appt_row = {
                                 "ghl_contact_id": contact_id_for_appts,
                                 "ghl_appointment_id": appt_id,
