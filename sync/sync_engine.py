@@ -436,6 +436,39 @@ async def _write_opportunity_row(session, row: dict, calendar_names: dict, start
     )
 
 
+async def _reconcile_pipeline(pipeline_id: str, seen_ids: set) -> int:
+    """Delete DB opportunities for this pipeline whose GHL id was NOT seen in the live
+    fetch — i.e. they were deleted/merged/moved out of the pipeline in GHL.
+
+    ONLY safe after a FULL sync (the seen set must be complete). Guarded against mass
+    deletion: if the live set is under half of what the DB holds, the fetch is treated as
+    broken and nothing is deleted. Returns the number of rows removed.
+    """
+    if not seen_ids:
+        return 0
+    async with AsyncSessionLocal() as session:
+        db_count = (await session.execute(
+            text("SELECT count(*) FROM opportunities WHERE pipeline_id = :p"),
+            {"p": pipeline_id},
+        )).scalar() or 0
+        if len(seen_ids) < db_count * 0.5:
+            logger.warning(
+                "Reconcile SKIPPED for %s: live=%d is < 50%% of db=%d (suspicious fetch)",
+                pipeline_id, len(seen_ids), db_count,
+            )
+            return 0
+        res = await session.execute(
+            text(
+                "DELETE FROM opportunities "
+                "WHERE pipeline_id = :p AND NOT (ghl_opportunity_id = ANY(:ids))"
+            ),
+            {"p": pipeline_id, "ids": list(seen_ids)},
+        )
+        await session.commit()
+        logger.info("Reconcile %s: deleted %d orphaned opportunities", pipeline_id, res.rowcount)
+        return res.rowcount
+
+
 async def run_sync(sync_type: str = "incremental") -> dict:
     """Run a full or incremental sync. Returns a summary dict.
 
@@ -546,8 +579,12 @@ async def run_sync(sync_type: str = "incremental") -> dict:
         is_upsell = pipeline_cfg["is_upsell"]
         logger.info("Syncing pipeline %s (is_upsell=%s, concurrency=%d)", pid, is_upsell, CONCURRENCY)
 
+        seen_ids: set[str] = set()
         pending: list[dict] = []
         async for raw_opp in ghl_client.stream_opportunities(updated_after=updated_after, pipeline_id=pid):
+            oid = raw_opp.get("id")
+            if oid:
+                seen_ids.add(oid)
             pending.append(raw_opp)
             if len(pending) >= CHUNK_SIZE:
                 s, e = await _process_chunk(pending, pid, is_upsell)
@@ -560,6 +597,13 @@ async def run_sync(sync_type: str = "incremental") -> dict:
             synced_count += s
             error_count += e
         logger.info("Pipeline %s done — %d total synced so far", pid, synced_count)
+
+        # Auto-reconcile orphans: on a FULL sync we have the complete live set, so any DB
+        # opp for this pipeline not seen in GHL was deleted/merged/moved out — remove it.
+        # Sales pipeline only for now (Upsell is being reworked separately). Never runs on
+        # incremental (the fetch is partial).
+        if sync_type == "full" and not is_upsell:
+            await _reconcile_pipeline(pid, seen_ids)
 
     # Update sync_run in a FRESH session (the loop session may have been recycled).
     completed_at = datetime.now(timezone.utc)
