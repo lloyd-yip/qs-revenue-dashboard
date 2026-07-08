@@ -7,6 +7,7 @@ Guarantees:
 - Auditable: every sync creates a sync_runs record with full stats.
 """
 
+import asyncio
 import json
 import logging
 from datetime import datetime, timedelta, timezone
@@ -369,6 +370,72 @@ async def _build_opportunity_row(
     }
 
 
+async def _write_opportunity_row(session, row: dict, calendar_names: dict, started_at) -> None:
+    """Write one built opportunity row: opp upsert + its appointments + compliance
+    history. The caller owns commit/rollback. `row` must still hold '_all_appointments'."""
+    all_appointments = row.pop("_all_appointments", [])
+    contact_id_for_appts = row.get("ghl_contact_id")
+    history_cols = {"outcome_unfilled_first_flagged_at", "outcome_unfilled_resolved_at"}
+    stmt = (
+        pg_insert(Opportunity)
+        .values(**row)
+        .on_conflict_do_update(
+            index_elements=["ghl_opportunity_id"],
+            set_={k: v for k, v in row.items() if k not in {"ghl_opportunity_id"} | history_cols},
+        )
+    )
+    await session.execute(stmt)
+
+    if contact_id_for_appts and all_appointments:
+        for appt in all_appointments:
+            appt_id = appt.get("id")
+            if not appt_id:
+                continue
+            cal_id = appt.get("calendarId")
+            # Name-based classification (F1 fix): 'first'→call_1, 'followup'→call_2,
+            # delivery/internal→'other' (excluded from call metrics).
+            _role = classify_calendar(calendar_names.get(cal_id))
+            appt_type = {"first": "call_1", "followup": "call_2"}.get(_role, "other")
+            appt_row = {
+                "ghl_contact_id": contact_id_for_appts,
+                "ghl_appointment_id": appt_id,
+                "calendar_id": cal_id,
+                "appointment_type": appt_type,
+                "appointment_date": parse_ghl_datetime(appt.get("startTime")),
+                "appointment_status": _normalize_appt_status(appt.get("appointmentStatus") or ""),
+            }
+            appt_stmt = (
+                pg_insert(Appointment)
+                .values(**appt_row)
+                .on_conflict_do_update(
+                    index_elements=["ghl_appointment_id"],
+                    set_={k: v for k, v in appt_row.items() if k != "ghl_appointment_id"},
+                )
+            )
+            await session.execute(appt_stmt)
+
+    # Compliance history: set first_flagged_at / resolved_at once via CASE logic.
+    await session.execute(
+        text("""
+            UPDATE opportunities SET
+                outcome_unfilled_first_flagged_at = CASE
+                    WHEN outcome_unfilled = TRUE AND outcome_unfilled_first_flagged_at IS NULL
+                    THEN :now
+                    ELSE outcome_unfilled_first_flagged_at
+                END,
+                outcome_unfilled_resolved_at = CASE
+                    WHEN outcome_unfilled = FALSE
+                         AND outcome_unfilled_resolved_at IS NULL
+                         AND outcome_unfilled_first_flagged_at IS NOT NULL
+                    THEN :now
+                    ELSE outcome_unfilled_resolved_at
+                END
+            WHERE ghl_opportunity_id = :ghl_id
+        """),
+        {"now": started_at, "ghl_id": row["ghl_opportunity_id"]},
+    )
+
+
 async def run_sync(sync_type: str = "incremental") -> dict:
     """Run a full or incremental sync. Returns a summary dict.
 
@@ -420,140 +487,79 @@ async def run_sync(sync_type: str = "incremental") -> dict:
         {"pipeline_id": UPSELL_PIPELINE_ID, "is_upsell": True},
     ]
 
-    # Manual session management (not a single `async with` for the whole run):
-    # Supabase's pooler closes a connection held for a long full sync, and previously
-    # one failure aborted the transaction for every record after it — cascading into
-    # thousands of failures. We recycle the session every batch and roll back on any
-    # per-opp error, so the run stays resilient to connection drops and bad records.
-    BATCH_SIZE = 50
-    session = AsyncSessionLocal()
-    try:
-        for pipeline_cfg in pipeline_configs:
-            pid       = pipeline_cfg["pipeline_id"]
-            is_upsell = pipeline_cfg["is_upsell"]
-            logger.info("Syncing pipeline %s (is_upsell=%s)", pid, is_upsell)
+    # Concurrency: the slow part is per-contact GHL fetches (appointments/contact/notes)
+    # inside _build_opportunity_row. We build a CHUNK of opportunities concurrently
+    # (bounded by a semaphore) and then write them SEQUENTIALLY in a fresh, short-lived
+    # session per chunk. Builds touch only the GHL API + pure functions (no DB), so they
+    # are safe to run in parallel; a single writer keeps the DB side safe; a fresh session
+    # per chunk keeps connections short enough that the pooler never closes one mid-run.
+    CONCURRENCY = 6      # concurrent per-contact fetches (kept under GHL's rate ceiling)
+    CHUNK_SIZE = 60      # opportunities built per chunk before the sequential write pass
+    sem = asyncio.Semaphore(CONCURRENCY)
 
-            async for raw_opp in ghl_client.stream_opportunities(updated_after=updated_after, pipeline_id=pid):
-                opp_id = raw_opp.get("id", "unknown")
+    async def _build_guarded(raw_opp, pid, is_upsell):
+        async with sem:
+            return await _build_opportunity_row(
+                raw_opp, normalization_map, ghl_client, user_map,
+                pipeline_id=pid, is_upsell=is_upsell, calendar_names=calendar_names,
+            )
+
+    async def _process_chunk(opps, pid, is_upsell) -> tuple[int, int]:
+        """Build a chunk concurrently, then write it in one fresh session. Returns
+        (n_synced, n_errors)."""
+        n_synced = 0
+        n_err = 0
+        built = await asyncio.gather(
+            *[_build_guarded(o, pid, is_upsell) for o in opps],
+            return_exceptions=True,
+        )
+        async with AsyncSessionLocal() as session:
+            for raw_opp, res in zip(opps, built):
+                oid = raw_opp.get("id", "unknown")
+                if isinstance(res, Exception):
+                    n_err += 1
+                    error_details.append({"opportunity_id": oid, "error": str(res)})
+                    logger.error("Failed to build opportunity %s: %s", oid, res)
+                    continue
                 try:
-                    row = await _build_opportunity_row(
-                        raw_opp, normalization_map, ghl_client, user_map,
-                        pipeline_id=pid, is_upsell=is_upsell,
-                        calendar_names=calendar_names,
-                    )
-
-                    # Pull appointments out before DB insert — not a DB column
-                    all_appointments = row.pop("_all_appointments", [])
-                    contact_id_for_appts = row.get("ghl_contact_id")
-
-                    # PostgreSQL upsert — idempotent on ghl_opportunity_id.
-                    # Exclude compliance history columns — they are managed by the
-                    # conditional UPDATE below, not overwritten on every sync.
-                    history_cols = {"outcome_unfilled_first_flagged_at", "outcome_unfilled_resolved_at"}
-                    stmt = (
-                        pg_insert(Opportunity)
-                        .values(**row)
-                        .on_conflict_do_update(
-                            index_elements=["ghl_opportunity_id"],
-                            set_={k: v for k, v in row.items() if k not in {"ghl_opportunity_id"} | history_cols},
-                        )
-                    )
-                    await session.execute(stmt)
-
-                    # Upsert all appointments for this contact into the appointments table
-                    if contact_id_for_appts and all_appointments:
-                        for appt in all_appointments:
-                            appt_id = appt.get("id")
-                            if not appt_id:
-                                continue
-                            cal_id = appt.get("calendarId")
-                            # Name-based classification (F1 fix): 'first'→call_1,
-                            # 'followup'→call_2, delivery/internal→'other' (excluded
-                            # from call metrics). Robust to new per-rep calendars.
-                            _role = classify_calendar(calendar_names.get(cal_id))
-                            appt_type = {"first": "call_1", "followup": "call_2"}.get(_role, "other")
-                            appt_row = {
-                                "ghl_contact_id": contact_id_for_appts,
-                                "ghl_appointment_id": appt_id,
-                                "calendar_id": cal_id,
-                                "appointment_type": appt_type,
-                                "appointment_date": parse_ghl_datetime(appt.get("startTime")),
-                                "appointment_status": _normalize_appt_status(appt.get("appointmentStatus") or ""),
-                            }
-                            appt_stmt = (
-                                pg_insert(Appointment)
-                                .values(**appt_row)
-                                .on_conflict_do_update(
-                                    index_elements=["ghl_appointment_id"],
-                                    set_={k: v for k, v in appt_row.items() if k != "ghl_appointment_id"},
-                                )
-                            )
-                            await session.execute(appt_stmt)
-
-                    # Compliance history: track when outcome_unfilled was first set and when resolved.
-                    # - first_flagged_at: set once when outcome_unfilled first becomes TRUE
-                    # - resolved_at: set once when outcome_unfilled transitions TRUE → FALSE
-                    # Both use CASE logic so they are never overwritten after being set.
-                    await session.execute(
-                        text("""
-                            UPDATE opportunities SET
-                                outcome_unfilled_first_flagged_at = CASE
-                                    WHEN outcome_unfilled = TRUE AND outcome_unfilled_first_flagged_at IS NULL
-                                    THEN :now
-                                    ELSE outcome_unfilled_first_flagged_at
-                                END,
-                                outcome_unfilled_resolved_at = CASE
-                                    WHEN outcome_unfilled = FALSE
-                                         AND outcome_unfilled_resolved_at IS NULL
-                                         AND outcome_unfilled_first_flagged_at IS NOT NULL
-                                    THEN :now
-                                    ELSE outcome_unfilled_resolved_at
-                                END
-                            WHERE ghl_opportunity_id = :ghl_id
-                        """),
-                        {"now": started_at, "ghl_id": row["ghl_opportunity_id"]},
-                    )
-
-                    synced_count += 1
-
-                    # Commit + recycle the session every batch so no single connection
-                    # is held long enough for the pooler to close it mid-operation.
-                    if synced_count % BATCH_SIZE == 0:
-                        await session.commit()
-                        await session.close()
-                        session = AsyncSessionLocal()
-                        logger.info("Committed batch — %d opportunities synced so far", synced_count)
-
+                    await _write_opportunity_row(session, res, calendar_names, started_at)
+                    n_synced += 1
                 except Exception as exc:
-                    error_count += 1
-                    error_details.append({"opportunity_id": opp_id, "error": str(exc)})
-                    logger.error("Failed to sync opportunity %s: %s", opp_id, exc)
-                    # Roll back so an aborted transaction doesn't fail every later record;
-                    # if the connection itself died, replace the session and continue.
+                    n_err += 1
+                    error_details.append({"opportunity_id": oid, "error": str(exc)})
+                    logger.error("Failed to write opportunity %s: %s", oid, exc)
+                    # Roll back so the aborted transaction doesn't fail the rest of the
+                    # chunk; if the connection itself died, abandon this chunk (its opps
+                    # re-sync next run — idempotent).
                     try:
                         await session.rollback()
                     except Exception:
-                        try:
-                            await session.close()
-                        except Exception:
-                            pass
-                        session = AsyncSessionLocal()
-
-            # Commit remaining records for this pipeline before moving to the next.
+                        break
             try:
                 await session.commit()
             except Exception as exc:
-                logger.error("Final commit for pipeline %s failed: %s", pid, exc)
-                try:
-                    await session.rollback()
-                except Exception:
-                    pass
-                await session.close()
-                session = AsyncSessionLocal()
-            logger.info("Pipeline %s done — %d total synced so far", pid, synced_count)
+                logger.error("Chunk commit failed: %s", exc)
+        return n_synced, n_err
 
-    finally:
-        await session.close()
+    for pipeline_cfg in pipeline_configs:
+        pid       = pipeline_cfg["pipeline_id"]
+        is_upsell = pipeline_cfg["is_upsell"]
+        logger.info("Syncing pipeline %s (is_upsell=%s, concurrency=%d)", pid, is_upsell, CONCURRENCY)
+
+        pending: list[dict] = []
+        async for raw_opp in ghl_client.stream_opportunities(updated_after=updated_after, pipeline_id=pid):
+            pending.append(raw_opp)
+            if len(pending) >= CHUNK_SIZE:
+                s, e = await _process_chunk(pending, pid, is_upsell)
+                synced_count += s
+                error_count += e
+                pending = []
+                logger.info("Synced %d opportunities so far", synced_count)
+        if pending:
+            s, e = await _process_chunk(pending, pid, is_upsell)
+            synced_count += s
+            error_count += e
+        logger.info("Pipeline %s done — %d total synced so far", pid, synced_count)
 
     # Update sync_run in a FRESH session (the loop session may have been recycled).
     completed_at = datetime.now(timezone.utc)

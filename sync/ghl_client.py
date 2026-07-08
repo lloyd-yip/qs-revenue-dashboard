@@ -305,9 +305,24 @@ class GHLClient:
         return notes
 
     async def _get(self, client: httpx.AsyncClient, path: str, params: dict) -> dict:
-        """Single GET request with basic error handling."""
+        """Single GET request with 429 retry/backoff.
+
+        Retries on HTTP 429 (rate limit), honouring Retry-After when present, else an
+        increasing backoff. This makes concurrent syncs/backfills safe — without it a
+        rate-limited call would raise and (in the callers that swallow errors) silently
+        yield empty data.
+        """
         url = f"{self._base_url}{path}"
-        response = await client.get(url, headers=self._headers, params=params)
+        for attempt in range(5):
+            response = await client.get(url, headers=self._headers, params=params)
+            if response.status_code == 429:
+                retry_after = response.headers.get("Retry-After")
+                delay = float(retry_after) if retry_after else 0.8 * (attempt + 1)
+                await asyncio.sleep(min(delay, 5.0))
+                continue
+            response.raise_for_status()
+            return response.json()
+        # Exhausted retries — raise the final rate-limit error for the caller to handle.
         response.raise_for_status()
         return response.json()
 
