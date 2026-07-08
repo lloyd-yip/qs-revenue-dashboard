@@ -71,9 +71,10 @@
     /* Table */
     .table-wrap {
       background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-      overflow: hidden;
+      /* NB: no overflow:hidden — it would become the sticky <th> scroll-container and
+         offset the header down by top:var(--qs-nav-h), overlapping the first row. */
     }
-    table { width: 100%; border-collapse: collapse; }
+    table { width: 100%; border-collapse: separate; border-spacing: 0; }
     th {
       background: var(--surface2); color: var(--text2); font-size: 11px; font-weight: 600;
       text-transform: uppercase; letter-spacing: 0.4px; padding: 10px 14px; text-align: left;
