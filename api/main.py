@@ -139,9 +139,10 @@ async def serve_data_quality():
     )
 
 @app.get("/sync-history", include_in_schema=False)
-async def serve_sync_history():
-    return FileResponse(
-        _STATIC_DIR / "sync-history.html",
+async def serve_sync_history(request: Request):
+    return _templates.TemplateResponse(
+        "sync-history.html",
+        {"request": request, "api_token": settings.api_bearer_token},
         headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
     )
 

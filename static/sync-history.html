@@ -34,6 +34,23 @@
     }
     header h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.3px; }
     .header-left { display: flex; align-items: center; gap: 14px; }
+    .header-right { display: flex; align-items: center; gap: 12px; }
+
+    .sync-msg { font-size: 12px; color: var(--text2); }
+    .sync-msg.ok { color: var(--green); }
+    .sync-msg.err { color: var(--red); }
+
+    .btn-sync {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: var(--accent); color: #fff; border: none; cursor: pointer;
+      font-family: var(--font); font-size: 13px; font-weight: 600;
+      padding: 8px 16px; border-radius: 8px; transition: background 0.15s, opacity 0.15s;
+    }
+    .btn-sync:hover { background: var(--accent2); }
+    .btn-sync:disabled { opacity: 0.55; cursor: not-allowed; }
+    .btn-sync .btn-sync-icon { display: inline-block; font-size: 14px; line-height: 1; }
+    .btn-sync.syncing .btn-sync-icon { animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
     .content { padding: 24px; max-width: 1200px; margin: 0 auto; }
 
@@ -60,7 +77,8 @@
     th {
       background: var(--surface2); color: var(--text2); font-size: 11px; font-weight: 600;
       text-transform: uppercase; letter-spacing: 0.4px; padding: 10px 14px; text-align: left;
-      position: sticky; top: var(--qs-nav-h);
+      position: sticky; top: var(--qs-nav-h); z-index: 5;
+      box-shadow: inset 0 -1px 0 var(--border);
     }
     td { padding: 10px 14px; border-top: 1px solid var(--border); font-size: 13px; }
     tr:hover td { background: var(--surface2); }
@@ -109,6 +127,12 @@
   <div class="header-left">
     <h1>Sync History</h1>
     <span id="tz-label" style="font-size: 11px; color: var(--text2); margin-left: 4px;"></span>
+  </div>
+  <div class="header-right">
+    <span id="sync-msg" class="sync-msg"></span>
+    <button id="sync-now-btn" class="btn-sync" onclick="triggerSync()">
+      <span class="btn-sync-icon">⟳</span> Sync Now
+    </button>
   </div>
 </header>
 
@@ -170,7 +194,7 @@ async function loadSyncHistory() {
     if (!data || !data.length) {
       document.getElementById('sync-table-body').innerHTML =
         '<tr><td colspan="6" class="empty">No sync runs found.</td></tr>';
-      return;
+      return null;
     }
 
     // ── Stats ──
@@ -243,9 +267,12 @@ async function loadSyncHistory() {
 
     document.getElementById('sync-table-body').innerHTML = rows;
 
+    return lastRun.status;
+
   } catch (e) {
     document.getElementById('sync-table-body').innerHTML =
       `<tr><td colspan="6" class="empty">Failed to load sync history: ${e.message}</td></tr>`;
+    return undefined;
   }
 }
 
@@ -260,7 +287,70 @@ function escHtml(str) {
   return div.innerHTML;
 }
 
-loadSyncHistory();
+// ── Manual sync trigger ──
+const SYNC_TOKEN = "{{ api_token }}";
+let pollTimer = null;
+
+function reflectStatus(status) {
+  const btn = document.getElementById('sync-now-btn');
+  const running = status === 'running';
+  btn.disabled = running;
+  btn.classList.toggle('syncing', running);
+  if (running) {
+    startPolling();
+  } else {
+    stopPolling();
+  }
+}
+
+function startPolling() {
+  if (pollTimer) return;
+  pollTimer = setInterval(async () => {
+    const status = await loadSyncHistory();
+    if (status !== 'running') {
+      stopPolling();
+      const btn = document.getElementById('sync-now-btn');
+      btn.disabled = false;
+      btn.classList.remove('syncing');
+      if (status === 'completed') setMsg('Sync completed.', 'ok');
+      else if (status === 'failed') setMsg('Sync failed — see the latest row.', 'err');
+    }
+  }, 10000);
+}
+
+function stopPolling() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+
+function setMsg(text, kind) {
+  const el = document.getElementById('sync-msg');
+  el.textContent = text;
+  el.className = 'sync-msg' + (kind ? ' ' + kind : '');
+}
+
+async function triggerSync() {
+  const btn = document.getElementById('sync-now-btn');
+  btn.disabled = true;
+  btn.classList.add('syncing');
+  setMsg('Starting full sync…', '');
+  try {
+    const res = await fetch('/api/sync/trigger?sync_type=full', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${SYNC_TOKEN}` },
+    });
+    if (!res.ok) throw new Error(`API error ${res.status}`);
+    setMsg('Full sync running…', '');
+    await loadSyncHistory();
+    startPolling();
+  } catch (e) {
+    setMsg(`Failed to start sync: ${e.message}`, 'err');
+    btn.disabled = false;
+    btn.classList.remove('syncing');
+  }
+}
+
+// Initial load — reflect a sync already in progress on the button.
+loadSyncHistory().then(reflectStatus);
 </script>
 <script src="/static/nav.js"></script>
 </body>
