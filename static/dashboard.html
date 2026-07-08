@@ -1668,9 +1668,11 @@ async function renderPipelineIntelligence() {
       return `<tr>
         <td style="font-weight:500;">${r.segment}</td>
         <td class="num">${num(r.calls_booked_1st)}</td>
+        <td class="num" style="color:var(--text2);">${num(r.occurred_1st)}</td>
         ${c1ShowCell}
         <td class="num ${rateClass(r.qual_rate)}">${pct(r.qual_rate)}</td>
         <td class="num">${num(r.calls_booked_2nd)}</td>
+        <td class="num" style="color:var(--text2);">${num(r.occurred_2nd)}</td>
         <td class="num ${rateClass(r.show_rate_2nd)}">${pct(r.show_rate_2nd)}</td>
         <td class="num ${rateClass(r.close_rate)}">${pct(r.close_rate)}</td>
         <td class="num ${rateClass(r.close_rate_qual)}">${pct(r.close_rate_qual)}</td>
@@ -1688,9 +1690,11 @@ async function renderPipelineIntelligence() {
             <tr>
               <th>${dimension_label}</th>
               <th class="num">C1 Booked</th>
+              <th class="num" title="1st calls that have occurred (show-rate denominator)">C1 Occurred</th>
               <th class="num">C1 Show%</th>
               <th class="num">Qual%</th>
               <th class="num">C2 Booked</th>
+              <th class="num" title="2nd calls that have occurred">C2 Occurred</th>
               <th class="num">C2 Show%</th>
               <th class="num">Close%</th>
               <th class="num" title="Units Closed ÷ Qualified 1st Call Shows">Qual Close%</th>
