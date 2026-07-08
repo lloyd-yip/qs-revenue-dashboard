@@ -70,6 +70,9 @@ class RepMetrics(BaseModel):
     compliance_failures: int
     outcome_not_logged_count: int
     avg_cycle_days: float | None = None
+    # Reschedules (from the appointments table)
+    rescheduled_1st: int = 0
+    reschedule_rate_1st: float | None = None
     # Lead quality counts
     lq_great: int = 0
     lq_ok: int = 0

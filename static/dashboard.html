@@ -1322,6 +1322,7 @@ function renderRepBreakdown(reps) {
       <td class="num">${bookedCell}</td>
       <td class="num">${showedCell}</td>
       <td class="num clickable" onclick="window.open(debugUrl('show_rate_1st','${rid}'),'_blank')" style="cursor:pointer;" title="↗ Debug">${pct(r.show_rate_1st)}</td>
+      <td class="num clickable ${r.reschedule_rate_1st !== null && r.reschedule_rate_1st > 0.3 ? 'rate-warn' : ''}" onclick="window.open(debugUrl('rescheduled_1st','${rid}'),'_blank')" style="cursor:pointer;" title="↗ Debug — 1st calls rescheduled at least once">${num(r.rescheduled_1st)}${r.reschedule_rate_1st !== null && r.reschedule_rate_1st !== undefined ? ` <span style="color:var(--text2);">(${pct(r.reschedule_rate_1st)})</span>` : ''}</td>
       <td class="num clickable" onclick="window.open(debugUrl('qualification_rate','${rid}'),'_blank')" style="cursor:pointer;" title="↗ Debug">${pct(r.qualification_rate)}</td>
       <td class="num clickable" onclick="window.open(debugUrl('close_rate','${rid}'),'_blank')" style="cursor:pointer;" title="↗ Debug">${pct(r.close_rate)}</td>
       <td class="num" title="Units Closed ÷ Qualified Shows">${pct(r.close_rate_qual)}</td>
@@ -1351,6 +1352,7 @@ function renderRepBreakdown(reps) {
         <th class="num">Booked</th>
         <th class="num">Showed</th>
         <th class="num">Show Rate</th>
+        <th class="num" title="1st calls rescheduled at least once (and rate of scheduled)">Resched</th>
         <th class="num">Qual Rate</th>
         <th class="num">Close Rate</th>
         <th class="num" title="Units Closed ÷ Qualified 1st Call Shows">Qual Close</th>
