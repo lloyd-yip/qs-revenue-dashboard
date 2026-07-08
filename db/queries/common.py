@@ -153,15 +153,26 @@ def showed_2nd_call_expr():
 
 
 def bookable_1st_call_expr():
-    """Show rate denominator for 1st call: Showed + No Show + Cancelled.
+    """Show rate DENOMINATOR for 1st call: every call with a determinate outcome —
+    showed (by status OR stage) + no-show + cancelled.
 
-    Explicit status check — do not use ~outcome_unfilled as a proxy.
-    outcome_unfilled is a compliance flag and can include upcoming appointments
-    still within the 12h grace window, which distorts the denominator.
+    MUST be a superset of showed_1st_call_expr(): the numerator counts a stage-based
+    show (e.g. rep advanced to "1st Call Done") even when the appointment status is
+    still "Confirmed". If such a call is not also counted here, shows can exceed
+    bookable and the show rate goes above 100%. Truly-upcoming calls (Confirmed AND
+    stage not advanced) are still excluded, so the denominator isn't distorted.
     """
-    return Opportunity.call1_appointment_status.in_(["Showed", "No Show", "Cancelled"])
+    return or_(
+        showed_1st_call_expr(),
+        Opportunity.call1_appointment_status.in_(["No Show", "Cancelled"]),
+    )
 
 
 def bookable_2nd_call_expr():
-    """Show rate denominator for 2nd call: Showed + No Show + Cancelled."""
-    return Opportunity.call2_appointment_status.in_(["Showed", "No Show", "Cancelled"])
+    """Show rate DENOMINATOR for 2nd call — superset of showed_2nd_call_expr()
+    (see bookable_1st_call_expr for why). Prevents show rate > 100% when a rep
+    advanced to "2nd Call Done" while the appointment status is still "Confirmed"."""
+    return or_(
+        showed_2nd_call_expr(),
+        Opportunity.call2_appointment_status.in_(["No Show", "Cancelled"]),
+    )

@@ -227,7 +227,11 @@
 
     thead {
       position: sticky;
-      top: var(--qs-nav-h);
+      /* top:0, NOT var(--qs-nav-h): .table-wrap has overflow-x:auto (for the wide table),
+         which makes it the sticky scroll-container. With top:var(--qs-nav-h) the header —
+         whose natural position is the container top (0) — gets pinned DOWN by the nav
+         height, overlapping the first row. top:0 sticks it flush to the table top. */
+      top: 0;
       z-index: 10;
     }
 
