@@ -420,7 +420,14 @@ async def run_sync(sync_type: str = "incremental") -> dict:
         {"pipeline_id": UPSELL_PIPELINE_ID, "is_upsell": True},
     ]
 
-    async with AsyncSessionLocal() as session:
+    # Manual session management (not a single `async with` for the whole run):
+    # Supabase's pooler closes a connection held for a long full sync, and previously
+    # one failure aborted the transaction for every record after it — cascading into
+    # thousands of failures. We recycle the session every batch and roll back on any
+    # per-opp error, so the run stays resilient to connection drops and bad records.
+    BATCH_SIZE = 50
+    session = AsyncSessionLocal()
+    try:
         for pipeline_cfg in pipeline_configs:
             pid       = pipeline_cfg["pipeline_id"]
             is_upsell = pipeline_cfg["is_upsell"]
@@ -509,29 +516,50 @@ async def run_sync(sync_type: str = "incremental") -> dict:
 
                     synced_count += 1
 
-                    # Commit in batches of 50 to balance memory and safety
-                    if synced_count % 50 == 0:
+                    # Commit + recycle the session every batch so no single connection
+                    # is held long enough for the pooler to close it mid-operation.
+                    if synced_count % BATCH_SIZE == 0:
                         await session.commit()
+                        await session.close()
+                        session = AsyncSessionLocal()
                         logger.info("Committed batch — %d opportunities synced so far", synced_count)
 
                 except Exception as exc:
                     error_count += 1
-                    error_detail = {"opportunity_id": opp_id, "error": str(exc)}
-                    error_details.append(error_detail)
+                    error_details.append({"opportunity_id": opp_id, "error": str(exc)})
                     logger.error("Failed to sync opportunity %s: %s", opp_id, exc)
-                    # Continue — never halt the sync for one bad record
+                    # Roll back so an aborted transaction doesn't fail every later record;
+                    # if the connection itself died, replace the session and continue.
+                    try:
+                        await session.rollback()
+                    except Exception:
+                        try:
+                            await session.close()
+                        except Exception:
+                            pass
+                        session = AsyncSessionLocal()
 
-            # Commit remaining records for this pipeline before moving to the next
-            await session.commit()
+            # Commit remaining records for this pipeline before moving to the next.
+            try:
+                await session.commit()
+            except Exception as exc:
+                logger.error("Final commit for pipeline %s failed: %s", pid, exc)
+                try:
+                    await session.rollback()
+                except Exception:
+                    pass
+                await session.close()
+                session = AsyncSessionLocal()
             logger.info("Pipeline %s done — %d total synced so far", pid, synced_count)
 
-        # Update sync_run record — runs once after all pipelines complete
-        completed_at = datetime.now(timezone.utc)
-        status = "completed" if error_count == 0 else "completed"  # still completed — errors are logged
-        if synced_count == 0 and error_count > 0:
-            status = "failed"
+    finally:
+        await session.close()
 
-        await session.execute(
+    # Update sync_run in a FRESH session (the loop session may have been recycled).
+    completed_at = datetime.now(timezone.utc)
+    status = "failed" if (synced_count == 0 and error_count > 0) else "completed"
+    async with AsyncSessionLocal() as status_session:
+        await status_session.execute(
             text("""
                 UPDATE sync_runs
                 SET status = :status,
@@ -550,7 +578,7 @@ async def run_sync(sync_type: str = "incremental") -> dict:
                 "id": str(sync_run_id),
             },
         )
-        await session.commit()
+        await status_session.commit()
 
     duration_s = (datetime.now(timezone.utc) - started_at).total_seconds()
     summary = {
