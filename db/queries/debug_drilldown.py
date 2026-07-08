@@ -9,14 +9,15 @@ where the data is inconsistent (stage/status mismatches, missing fields, etc.).
 
 from datetime import date
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.models import Opportunity
+from db.models import Appointment, Opportunity
 from db.queries.common import (
     QUALIFIED_LEAD_QUALITY,
     base_filter,
     bookable_1st_call_expr,
+    bookable_2nd_call_expr,
     has_1st_call,
     has_2nd_call,
     sales_rep_filter,
@@ -132,8 +133,11 @@ def _build_metric_filter(metric: str, start: date, end: date, date_by: str):
                 ~showed_1st,
             )
 
-        case "bookable_1st":
+        case "bookable_1st" | "occurred_1st":
             return and_(is_1st, bookable_1st_call_expr())
+
+        case "occurred_2nd":
+            return and_(is_2nd, bookable_2nd_call_expr())
 
         case "calls_booked_2nd":
             return is_2nd
@@ -375,6 +379,45 @@ async def get_drilldown_opps(
     """
     # units_closed and close_rate are counted by close_date in get_by_rep —
     # use the same filter here so the drilldown row count matches the column.
+    # Appointment-table-based metrics (calendar/reschedule-aware) — resolve the matching
+    # opp ids via the appointments join, then fetch their drilldown rows.
+    if metric in ("scheduled_1st", "scheduled_2nd", "rescheduled_1st", "rescheduled_2nd"):
+        call_type = "call_1" if metric.endswith("1st") else "call_2"
+        is_type = Appointment.appointment_type == call_type
+        in_range_active = and_(
+            is_type,
+            func.date(Appointment.appointment_date) >= start,
+            func.date(Appointment.appointment_date) <= end,
+            Appointment.appointment_status != "Cancelled",
+        )
+        opp_conds = [Opportunity.is_excluded.is_(False)]
+        if rep_id:
+            opp_conds.append(Opportunity.opportunity_owner_id == rep_id)
+        else:
+            opp_conds.append(sales_rep_filter())
+        per_opp = (
+            select(
+                Opportunity.ghl_opportunity_id.label("oid"),
+                func.count().filter(is_type).label("total"),
+                func.count().filter(in_range_active).label("in_range"),
+            )
+            .select_from(Opportunity)
+            .join(Appointment, Appointment.ghl_contact_id == Opportunity.ghl_contact_id)
+            .where(and_(*opp_conds))
+            .group_by(Opportunity.ghl_opportunity_id)
+            .subquery()
+        )
+        cond = per_opp.c.in_range > 0
+        if metric.startswith("rescheduled"):
+            cond = and_(per_opp.c.in_range > 0, per_opp.c.total > 1)
+        ids = select(per_opp.c.oid).where(cond)
+        result = await session.execute(
+            select(*_DRILLDOWN_COLUMNS)
+            .where(Opportunity.ghl_opportunity_id.in_(ids))
+            .order_by(Opportunity.call1_appointment_date.desc().nulls_last())
+        )
+        return [{**_row_to_dict(r), "anomalies": _detect_anomalies(_row_to_dict(r))} for r in result.all()]
+
     if metric in ("units_closed", "close_rate", "projected_contract_value"):
         close_conditions = [
             Opportunity.is_excluded.is_(False),

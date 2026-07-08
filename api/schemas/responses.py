@@ -15,12 +15,22 @@ class MetaMixin(BaseModel):
 
 class SummaryData(BaseModel):
     calls_booked_1st: int
+    scheduled_1st: int = 0
+    occurred_1st: int = 0
     shows_1st: int
     show_rate_1st: float | None
     no_show_rate_1st: float | None
+    rescheduled_1st: int = 0
+    reschedule_rate_1st: float | None = None
+    moved_to_future_1st: int = 0
     calls_booked_2nd: int
+    scheduled_2nd: int = 0
+    occurred_2nd: int = 0
     shows_2nd: int
     show_rate_2nd: float | None
+    rescheduled_2nd: int = 0
+    reschedule_rate_2nd: float | None = None
+    moved_to_future_2nd: int = 0
     qualification_rate: float | None
     dq_rate: float | None
     dq_after_call2_rate: float | None
