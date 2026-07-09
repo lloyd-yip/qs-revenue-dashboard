@@ -281,9 +281,9 @@ async def compliance(
 ):
     """Compliance — summary KPIs, per-rep bar chart data, and detail rows with GHL links."""
     start, end, date_by = params
-    summary = await get_compliance_summary(db, start, end, rep_id)
-    by_rep = await get_compliance_by_rep(db, start, end)
-    failures = await get_compliance_failures(db, start, end, rep_id)
+    summary = await get_compliance_summary(db, start, end, rep_id, date_by)
+    by_rep = await get_compliance_by_rep(db, start, end, date_by)
+    failures = await get_compliance_failures(db, start, end, rep_id, date_by)
     return ComplianceResponse(
         summary=summary,
         by_rep=by_rep,

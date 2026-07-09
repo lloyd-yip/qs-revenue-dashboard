@@ -150,6 +150,7 @@ async def get_dead_deals_data(
             Opportunity.opportunity_owner_name,
             Opportunity.canonical_channel,
             Opportunity.lead_quality,
+            Opportunity.pipeline_stage_id,
             Opportunity.dq_reason,
             Opportunity.deal_lost_reasons,
             Opportunity.business_industry,
@@ -164,7 +165,10 @@ async def get_dead_deals_data(
     )
 
     def _opp_row(r) -> dict:
-        is_dq = r.lead_quality == "DQ"
+        # Match the aggregate _is_dq(): DQ by lead_quality OR by Disqualified stage (the
+        # common path, since lead_quality='DQ' is rarely set). Prevents stage-DQ rows
+        # from being mislabeled "Lost" with the wrong reason column.
+        is_dq = r.lead_quality == "DQ" or r.pipeline_stage_id == DISQUALIFIED_STAGE_ID
         dt = r.close_date or r.updated_at_ghl
         return {
             "name": r.opportunity_name or "—",

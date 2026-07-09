@@ -16,6 +16,7 @@ async def get_compliance_summary(
     start: date,
     end: date,
     rep_id: str | None = None,
+    date_by: str = "appointment",
 ) -> dict:
     """Aggregate compliance counts for the summary cards.
 
@@ -29,8 +30,8 @@ async def get_compliance_summary(
     """
     from db.queries.common import base_filter, has_1st_call
 
-    bf = base_filter(start, end, "appointment", rep_id)
-    is_1st = has_1st_call(start, end, "appointment")
+    bf = base_filter(start, end, date_by, rep_id)
+    is_1st = has_1st_call(start, end, date_by)
     showed = showed_1st_call_expr()
     non_compliance = rep_non_compliance_expr()
 
@@ -86,11 +87,12 @@ async def get_compliance_by_rep(
     session: AsyncSession,
     start: date,
     end: date,
+    date_by: str = "appointment",
 ) -> list[dict]:
     """Per-rep compliance counts — for the bar chart, sorted worst first."""
     from db.queries.common import base_filter
 
-    bf = base_filter(start, end, "appointment")
+    bf = base_filter(start, end, date_by)
     non_compliance = rep_non_compliance_expr()
 
     result = await session.execute(
@@ -119,6 +121,7 @@ async def get_compliance_failures(
     start: date,
     end: date,
     rep_id: str | None = None,
+    date_by: str = "appointment",
 ) -> list[dict]:
     """Individual failure rows for the Tabulator detail table.
 
@@ -127,7 +130,7 @@ async def get_compliance_failures(
     """
     from db.queries.common import base_filter
 
-    bf = base_filter(start, end, "appointment", rep_id)
+    bf = base_filter(start, end, date_by, rep_id)
     non_compliance = rep_non_compliance_expr()
     showed = showed_1st_call_expr()
 
