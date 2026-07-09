@@ -7,7 +7,7 @@ from datetime import datetime
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.models import Opportunity
+from db.models import DealWhopMatch, Opportunity
 from db.queries.common import QUALIFIED_LEAD_QUALITY, base_filter, has_1st_call, showed_1st_call_expr
 
 
@@ -54,17 +54,19 @@ async def get_lead_source_breakdown(
                 ),
                 0,
             ).label("projected_contract_value"),
+            # Contract value + cash from the reconciled Whop source (DealWhopMatch), matching
+            # the Rep table — not the unreliable GHL monetary_value/cash_collected.
             func.coalesce(
                 func.sum(
                     case((and_(is_1st, Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID),
-                          Opportunity.monetary_value))
+                          DealWhopMatch.total_contract_value))
                 ),
                 0,
             ).label("contract_value"),
             func.coalesce(
                 func.sum(
                     case((and_(is_1st, Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID),
-                          Opportunity.cash_collected))
+                          DealWhopMatch.upfront_cash))
                 ),
                 0,
             ).label("cash_collected_sum"),
@@ -105,6 +107,8 @@ async def get_lead_source_breakdown(
                 case((and_(is_1st, showed_1st, Opportunity.lead_quality.is_(None)), 1))
             ).label("missing_data_count"),
         )
+        .select_from(Opportunity)
+        .outerjoin(DealWhopMatch, Opportunity.ghl_opportunity_id == DealWhopMatch.ghl_opportunity_id)
         .where(bf)
         .group_by(group_col)
         .order_by(func.count(Opportunity.id).desc())
