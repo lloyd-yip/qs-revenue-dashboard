@@ -428,7 +428,9 @@ async def get_drilldown_opps(
         )
         return [{**_row_to_dict(r), "anomalies": _detect_anomalies(_row_to_dict(r))} for r in result.all()]
 
-    if metric in ("units_closed", "close_rate", "projected_contract_value"):
+    # units_closed / projected_contract_value = deals closed in the period (by close_date).
+    # close_rate drills to the COHORT won (won opps within the call cohort) via _build_metric_filter.
+    if metric in ("units_closed", "projected_contract_value"):
         close_conditions = [
             Opportunity.is_excluded.is_(False),
             Opportunity.close_date.isnot(None),

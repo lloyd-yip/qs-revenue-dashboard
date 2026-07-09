@@ -1237,8 +1237,8 @@ function renderKPICards(d) {
     </div>`;
   const closing = `
     <div class="kpi-row">
-      <div class="kpi-card clickable" onclick="window.open(debugUrl('close_rate'),'_blank')"><div class="kpi-label">Close Rate</div><div class="kpi-value ${rateClass(d.close_rate)}">${pct(d.close_rate)}</div><div class="kpi-sub">of 1st-call shows · ↗ Debug</div></div>
-      <div class="kpi-card highlight clickable" onclick="window.open(debugUrl('units_closed'),'_blank')"><div class="kpi-label">Units Closed</div><div class="kpi-value">${num(d.units_closed)}</div><div class="kpi-sub">↗ Debug</div></div>
+      <div class="kpi-card clickable" onclick="window.open(debugUrl('close_rate'),'_blank')"><div class="kpi-label">Close Rate</div><div class="kpi-value ${rateClass(d.close_rate)}">${pct(d.close_rate)}</div><div class="kpi-sub">of this period's shows · closed so far · ↗ Debug</div></div>
+      <div class="kpi-card highlight clickable" onclick="window.open(debugUrl('units_closed'),'_blank')"><div class="kpi-label">Units Closed</div><div class="kpi-value">${num(d.units_closed)}</div><div class="kpi-sub">closed this period · ↗ Debug</div></div>
       <div class="kpi-card clickable" onclick="window.open(debugUrl('projected_contract_value'),'_blank')"><div class="kpi-label">Proj. Contract Value</div><div class="kpi-value" style="font-size:20px;">${money(d.projected_contract_value)}</div><div class="kpi-sub">Rep-estimated · ↗ Debug</div></div>
     </div>`;
   document.getElementById('kpi-cards').innerHTML =
