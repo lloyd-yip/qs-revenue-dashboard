@@ -471,6 +471,7 @@ async def get_daily_activity(
             func.date(Opportunity.call1_appointment_date).label("day"),
             func.count(Opportunity.id).label("booked"),
             func.count(case((showed_1st, 1))).label("showed"),
+            func.count(case((bookable_1st_call_expr(), 1))).label("occurred"),
             func.count(
                 case((
                     and_(
@@ -494,7 +495,9 @@ async def get_daily_activity(
             "day": row.day.isoformat() if hasattr(row.day, "isoformat") else str(row.day),
             "booked": row.booked,
             "showed": row.showed,
-            "show_rate": safe_rate(row.showed, row.booked),
+            # Show rate = shows / occurred (excludes still-upcoming Confirmed calls), consistent
+            # with the KPI cards and time-series — not shows / booked.
+            "show_rate": safe_rate(row.showed, row.occurred),
             "qual": row.qual,
             "qual_rate": safe_rate(row.qual, row.showed),
         }

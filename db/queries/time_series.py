@@ -31,10 +31,13 @@ async def get_time_series(
     is_1st = has_1st_call(start, end, date_by)
     showed_1st = showed_1st_call_expr()
 
-    # Date column to bucket on
+    # Date column to bucket on — must match the date_by filter dimension, else points
+    # land on the wrong timeline (and can fall outside the visible window).
     if date_by == "appointment":
         date_col = Opportunity.call1_appointment_date
-    else:
+    elif date_by == "booked":
+        date_col = Opportunity.call1_booking_date
+    else:  # created
         date_col = Opportunity.created_at_ghl
 
     period_expr = func.date_trunc(trunc_unit, date_col)
