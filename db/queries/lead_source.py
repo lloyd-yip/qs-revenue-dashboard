@@ -43,33 +43,28 @@ async def get_lead_source_breakdown(
             func.coalesce(group_col, "Unknown").label("channel"),
             func.count(Opportunity.id).label("total_ops"),
             func.count(case((and_(is_1st, showed_1st), 1))).label("shows"),
+            # COHORT: won deals whose 1st call is in the window (subset of shows → close_rate <=100%)
             func.count(
-                case((Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID, 1))
+                case((and_(is_1st, Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID), 1))
             ).label("units_closed"),
             func.coalesce(
                 func.sum(
-                    case((
-                        Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID,
-                        Opportunity.projected_deal_size,
-                    ))
+                    case((and_(is_1st, Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID),
+                          Opportunity.projected_deal_size))
                 ),
                 0,
             ).label("projected_contract_value"),
             func.coalesce(
                 func.sum(
-                    case((
-                        Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID,
-                        Opportunity.monetary_value,
-                    ))
+                    case((and_(is_1st, Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID),
+                          Opportunity.monetary_value))
                 ),
                 0,
             ).label("contract_value"),
             func.coalesce(
                 func.sum(
-                    case((
-                        Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID,
-                        Opportunity.cash_collected,
-                    ))
+                    case((and_(is_1st, Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID),
+                          Opportunity.cash_collected))
                 ),
                 0,
             ).label("cash_collected_sum"),

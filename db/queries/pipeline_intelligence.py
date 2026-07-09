@@ -95,14 +95,15 @@ async def get_pipeline_intelligence(
                     1,
                 ))
             ).label("total_shows"),
-            func.count(case((is_won, 1))).label("units_closed"),
-            # Contract value and cash collected — won deals only
+            # COHORT: won deals whose 1st call is in the window (subset of shows_1st → close_rate <=100%)
+            func.count(case((and_(is_1st, is_won), 1))).label("units_closed"),
+            # Contract value and cash collected — cohort won deals only
             func.coalesce(
-                func.sum(case((is_won, Opportunity.monetary_value))),
+                func.sum(case((and_(is_1st, is_won), Opportunity.monetary_value))),
                 0,
             ).label("contract_value"),
             func.coalesce(
-                func.sum(case((is_won, Opportunity.cash_collected))),
+                func.sum(case((and_(is_1st, is_won), Opportunity.cash_collected))),
                 0,
             ).label("cash_collected_sum"),
             # Avg deal cycle: first call date → close date, won deals only.

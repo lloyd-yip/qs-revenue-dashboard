@@ -36,7 +36,6 @@ class SummaryData(BaseModel):
     dq_after_call2_rate: float | None
     close_rate: float | None
     close_rate_qual: float | None = None
-    cohort_won: int = 0
     units_closed: int
     projected_contract_value: float
     total_shows: int

@@ -7,14 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Appointment, Opportunity
 from db.queries.common import (
-    ALL_TEAM_SENTINEL,
     QUALIFIED_LEAD_QUALITY,
     base_filter,
     bookable_1st_call_expr,
     bookable_2nd_call_expr,
     has_1st_call,
     has_2nd_call,
-    sales_rep_filter,
     showed_1st_call_expr,
     showed_2nd_call_expr,
 )
@@ -162,14 +160,17 @@ async def get_summary(
                     1,
                 ))
             ).label("dq_after_call2_count"),
-            # Units closed
+            # Units closed — COHORT: of this period's 1st calls, how many are now won.
+            # Gated by is_1st so it's a subset of shows_1st (won opps are in a showed stage)
+            # → close_rate can never exceed 100%.
             func.count(
-                case((Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID, 1))
+                case((and_(is_1st, Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID), 1))
             ).label("units_closed"),
-            # Projected contract value (from Projected Deal Size custom field)
+            # Projected contract value for those cohort-won deals
             func.coalesce(
                 func.sum(
-                    case((Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID, Opportunity.projected_deal_size))
+                    case((and_(is_1st, Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID),
+                          Opportunity.projected_deal_size))
                 ),
                 0,
             ).label("projected_contract_value"),
@@ -193,30 +194,6 @@ async def get_summary(
 
     # Reschedule counts, restricted to the booked cohort (so they nest under Booked).
     resched = await get_reschedule_stats(session, start, end, date_by, rep_id)
-
-    # Deals CLOSED in the period (by close_date) — the intuitive "closed this period" count,
-    # matching the drill-down and the Rep table. Shown alongside the cohort close_rate
-    # (of this period's shows, how many have closed so far). row.units_closed / row.projected
-    # remain the cohort figures used for close_rate.
-    close_conds = [
-        Opportunity.is_excluded.is_(False),
-        Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID,
-        Opportunity.close_date.isnot(None),
-        func.date(Opportunity.close_date) >= start,
-        func.date(Opportunity.close_date) <= end,
-    ]
-    if rep_id == ALL_TEAM_SENTINEL:
-        pass
-    elif rep_id:
-        close_conds.append(Opportunity.opportunity_owner_id == rep_id)
-    else:
-        close_conds.append(sales_rep_filter())
-    close_row = (await session.execute(
-        select(
-            func.count().label("closed_in_period"),
-            func.coalesce(func.sum(Opportunity.projected_deal_size), 0).label("contract_value_period"),
-        ).where(and_(*close_conds))
-    )).one()
 
     def safe_rate(numerator: int, denominator: int) -> float | None:
         return round(numerator / denominator, 4) if denominator else None
@@ -242,14 +219,12 @@ async def get_summary(
         "qualification_rate": safe_rate(row.qualified_shows, row.shows_1st),
         "dq_rate": safe_rate(row.dq_count, row.shows_1st),
         "dq_after_call2_rate": safe_rate(row.dq_after_call2_count, row.shows_1st),
-        # Close rate stays COHORT: of this period's 1st-call shows, how many have closed
-        # so far (won opps within the call cohort ÷ shows). A leading indicator ≤100%.
+        # COHORT close rate: of this period's 1st-call shows, how many are now won.
+        # A conversion metric (matures over time for recent periods); always <=100%.
         "close_rate": safe_rate(row.units_closed, row.shows_1st),
         "close_rate_qual": safe_rate(row.units_closed, row.qualified_shows),
-        "cohort_won": row.units_closed,
-        # Units Closed = deals CLOSED in the period (by close_date) — the headline count.
-        "units_closed": close_row.closed_in_period,
-        "projected_contract_value": float(close_row.contract_value_period),
+        "units_closed": row.units_closed,
+        "projected_contract_value": float(row.projected_contract_value),
         "total_shows": row.total_shows,
         "compliance_failures": row.compliance_failures,
     }
