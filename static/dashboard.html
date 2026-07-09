@@ -264,7 +264,7 @@
 
 <!-- TAB: Sales Performance -->
 <div id="tab-sales" class="tab-content active">
-  <div class="kpi-row" id="kpi-cards"><div class="loading">Loading...</div></div>
+  <div id="kpi-cards"><div class="loading">Loading...</div></div>
 
   <div class="charts-row">
     <div class="chart-box">
@@ -1215,24 +1215,36 @@ async function renderDailyActivity() {
 }
 
 function renderKPICards(d) {
-  document.getElementById('kpi-cards').innerHTML = `
-    <div class="kpi-card clickable" onclick="window.open(debugUrl('calls_booked_1st'),'_blank')"><div class="kpi-label">1st Calls Booked</div><div class="kpi-value">${num(d.calls_booked_1st)}</div><div class="kpi-sub">↗ Debug</div></div>
-    <div class="kpi-card clickable" onclick="window.open(debugUrl('scheduled_1st'),'_blank')"><div class="kpi-label">1st Scheduled</div><div class="kpi-value">${num(d.scheduled_1st)}</div><div class="kpi-sub">on calendar · ↗ Debug</div></div>
-    <div class="kpi-card clickable" onclick="window.open(debugUrl('occurred_1st'),'_blank')"><div class="kpi-label">1st Occurred</div><div class="kpi-value">${num(d.occurred_1st)}</div><div class="kpi-sub">happened · ↗ Debug</div></div>
-    <div class="kpi-card clickable" onclick="window.open(debugUrl('shows_1st'),'_blank')"><div class="kpi-label">1st Call Shows</div><div class="kpi-value">${num(d.shows_1st)}</div><div class="kpi-sub">↗ Debug</div></div>
-    <div class="kpi-card clickable" onclick="window.open(debugUrl('show_rate_1st'),'_blank')"><div class="kpi-label">Show Rate</div><div class="kpi-value ${rateClass(d.show_rate_1st)}">${pct(d.show_rate_1st)}</div><div class="kpi-sub">of occurred · No-show: ${pct(d.no_show_rate_1st)} · ↗ Debug</div></div>
-    <div class="kpi-card clickable" onclick="window.open(debugUrl('rescheduled_1st'),'_blank')"><div class="kpi-label">1st Rescheduled</div><div class="kpi-value">${num(d.rescheduled_1st)}</div><div class="kpi-sub">${pct(d.reschedule_rate_1st)} · ${num(d.moved_to_future_1st)} to future · ↗ Debug</div></div>
-    <div class="kpi-card clickable" onclick="window.open(debugUrl('calls_booked_2nd'),'_blank')"><div class="kpi-label">2nd Calls Booked</div><div class="kpi-value">${num(d.calls_booked_2nd)}</div><div class="kpi-sub">↗ Debug</div></div>
-    <div class="kpi-card clickable" onclick="window.open(debugUrl('scheduled_2nd'),'_blank')"><div class="kpi-label">2nd Scheduled</div><div class="kpi-value">${num(d.scheduled_2nd)}</div><div class="kpi-sub">on calendar · ↗ Debug</div></div>
-    <div class="kpi-card clickable" onclick="window.open(debugUrl('occurred_2nd'),'_blank')"><div class="kpi-label">2nd Occurred</div><div class="kpi-value">${num(d.occurred_2nd)}</div><div class="kpi-sub">happened · ↗ Debug</div></div>
-    <div class="kpi-card clickable" onclick="window.open(debugUrl('shows_2nd'),'_blank')"><div class="kpi-label">2nd Call Shows</div><div class="kpi-value">${num(d.shows_2nd)}</div><div class="kpi-sub">↗ Debug</div></div>
-    <div class="kpi-card clickable" onclick="window.open(debugUrl('show_rate_2nd'),'_blank')"><div class="kpi-label">2nd Call Show Rate</div><div class="kpi-value ${rateClass(d.show_rate_2nd)}">${pct(d.show_rate_2nd)}</div><div class="kpi-sub">of occurred · ↗ Debug</div><a href="#" onclick="event.stopPropagation();openFollowupModal();return false;" style="display:block;margin-top:6px;font-size:11px;color:var(--accent);text-decoration:none;opacity:0.85;">Show rate by Lead Quality →</a></div>
-    <div class="kpi-card clickable" onclick="window.open(debugUrl('rescheduled_2nd'),'_blank')"><div class="kpi-label">2nd Rescheduled</div><div class="kpi-value">${num(d.rescheduled_2nd)}</div><div class="kpi-sub">${pct(d.reschedule_rate_2nd)} · ${num(d.moved_to_future_2nd)} to future · ↗ Debug</div></div>
-    <div class="kpi-card clickable" onclick="window.open(debugUrl('qualification_rate'),'_blank')"><div class="kpi-label">Qual Rate</div><div class="kpi-value ${rateClass(d.qualification_rate)}">${pct(d.qualification_rate)}</div><div class="kpi-sub-stack"><span>DQ after call 2: ${pct(d.dq_after_call2_rate)}</span><span>Overall DQ: ${pct(d.dq_rate)}</span><span>↗ Debug</span></div></div>
-    <div class="kpi-card clickable" onclick="window.open(debugUrl('close_rate'),'_blank')"><div class="kpi-label">Close Rate</div><div class="kpi-value ${rateClass(d.close_rate)}">${pct(d.close_rate)}</div><div class="kpi-sub">↗ Debug</div></div>
-    <div class="kpi-card highlight clickable" onclick="window.open(debugUrl('units_closed'),'_blank')"><div class="kpi-label">Units Closed</div><div class="kpi-value">${num(d.units_closed)}</div><div class="kpi-sub">↗ Debug</div></div>
-    <div class="kpi-card clickable" onclick="window.open(debugUrl('projected_contract_value'),'_blank')"><div class="kpi-label">Proj. Contract Value</div><div class="kpi-value" style="font-size:20px;">${money(d.projected_contract_value)}</div><div class="kpi-sub">Rep-estimated · ↗ Debug</div></div>
-  `;
+  const heading = t => `<div style="font-size:12px; font-weight:700; color:var(--text2); text-transform:uppercase; letter-spacing:0.6px; margin:2px 2px 8px;">${t}</div>`;
+  const firstCalls = `
+    <div class="kpi-row">
+      <div class="kpi-card clickable" onclick="window.open(debugUrl('calls_booked_1st'),'_blank')"><div class="kpi-label">1st Calls Booked</div><div class="kpi-value">${num(d.calls_booked_1st)}</div><div class="kpi-sub">↗ Debug</div></div>
+      <div class="kpi-card clickable" onclick="window.open(debugUrl('scheduled_1st'),'_blank')"><div class="kpi-label">1st Scheduled</div><div class="kpi-value">${num(d.scheduled_1st)}</div><div class="kpi-sub">on calendar · ↗ Debug</div></div>
+      <div class="kpi-card clickable" onclick="window.open(debugUrl('occurred_1st'),'_blank')"><div class="kpi-label">1st Occurred</div><div class="kpi-value">${num(d.occurred_1st)}</div><div class="kpi-sub">happened · ↗ Debug</div></div>
+      <div class="kpi-card clickable" onclick="window.open(debugUrl('shows_1st'),'_blank')"><div class="kpi-label">1st Call Shows</div><div class="kpi-value">${num(d.shows_1st)}</div><div class="kpi-sub">↗ Debug</div></div>
+      <div class="kpi-card clickable" onclick="window.open(debugUrl('show_rate_1st'),'_blank')"><div class="kpi-label">Show Rate</div><div class="kpi-value ${rateClass(d.show_rate_1st)}">${pct(d.show_rate_1st)}</div><div class="kpi-sub">of occurred · No-show: ${pct(d.no_show_rate_1st)} · ↗ Debug</div></div>
+      <div class="kpi-card clickable" onclick="window.open(debugUrl('rescheduled_1st'),'_blank')"><div class="kpi-label">1st Rescheduled</div><div class="kpi-value">${num(d.rescheduled_1st)}</div><div class="kpi-sub">${pct(d.reschedule_rate_1st)} · ${num(d.moved_to_future_1st)} to future · ↗ Debug</div></div>
+      <div class="kpi-card clickable" onclick="window.open(debugUrl('qualification_rate'),'_blank')"><div class="kpi-label">Qual Rate</div><div class="kpi-value ${rateClass(d.qualification_rate)}">${pct(d.qualification_rate)}</div><div class="kpi-sub-stack"><span>DQ after call 2: ${pct(d.dq_after_call2_rate)}</span><span>Overall DQ: ${pct(d.dq_rate)}</span><span>↗ Debug</span></div></div>
+    </div>`;
+  const followupCalls = `
+    <div class="kpi-row">
+      <div class="kpi-card clickable" onclick="window.open(debugUrl('calls_booked_2nd'),'_blank')"><div class="kpi-label">2nd Calls Booked</div><div class="kpi-value">${num(d.calls_booked_2nd)}</div><div class="kpi-sub">↗ Debug</div></div>
+      <div class="kpi-card clickable" onclick="window.open(debugUrl('scheduled_2nd'),'_blank')"><div class="kpi-label">2nd Scheduled</div><div class="kpi-value">${num(d.scheduled_2nd)}</div><div class="kpi-sub">on calendar · ↗ Debug</div></div>
+      <div class="kpi-card clickable" onclick="window.open(debugUrl('occurred_2nd'),'_blank')"><div class="kpi-label">2nd Occurred</div><div class="kpi-value">${num(d.occurred_2nd)}</div><div class="kpi-sub">happened · ↗ Debug</div></div>
+      <div class="kpi-card clickable" onclick="window.open(debugUrl('shows_2nd'),'_blank')"><div class="kpi-label">2nd Call Shows</div><div class="kpi-value">${num(d.shows_2nd)}</div><div class="kpi-sub">↗ Debug</div></div>
+      <div class="kpi-card clickable" onclick="window.open(debugUrl('show_rate_2nd'),'_blank')"><div class="kpi-label">2nd Call Show Rate</div><div class="kpi-value ${rateClass(d.show_rate_2nd)}">${pct(d.show_rate_2nd)}</div><div class="kpi-sub">of occurred · ↗ Debug</div><a href="#" onclick="event.stopPropagation();openFollowupModal();return false;" style="display:block;margin-top:6px;font-size:11px;color:var(--accent);text-decoration:none;opacity:0.85;">Show rate by Lead Quality →</a></div>
+      <div class="kpi-card clickable" onclick="window.open(debugUrl('rescheduled_2nd'),'_blank')"><div class="kpi-label">2nd Rescheduled</div><div class="kpi-value">${num(d.rescheduled_2nd)}</div><div class="kpi-sub">${pct(d.reschedule_rate_2nd)} · ${num(d.moved_to_future_2nd)} to future · ↗ Debug</div></div>
+    </div>`;
+  const closing = `
+    <div class="kpi-row">
+      <div class="kpi-card clickable" onclick="window.open(debugUrl('close_rate'),'_blank')"><div class="kpi-label">Close Rate</div><div class="kpi-value ${rateClass(d.close_rate)}">${pct(d.close_rate)}</div><div class="kpi-sub">of 1st-call shows · ↗ Debug</div></div>
+      <div class="kpi-card highlight clickable" onclick="window.open(debugUrl('units_closed'),'_blank')"><div class="kpi-label">Units Closed</div><div class="kpi-value">${num(d.units_closed)}</div><div class="kpi-sub">↗ Debug</div></div>
+      <div class="kpi-card clickable" onclick="window.open(debugUrl('projected_contract_value'),'_blank')"><div class="kpi-label">Proj. Contract Value</div><div class="kpi-value" style="font-size:20px;">${money(d.projected_contract_value)}</div><div class="kpi-sub">Rep-estimated · ↗ Debug</div></div>
+    </div>`;
+  document.getElementById('kpi-cards').innerHTML =
+    heading('First Calls') + firstCalls +
+    heading('Follow-up Calls') + followupCalls +
+    heading('Closing') + closing;
 }
 
 function renderShowRateChart(data) {
