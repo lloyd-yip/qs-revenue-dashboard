@@ -294,41 +294,28 @@ async def get_by_rep(
     )
     close_by_rep: dict[str, object] = {r.rep_id: r for r in close_result.all()}
 
-    # ── Reschedule stats per rep (appointments table) ─────────────────────
-    # scheduled = opps with an active 1st-call appointment in range; rescheduled =
-    # of those, opps with >1 1st-call appointment (moved >=1x).
-    _is_c1 = Appointment.appointment_type == "call_1"
-    _c1_active_in_range = and_(
-        _is_c1,
-        func.date(Appointment.appointment_date) >= start,
-        func.date(Appointment.appointment_date) <= end,
-        Appointment.appointment_status != "Cancelled",
-    )
+    # ── Reschedules per rep ───────────────────────────────────────────────
+    # Restricted to the booked 1st-call cohort (base_filter + has_1st_call), so it matches
+    # calls_booked_1st. Rescheduled = cohort opps with >1 call_1 appointment (moved >=1x).
     _per_opp_resched = (
         select(
             Opportunity.opportunity_owner_id.label("owner"),
             Opportunity.ghl_opportunity_id.label("oid"),
-            func.count().filter(_is_c1).label("total"),
-            func.count().filter(_c1_active_in_range).label("in_range"),
+            func.count().filter(Appointment.appointment_type == "call_1").label("total"),
         )
         .select_from(Opportunity)
         .join(Appointment, Appointment.ghl_contact_id == Opportunity.ghl_contact_id)
-        .where(and_(Opportunity.is_excluded.is_(False), sales_rep_filter()))
+        .where(and_(base_filter(start, end, date_by), has_1st_call(start, end, date_by)))
         .group_by(Opportunity.opportunity_owner_id, Opportunity.ghl_opportunity_id)
         .subquery()
     )
     _resched_rows = await session.execute(
         select(
             _per_opp_resched.c.owner,
-            func.count().filter(_per_opp_resched.c.in_range > 0).label("scheduled"),
-            func.count().filter(
-                and_(_per_opp_resched.c.in_range > 0, _per_opp_resched.c.total > 1)
-            ).label("rescheduled"),
+            func.count().filter(_per_opp_resched.c.total > 1).label("rescheduled"),
         ).group_by(_per_opp_resched.c.owner)
     )
-    reschedule_by_rep: dict[str, tuple] = {
-        r.owner: (r.scheduled, r.rescheduled) for r in _resched_rows.all()
-    }
+    reschedule_by_rep: dict[str, int] = {r.owner: r.rescheduled for r in _resched_rows.all()}
 
     # ── Expense-based cost data ───────────────────────────────────────────
     # Pull per-rep sales comp and total lead gen spend for the same period.
@@ -401,12 +388,12 @@ async def get_by_rep(
         else:
             total_invested = None
 
-        sched, resc = reschedule_by_rep.get(row.rep_id, (0, 0))
+        resc = reschedule_by_rep.get(row.rep_id, 0)
         rep_list.append({
             "rep_id": row.rep_id,
             "rep_name": row.rep_name or "Unassigned",
             "rescheduled_1st": resc,
-            "reschedule_rate_1st": safe_rate(resc, sched),
+            "reschedule_rate_1st": safe_rate(resc, row.calls_booked_1st),
             "calls_booked_1st": row.calls_booked_1st,
             "shows_1st": row.shows_1st,
             "show_rate_1st": safe_rate(row.shows_1st, row.bookable_1st),

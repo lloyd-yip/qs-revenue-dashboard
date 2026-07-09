@@ -7,79 +7,58 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Appointment, Opportunity
 from db.queries.common import (
-    ALL_TEAM_SENTINEL,
     QUALIFIED_LEAD_QUALITY,
     base_filter,
     bookable_1st_call_expr,
     bookable_2nd_call_expr,
     has_1st_call,
     has_2nd_call,
-    sales_rep_filter,
     showed_1st_call_expr,
     showed_2nd_call_expr,
 )
 from sync.ghl_client import DEAL_WON_STAGE_ID, DISQUALIFIED_STAGE_ID
 
 
-def _opp_rep_conditions(rep_id: str | None) -> list:
-    """Opportunity restriction (is_excluded + rep filter) WITHOUT a date filter —
-    the appointment stats scope by appointment_date separately."""
-    conds = [Opportunity.is_excluded.is_(False)]
-    if rep_id == ALL_TEAM_SENTINEL:
-        pass
-    elif rep_id:
-        conds.append(Opportunity.opportunity_owner_id == rep_id)
-    else:
-        conds.append(sales_rep_filter())
-    return conds
-
-
-async def get_appointment_call_stats(
-    session: AsyncSession, start: date, end: date, rep_id: str | None = None
+async def get_reschedule_stats(
+    session: AsyncSession, start: date, end: date, date_by: str, rep_id: str | None = None
 ) -> dict:
-    """Calendar-based, reschedule-aware call stats for the range (from the appointments
-    table, independent of date_by):
+    """Reschedule counts RESTRICTED TO THE BOOKED COHORT (opps with a 1st/2nd call in
+    range per date_by), so they nest under the Booked count instead of counting the
+    whole calendar:
 
-      scheduled_{1st,2nd}     — opps with an ACTIVE (non-cancelled) call appointment in range
-      rescheduled_{1st,2nd}   — of those, opps with >1 appointment of that type (moved >=1x)
-      moved_to_future_{1st,2nd} — rescheduled opps whose latest appointment is still upcoming
+      rescheduled_{1st,2nd}     — cohort opps with >1 appointment of that type (moved >=1x)
+      moved_to_future_{1st,2nd} — of those, whose latest appointment is still upcoming
     """
-    opp_conds = _opp_rep_conditions(rep_id)
+    # Cohort = exactly the Booked cohort per date_by (base_filter includes rep + is_excluded
+    # + the date filter), AND has_Nth_call — same as how calls_booked_{1st,2nd} is counted.
+    bf = base_filter(start, end, date_by, rep_id)
+    cohort = {
+        "call_1": and_(bf, has_1st_call(start, end, date_by)),
+        "call_2": and_(bf, has_2nd_call(start, end, date_by)),
+    }
     out: dict = {}
     for call_type, suffix in (("call_1", "1st"), ("call_2", "2nd")):
         is_type = Appointment.appointment_type == call_type
-        in_range_active = and_(
-            is_type,
-            func.date(Appointment.appointment_date) >= start,
-            func.date(Appointment.appointment_date) <= end,
-            Appointment.appointment_status != "Cancelled",
-        )
         per_opp = (
             select(
                 Opportunity.ghl_opportunity_id.label("oid"),
                 func.count().filter(is_type).label("total"),
-                func.count().filter(in_range_active).label("in_range"),
                 func.max(Appointment.appointment_date).filter(is_type).label("last_date"),
             )
             .select_from(Opportunity)
             .join(Appointment, Appointment.ghl_contact_id == Opportunity.ghl_contact_id)
-            .where(and_(*opp_conds))
+            .where(cohort[call_type])
             .group_by(Opportunity.ghl_opportunity_id)
             .subquery()
         )
-        scheduled = func.count().filter(per_opp.c.in_range > 0)
-        rescheduled = func.count().filter(and_(per_opp.c.in_range > 0, per_opp.c.total > 1))
-        moved_future = func.count().filter(
-            and_(per_opp.c.in_range > 0, per_opp.c.total > 1, per_opp.c.last_date > func.now())
-        )
         r = (await session.execute(
             select(
-                scheduled.label("scheduled"),
-                rescheduled.label("rescheduled"),
-                moved_future.label("moved_future"),
+                func.count().filter(per_opp.c.total > 1).label("rescheduled"),
+                func.count().filter(
+                    and_(per_opp.c.total > 1, per_opp.c.last_date > func.now())
+                ).label("moved_future"),
             ).select_from(per_opp)
         )).one()
-        out[f"scheduled_{suffix}"] = r.scheduled or 0
         out[f"rescheduled_{suffix}"] = r.rescheduled or 0
         out[f"moved_to_future_{suffix}"] = r.moved_future or 0
     return out
@@ -100,10 +79,28 @@ async def get_summary(
     showed_1st = showed_1st_call_expr()
     showed_2nd = showed_2nd_call_expr()
 
+    # "Scheduled" = of the booked cohort, calls whose APPOINTMENT date falls in the range.
+    # In appointment mode this equals Booked; in booking/created mode it excludes calls
+    # booked-in-range but scheduled for a future date outside the range — so the funnel
+    # nests: Booked >= Scheduled >= Occurred >= Shows.
+    appt1_in_range = and_(
+        Opportunity.call1_appointment_date.isnot(None),
+        func.date(Opportunity.call1_appointment_date) >= start,
+        func.date(Opportunity.call1_appointment_date) <= end,
+    )
+    appt2_in_range = and_(
+        Opportunity.call2_appointment_date.isnot(None),
+        func.date(Opportunity.call2_appointment_date) >= start,
+        func.date(Opportunity.call2_appointment_date) <= end,
+    )
+
     result = await session.execute(
         select(
             # Calls booked (1st call) — opps with a 1st call date in scope
             func.count(case((is_1st, 1))).label("calls_booked_1st"),
+            func.count(
+                case((and_(is_1st, or_(appt1_in_range, bookable_1st_call_expr())), 1))
+            ).label("scheduled_1st"),
             # Shows (1st call) — showed + had 1st call
             func.count(
                 case((and_(is_1st, showed_1st), 1))
@@ -114,6 +111,9 @@ async def get_summary(
             ).label("bookable_1st"),
             # Calls booked (2nd call)
             func.count(case((is_2nd, 1))).label("calls_booked_2nd"),
+            func.count(
+                case((and_(is_2nd, or_(appt2_in_range, bookable_2nd_call_expr())), 1))
+            ).label("scheduled_2nd"),
             # Shows (2nd call)
             func.count(case((and_(is_2nd, showed_2nd), 1))).label("shows_2nd"),
             # Bookable 2nd calls (show rate denominator: Showed + No Show + Cancelled)
@@ -189,30 +189,30 @@ async def get_summary(
     )
     row = result.one()
 
-    # Calendar-based, reschedule-aware call stats (scheduled / rescheduled / moved-to-future).
-    appt = await get_appointment_call_stats(session, start, end, rep_id)
+    # Reschedule counts, restricted to the booked cohort (so they nest under Booked).
+    resched = await get_reschedule_stats(session, start, end, date_by, rep_id)
 
     def safe_rate(numerator: int, denominator: int) -> float | None:
         return round(numerator / denominator, 4) if denominator else None
 
     return {
         "calls_booked_1st": row.calls_booked_1st,
-        "scheduled_1st": appt["scheduled_1st"],
+        "scheduled_1st": row.scheduled_1st,
         "occurred_1st": row.bookable_1st,           # calls that have happened (show-rate denominator)
         "shows_1st": row.shows_1st,
         "show_rate_1st": safe_rate(row.shows_1st, row.bookable_1st),
         "no_show_rate_1st": safe_rate(row.bookable_1st - row.shows_1st, row.bookable_1st),
-        "rescheduled_1st": appt["rescheduled_1st"],
-        "reschedule_rate_1st": safe_rate(appt["rescheduled_1st"], appt["scheduled_1st"]),
-        "moved_to_future_1st": appt["moved_to_future_1st"],
+        "rescheduled_1st": resched["rescheduled_1st"],
+        "reschedule_rate_1st": safe_rate(resched["rescheduled_1st"], row.calls_booked_1st),
+        "moved_to_future_1st": resched["moved_to_future_1st"],
         "calls_booked_2nd": row.calls_booked_2nd,
-        "scheduled_2nd": appt["scheduled_2nd"],
+        "scheduled_2nd": row.scheduled_2nd,
         "occurred_2nd": row.bookable_2nd,
         "shows_2nd": row.shows_2nd,
         "show_rate_2nd": safe_rate(row.shows_2nd, row.bookable_2nd),
-        "rescheduled_2nd": appt["rescheduled_2nd"],
-        "reschedule_rate_2nd": safe_rate(appt["rescheduled_2nd"], appt["scheduled_2nd"]),
-        "moved_to_future_2nd": appt["moved_to_future_2nd"],
+        "rescheduled_2nd": resched["rescheduled_2nd"],
+        "reschedule_rate_2nd": safe_rate(resched["rescheduled_2nd"], row.calls_booked_2nd),
+        "moved_to_future_2nd": resched["moved_to_future_2nd"],
         "qualification_rate": safe_rate(row.qualified_shows, row.shows_1st),
         "dq_rate": safe_rate(row.dq_count, row.shows_1st),
         "dq_after_call2_rate": safe_rate(row.dq_after_call2_count, row.shows_1st),

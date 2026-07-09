@@ -139,6 +139,26 @@ def _build_metric_filter(metric: str, start: date, end: date, date_by: str):
         case "occurred_2nd":
             return and_(is_2nd, bookable_2nd_call_expr())
 
+        case "scheduled_1st":
+            return and_(is_1st, or_(
+                and_(
+                    Opportunity.call1_appointment_date.isnot(None),
+                    func.date(Opportunity.call1_appointment_date) >= start,
+                    func.date(Opportunity.call1_appointment_date) <= end,
+                ),
+                bookable_1st_call_expr(),
+            ))
+
+        case "scheduled_2nd":
+            return and_(is_2nd, or_(
+                and_(
+                    Opportunity.call2_appointment_date.isnot(None),
+                    func.date(Opportunity.call2_appointment_date) >= start,
+                    func.date(Opportunity.call2_appointment_date) <= end,
+                ),
+                bookable_2nd_call_expr(),
+            ))
+
         case "calls_booked_2nd":
             return is_2nd
 
@@ -379,38 +399,28 @@ async def get_drilldown_opps(
     """
     # units_closed and close_rate are counted by close_date in get_by_rep —
     # use the same filter here so the drilldown row count matches the column.
-    # Appointment-table-based metrics (calendar/reschedule-aware) — resolve the matching
-    # opp ids via the appointments join, then fetch their drilldown rows.
-    if metric in ("scheduled_1st", "scheduled_2nd", "rescheduled_1st", "rescheduled_2nd"):
+    # Rescheduled — opps in the BOOKED cohort (base_filter + has_Nth) with >1 appointment
+    # of that call type. Matches the cohort-restricted card count.
+    if metric in ("rescheduled_1st", "rescheduled_2nd"):
         call_type = "call_1" if metric.endswith("1st") else "call_2"
         is_type = Appointment.appointment_type == call_type
-        in_range_active = and_(
-            is_type,
-            func.date(Appointment.appointment_date) >= start,
-            func.date(Appointment.appointment_date) <= end,
-            Appointment.appointment_status != "Cancelled",
+        cohort = and_(
+            base_filter(start, end, date_by, rep_id),
+            has_1st_call(start, end, date_by) if call_type == "call_1"
+            else has_2nd_call(start, end, date_by),
         )
-        opp_conds = [Opportunity.is_excluded.is_(False)]
-        if rep_id:
-            opp_conds.append(Opportunity.opportunity_owner_id == rep_id)
-        else:
-            opp_conds.append(sales_rep_filter())
         per_opp = (
             select(
                 Opportunity.ghl_opportunity_id.label("oid"),
                 func.count().filter(is_type).label("total"),
-                func.count().filter(in_range_active).label("in_range"),
             )
             .select_from(Opportunity)
             .join(Appointment, Appointment.ghl_contact_id == Opportunity.ghl_contact_id)
-            .where(and_(*opp_conds))
+            .where(cohort)
             .group_by(Opportunity.ghl_opportunity_id)
             .subquery()
         )
-        cond = per_opp.c.in_range > 0
-        if metric.startswith("rescheduled"):
-            cond = and_(per_opp.c.in_range > 0, per_opp.c.total > 1)
-        ids = select(per_opp.c.oid).where(cond)
+        ids = select(per_opp.c.oid).where(per_opp.c.total > 1)
         result = await session.execute(
             select(*_DRILLDOWN_COLUMNS)
             .where(Opportunity.ghl_opportunity_id.in_(ids))
