@@ -14,6 +14,7 @@ from db.queries.common import (
     bookable_2nd_call_expr,
     has_1st_call,
     has_2nd_call,
+    prorated_expense_amount,
     sales_rep_filter,
     showed_1st_call_expr,
     showed_2nd_call_expr,
@@ -324,12 +325,13 @@ async def get_by_rep(
         ExpenseLineItem.period_start <= end,
         ExpenseLineItem.period_end >= start,
     )
+    _prorated = prorated_expense_amount(start, end)  # prorate partial-overlap periods by days
 
     # Per-rep sales compensation (bucket='sales', vendor = rep name)
     comp_result = await session.execute(
         select(
             ExpenseLineItem.vendor.label("rep_name"),
-            func.sum(ExpenseLineItem.amount).label("comp"),
+            func.sum(_prorated).label("comp"),
         )
         .where(expense_overlap, ExpenseLineItem.bucket == "sales")
         .group_by(ExpenseLineItem.vendor)
@@ -340,7 +342,7 @@ async def get_by_rep(
 
     # Total lead gen spend (marketing_salaries + tech_tools + paid_ads)
     lead_spend_result = await session.execute(
-        select(func.sum(ExpenseLineItem.amount))
+        select(func.sum(_prorated))
         .where(
             expense_overlap,
             ExpenseLineItem.bucket.in_(["marketing_salaries", "tech_tools", "paid_ads"]),

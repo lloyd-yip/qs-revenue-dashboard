@@ -12,6 +12,25 @@ from sync.ghl_client import (
     SHOWED_STAGE_IDS,
 )
 
+def prorated_expense_amount(start: date, end: date):
+    """ExpenseLineItem.amount prorated by the fraction of days its period overlaps [start,end].
+
+    A period fully inside the range contributes in full; a period that only partially
+    overlaps (e.g. a whole calendar month when the selected range is 'Last 7d' or a
+    mid-month custom range) contributes proportionally to the overlapping day count.
+    Use inside func.sum(...). Postgres numeric ÷ int keeps precision (no truncation).
+    """
+    from db.models import ExpenseLineItem
+
+    overlap_days = (
+        func.least(ExpenseLineItem.period_end, end)
+        - func.greatest(ExpenseLineItem.period_start, start)
+        + 1
+    )
+    period_days = ExpenseLineItem.period_end - ExpenseLineItem.period_start + 1
+    return ExpenseLineItem.amount * overlap_days / period_days
+
+
 # Pipeline stage IDs where the prospect showed (used as secondary show signal)
 SHOWED_STAGE_IDS_LIST = list(SHOWED_STAGE_IDS)
 

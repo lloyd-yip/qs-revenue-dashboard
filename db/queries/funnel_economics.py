@@ -16,6 +16,7 @@ from db.queries.common import (
     QUALIFIED_LEAD_QUALITY,
     base_filter,
     has_1st_call,
+    prorated_expense_amount,
     showed_1st_call_expr,
     ALL_TEAM_SENTINEL,
 )
@@ -130,17 +131,18 @@ async def get_auto_funnel_economics(
     within the dashboard date range — expense periods must be *fully inside* the range.
     """
     # ── 1. Expense data ───────────────────────────────────────────────────────
-    # Overlap semantics: include any expense period that touches [start, end].
-    # A period overlaps if it starts before end AND ends after start.
-    # This handles multi-month ranges correctly and works with month-picker inputs.
+    # Include any expense period that overlaps [start, end], and PRORATE each by the fraction
+    # of days that overlap — so a whole calendar month contributes only its overlapping days
+    # when the range is 'Last 7d'/'Last 30d' or a mid-month custom range (was: full amount).
     expense_filter = and_(
         ExpenseLineItem.period_start <= end,
         ExpenseLineItem.period_end >= start,
     )
+    prorated = prorated_expense_amount(start, end)
 
     # Marketing spend: marketing_salaries + tech_tools combined
     mktg_row = await session.execute(
-        select(func.sum(ExpenseLineItem.amount))
+        select(func.sum(prorated))
         .where(expense_filter, ExpenseLineItem.bucket.in_(["marketing_salaries", "tech_tools"]))
     )
     marketing_spend = mktg_row.scalar()
@@ -148,7 +150,7 @@ async def get_auto_funnel_economics(
 
     # Sales comp: only Salaries–Sales and Commissions from the sales bucket
     comp_row = await session.execute(
-        select(func.sum(ExpenseLineItem.amount))
+        select(func.sum(prorated))
         .where(
             expense_filter,
             ExpenseLineItem.bucket == "sales",
