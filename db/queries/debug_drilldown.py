@@ -101,6 +101,7 @@ _DRILLDOWN_COLUMNS = [
     Opportunity.projected_deal_size,
     Opportunity.canonical_channel,
     Opportunity.created_at_ghl,
+    Opportunity.close_date,
     Opportunity.outcome_unfilled,
     Opportunity.rep_compliance_failure,
     Opportunity.post_call_note_word_count,
@@ -376,6 +377,7 @@ def _row_to_dict(r) -> dict:
         "projected_deal_size": float(r.projected_deal_size) if r.projected_deal_size else None,
         "canonical_channel": r.canonical_channel,
         "created_at_ghl": r.created_at_ghl.isoformat() if r.created_at_ghl else None,
+        "close_date": r.close_date.isoformat() if r.close_date else None,
         "outcome_unfilled": r.outcome_unfilled,
         "compliance_failure": r.rep_compliance_failure,
         "post_call_note_word_count": r.post_call_note_word_count,
@@ -439,6 +441,8 @@ async def get_drilldown_opps(
             *_DRILLDOWN_COLUMNS,
             cycle_col,
             DealWhopMatch.first_payment_date.label("first_payment_date"),
+            DealWhopMatch.total_contract_value.label("total_contract_value"),
+            DealWhopMatch.total_paid.label("total_paid"),
         )
         .select_from(Opportunity)
         .outerjoin(DealWhopMatch, Opportunity.ghl_opportunity_id == DealWhopMatch.ghl_opportunity_id)
@@ -455,6 +459,10 @@ async def get_drilldown_opps(
         # Lets the units_closed drill-down show days-to-close per opp and verify the avg.
         row["sales_cycle_days"] = int(r.sales_cycle_days) if r.sales_cycle_days is not None else None
         row["first_payment_date"] = r.first_payment_date.isoformat() if r.first_payment_date else None
+        # Reconciled Whop figures — actual deal size + cash collected so far (rep-entered
+        # projected_deal_size is often blank, so show the authoritative numbers alongside).
+        row["total_contract_value"] = float(r.total_contract_value) if r.total_contract_value is not None else None
+        row["total_paid"] = float(r.total_paid) if r.total_paid is not None else None
 
         if is_data_quality:
             anomalies = _detect_anomalies(row)

@@ -800,6 +800,15 @@
 
       document.getElementById('result-count').textContent = rows.length + ' result' + (rows.length !== 1 ? 's' : '');
 
+      // Reconciled Whop money + close-date columns: present on the units_closed drill-down.
+      // Deal Size = total_contract_value, Cash Collected = total_paid (so far). Close Date =
+      // the cycle-end date (first payment, else GHL close) — compare vs 1st Call Date to eyeball
+      // the sales cycle. Precompute _close_paid_date for display + sorting.
+      const hasMoney = rows.some(r => r.total_contract_value != null || r.total_paid != null);
+      const hasCloseDate = rows.some(r => r.first_payment_date || r.close_date);
+      const hasCycle = rows.some(r => r.sales_cycle_days !== null && r.sales_cycle_days !== undefined);
+      rows.forEach(r => { r._close_paid_date = r.first_payment_date || r.close_date || null; });
+
       const headerCells = [
         { key: 'opportunity_name', label: 'Opportunity' },
         { key: 'rep_name', label: 'Rep' },
@@ -813,15 +822,14 @@
         { key: 'lead_quality', label: 'Lead Quality' },
         { key: 'canonical_channel', label: 'Channel' },
         { key: 'projected_deal_size', label: 'Value' },
+        ...(hasMoney ? [
+          { key: 'total_contract_value', label: 'Deal Size' },
+          { key: 'total_paid', label: 'Cash Collected' },
+        ] : []),
         { key: 'created_at_ghl', label: 'Created' },
+        ...(hasCloseDate ? [{ key: '_close_paid_date', label: 'Close Date' }] : []),
+        ...(hasCycle ? [{ key: 'sales_cycle_days', label: 'Sales Cycle' }] : []),
       ];
-
-      // Sales-cycle column: days from first showed call → first payment. Present on the
-      // units_closed drill-down so each deal's days-to-close is visible (verifies the avg).
-      const hasCycle = rows.some(r => r.sales_cycle_days !== null && r.sales_cycle_days !== undefined);
-      if (hasCycle) {
-        headerCells.push({ key: 'sales_cycle_days', label: 'Sales Cycle' });
-      }
 
       // Add anomaly column for data quality mode or when anomalies exist
       const hasAnomalies = rows.some(r => r.anomalies && r.anomalies.length > 0);
@@ -893,7 +901,10 @@
       <td class="${qualClass(r.lead_quality)}">${r.lead_quality || '–'}</td>
       <td>${r.canonical_channel || '–'}</td>
       <td class="num">${money(r.projected_deal_size)}</td>
+      ${hasMoney ? `<td class="num" title="Reconciled contract value (Whop)">${r.total_contract_value != null ? money(r.total_contract_value) : '–'}</td>
+      <td class="num" title="Cash collected so far (Whop paid to date)">${r.total_paid != null ? money(r.total_paid) : '–'}</td>` : ''}
       <td>${formatDate(r.created_at_ghl)}</td>
+      ${hasCloseDate ? `<td title="${r.first_payment_date ? 'First payment date' : 'GHL close date (no matched payment)'}">${r._close_paid_date ? formatDate(r._close_paid_date) : '–'}</td>` : ''}
       ${hasCycle ? `<td class="num" title="${r.first_payment_date ? 'First showed call → first payment (' + r.first_payment_date + ')' : 'First showed call → close date (no matched payment)'}">${(r.sales_cycle_days !== null && r.sales_cycle_days !== undefined) ? r.sales_cycle_days + 'd' : '–'}</td>` : ''}
       ${anomalyCell}
     </tr>`;
