@@ -70,11 +70,14 @@ _register("sales", [
 ])
 
 # ── Marketing Salaries ───────────────────────────────────────────────────────
+# Whitelist confirmed by Lloyd 2026-07-10: only these people are marketing
+# salaries. Other payees on the salary accounts are hidden (non_revenue below).
 _register("marketing_salaries", [
     # Individual names (transaction-level loads)
     "Angel Hernandez",
     "Brooks Golden",
     "Gergo Nagy",
+    "Gonzalo Ariel Guitar",
     "Lloyd Yip",
     "Maria Coutiño",
     "Santiago Acevedo",
@@ -202,6 +205,14 @@ _register("non_revenue", [
     "APPS.EMTA.EE",
     "COLUMN NATIONAL ASSOCIATION",  # Doug — delivery team, not sales/marketing
     "James Walter",                  # Paid from Salaries - Sales but not a sales rep (Lloyd, 2026-07-10)
+    # Salary-account payees excluded from the marketing whitelist (Lloyd, 2026-07-10)
+    "Alexander Gessel",              # Founder comp — not a sales/marketing cost
+    "Alex's Bancolombia",            # Alex's bank account — same person
+    "Carlos Duque International",
+    "Andrea Ochoa Velez",
+    "Madeline Celine Gesell",
+    "ISABEL GRISALES CARMONA",
+    "Sandra Stringer",
     "Wise",                          # Bank transfer account — not an expense; confirmed not in Xero P&L
     # Xero P&L account names — hidden from dashboard
     "Salaries - Operations",         # Delivery team

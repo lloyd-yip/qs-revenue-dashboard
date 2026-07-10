@@ -270,6 +270,12 @@ async def xero_sync_expenses(
             non_revenue_count += 1
             continue  # delivery-team / bank costs — hidden from the dashboard by design
 
+        # Salary accounts are WHITELIST-based (Lloyd, 2026-07-10): a payee must be
+        # explicitly registered in vendor_classification.py to appear. Unknown
+        # salary payees are reported as unclassified instead of inheriting the
+        # bucket — new hires get added deliberately, strangers never leak in.
+        salary_account = account.lower().startswith("salaries")
+
         payees = detail.get(account)
         if payees:
             for payee, usd_raw in sorted(payees.items(), key=lambda kv: -kv[1]):
@@ -277,9 +283,13 @@ async def xero_sync_expenses(
                 usd    = round(abs(usd_raw), 2)
                 if usd == 0:
                     continue
-                # Unknown payees inherit the account's bucket (May pattern);
-                # unclassified only when the account itself is unknown too.
-                bucket = classify_vendor(vendor, account_bucket)
+                # Non-salary accounts: unknown payees inherit the account's bucket
+                # (May pattern); unclassified only when the account is unknown too.
+                bucket = (
+                    classify_vendor(vendor)
+                    if salary_account
+                    else classify_vendor(vendor, account_bucket)
+                )
                 if bucket == "non_revenue":
                     non_revenue_count += 1
                     continue
