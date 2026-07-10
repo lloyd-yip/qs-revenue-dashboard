@@ -48,6 +48,7 @@ XERO_SETTING_TENANT_ID     = "xero_tenant_id"
 XERO_SETTING_REDIRECT_URI  = "xero_redirect_uri"
 XERO_SETTING_SCOPES        = "xero_scopes"
 XERO_SETTING_REFRESH_TOKEN = "xero_refresh_token"
+XERO_SETTING_GRANTED_SCOPES = "xero_granted_scopes"  # what the current token actually has
 
 # Legacy fallbacks — used only when nothing is saved in Settings → Connectors.
 # "Automate accounting" — certified App Store app, pre-March 2026 (bypasses the
@@ -189,6 +190,10 @@ async def xero_access_token_from_stored_refresh() -> str:
     new_refresh_token = tokens.get("refresh_token", refresh_token)
     async with AsyncSessionLocal() as session:
         await set_setting(session, XERO_SETTING_REFRESH_TOKEN, new_refresh_token)
+        if tokens.get("scope"):
+            # Track what the token is actually granted — the Settings page compares
+            # this against the requested scopes to show "Reconnect needed".
+            await set_setting(session, XERO_SETTING_GRANTED_SCOPES, tokens["scope"])
     return tokens["access_token"]
 
 # ECB monthly average EUR/USD rates — extend when syncing new months

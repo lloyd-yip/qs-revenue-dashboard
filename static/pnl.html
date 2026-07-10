@@ -556,11 +556,16 @@
       status.textContent = `✗ ${e.message}`;
     } finally {
       btn.disabled = false;
-      // Auto-clear the status message after 8 seconds
-      setTimeout(() => {
-        status.className = "sync-status";
-        status.textContent = "";
-      }, 8000);
+      // Auto-clear the status after 8s — but keep warnings visible until the next action
+      const finalText = status.textContent;
+      if (!finalText.includes("⚠")) {
+        setTimeout(() => {
+          if (status.textContent === finalText) {
+            status.className = "sync-status";
+            status.textContent = "";
+          }
+        }, 8000);
+      }
     }
   }
 

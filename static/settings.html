@@ -195,7 +195,10 @@
   function render(s) {
     current = s;
     const badge = $("xero-badge");
-    if (s.connected) {
+    if (s.connected && s.reconnect_needed) {
+      badge.textContent = "Reconnect needed";
+      badge.className = "badge warn";
+    } else if (s.connected) {
       badge.textContent = "Connected";
       badge.className = "badge ok";
     } else if (s.client_secret_set) {
@@ -207,7 +210,10 @@
     }
 
     $("xero-meta").textContent = s.connected
-      ? `Token last refreshed: ${new Date(s.token_updated_at).toLocaleString()} · rotates on every sync + weekly keep-alive`
+      ? (s.reconnect_needed
+          ? `The connection is missing newly required permission(s): ${s.missing_scopes.join(", ")}. ` +
+            `Press Connect to Xero and approve to update it.`
+          : `Token last refreshed: ${new Date(s.token_updated_at).toLocaleString()} · rotates on every sync + weekly keep-alive`)
       : (s.client_secret_set
           ? "Credentials saved — press Connect to Xero to authorize."
           : "Enter the Client ID and Client Secret from the Xero developer portal, save, then connect.");

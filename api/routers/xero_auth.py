@@ -38,6 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.utils.xero_utils import (
     XERO_AUTH_URL,
+    XERO_SETTING_GRANTED_SCOPES,
     XERO_SETTING_REFRESH_TOKEN,
     get_xero_config,
     xero_access_token_from_stored_refresh,
@@ -266,9 +267,11 @@ async def xero_callback(
             status_code=500,
         )
 
-    # Store refresh token in DB
+    # Store refresh token + the scopes this grant actually carries
     async with AsyncSessionLocal() as session:
         await set_setting(session, XERO_SETTING_REFRESH_TOKEN, refresh_token)
+        if tokens.get("scope"):
+            await set_setting(session, XERO_SETTING_GRANTED_SCOPES, tokens["scope"])
 
     logger.info("Xero refresh token stored successfully")
     return HTMLResponse(

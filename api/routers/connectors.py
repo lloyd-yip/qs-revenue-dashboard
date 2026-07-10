@@ -15,13 +15,14 @@ from pydantic import BaseModel
 from api.utils.xero_utils import (
     XERO_SETTING_CLIENT_ID,
     XERO_SETTING_CLIENT_SECRET,
+    XERO_SETTING_GRANTED_SCOPES,
     XERO_SETTING_REDIRECT_URI,
     XERO_SETTING_REFRESH_TOKEN,
     XERO_SETTING_SCOPES,
     XERO_SETTING_TENANT_ID,
     get_xero_config,
 )
-from db.queries.settings import delete_setting, get_setting_meta, set_setting
+from db.queries.settings import delete_setting, get_setting, get_setting_meta, set_setting
 from db.session import AsyncSessionLocal
 
 logger = logging.getLogger(__name__)
@@ -43,6 +44,8 @@ class XeroConnectorStatus(BaseModel):
     scopes_source: str             # "app" | "default"
     connected: bool
     token_updated_at: str | None   # ISO timestamp of last refresh-token rotation
+    missing_scopes: list[str]      # requested scopes the current token lacks
+    reconnect_needed: bool         # connected but token predates a scope change
 
 
 class XeroConnectorUpdate(BaseModel):
@@ -63,6 +66,14 @@ async def _xero_status() -> XeroConnectorStatus:
     cfg = await get_xero_config()
     async with AsyncSessionLocal() as session:
         token_meta = await get_setting_meta(session, XERO_SETTING_REFRESH_TOKEN)
+        granted    = await get_setting(session, XERO_SETTING_GRANTED_SCOPES) or ""
+
+    connected = bool(token_meta and token_meta[0])
+    granted_set = set(granted.split())
+    # Only meaningful once we've recorded a grant; identity scopes echo back too.
+    missing = (
+        sorted(set(cfg.scopes.split()) - granted_set) if connected and granted_set else []
+    )
 
     return XeroConnectorStatus(
         client_id=cfg.client_id,
@@ -76,8 +87,10 @@ async def _xero_status() -> XeroConnectorStatus:
         redirect_uri_source=cfg.redirect_uri_source,
         scopes=cfg.scopes,
         scopes_source=cfg.scopes_source,
-        connected=bool(token_meta and token_meta[0]),
+        connected=connected,
         token_updated_at=token_meta[1].isoformat() if token_meta else None,
+        missing_scopes=missing,
+        reconnect_needed=bool(missing),
     )
 
 
