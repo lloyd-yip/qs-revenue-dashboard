@@ -206,6 +206,7 @@ EUR_USD_RATES: dict[str, float] = {
     "2026-03": 1.1558,
     "2026-04": 1.1706,
     "2026-05": 1.1729,
+    "2026-06": 1.1518,
 }
 
 _bearer_scheme = HTTPBearer(auto_error=False)
@@ -226,13 +227,29 @@ async def verify_bearer(
 def get_eur_usd_rate(year: int, month: int) -> float:
     """Return the ECB monthly average EUR/USD rate for the given month.
 
-    Uses hardcoded table for known months; falls back to Frankfurter API for future months.
+    Order: hardcoded table → ECB SDMX API → Frankfurter API → 1.10 fallback.
     """
     import calendar
 
     key = f"{year}-{month:02d}"
     if key in EUR_USD_RATES:
         return EUR_USD_RATES[key]
+
+    # ECB SDMX monthly average (authoritative; same source as the table)
+    ecb_url = (
+        f"https://data-api.ecb.europa.eu/service/data/EXR/"
+        f"M.USD.EUR.SP00.A?startPeriod={key}&endPeriod={key}"
+        f"&detail=dataonly&format=jsondata"
+    )
+    try:
+        with urllib.request.urlopen(ecb_url, timeout=10) as resp:
+            data = json.loads(resp.read())
+        obs = data["dataSets"][0]["series"]["0:0:0:0:0"]["observations"]
+        rate = round(float(list(obs.values())[0][0]), 4)
+        logger.info("ECB EUR/USD %s: %.4f", key, rate)
+        return rate
+    except Exception as exc:
+        logger.warning("ECB rate fetch failed for %s: %s — trying Frankfurter", key, exc)
 
     last_day = calendar.monthrange(year, month)[1]
     start = f"{year}-{month:02d}-01"
