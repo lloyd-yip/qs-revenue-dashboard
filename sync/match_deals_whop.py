@@ -44,6 +44,14 @@ logger = logging.getLogger(__name__)
 
 WHOP_API_BASE = "https://api.whop.com/api/v2"
 MATCH_WINDOW_DAYS = 3  # scan Whop memberships created ±3 days from GHL close_date
+
+# Minimum Stripe charge (in cents) that counts as a DEAL payment. Clients also buy our
+# GoHighLevel SaaS subscription (~$97/month) — that is them paying us for a service, NOT a
+# deal payment, and must never be counted as the deal's first payment or contract value.
+# Real deal payments are high-ticket (or monthly but >$100), so flooring Stripe matching at
+# $100 cleanly excludes the $97 GHL sub. (GHL subscriptions bill via Stripe, not Whop, so the
+# Whop pass needs no equivalent floor.)
+MIN_STRIPE_DEAL_PAYMENT_CENTS = 10000  # $100.00
 # Corporate-domain matches are high-signal (a shared company domain rarely collides),
 # so we allow a much wider window for them — the payer at a company can sign up on Whop
 # days or weeks apart from when the rep marks the GHL deal Won. Name/fuzzy candidates
@@ -395,13 +403,14 @@ STRIPE_API_BASE = "https://api.stripe.com/v1"
 
 
 async def _fetch_stripe_charges(client: httpx.AsyncClient) -> list[dict]:
-    """Fetch all succeeded Stripe charges > $100 (10000 cents).
+    """Fetch all succeeded Stripe charges above the deal-payment floor.
 
-    Uses Stripe Search API with pagination via next_page token.
-    Returns raw charge objects with amount in cents.
+    The floor (MIN_STRIPE_DEAL_PAYMENT_CENTS) excludes the ~$97/mo GoHighLevel SaaS
+    subscription, which is not a deal payment. Uses Stripe Search API with pagination
+    via next_page token. Returns raw charge objects with amount in cents.
     """
     charges: list[dict] = []
-    query = "status:'succeeded' AND amount>10000"
+    query = f"status:'succeeded' AND amount>{MIN_STRIPE_DEAL_PAYMENT_CENTS}"
     next_page = None
 
     while True:
