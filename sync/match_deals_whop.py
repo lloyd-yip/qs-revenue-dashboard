@@ -44,6 +44,18 @@ logger = logging.getLogger(__name__)
 
 WHOP_API_BASE = "https://api.whop.com/api/v2"
 MATCH_WINDOW_DAYS = 3  # scan Whop memberships created ±3 days from GHL close_date
+# Corporate-domain matches are high-signal (a shared company domain rarely collides),
+# so we allow a much wider window for them — the payer at a company can sign up on Whop
+# days or weeks apart from when the rep marks the GHL deal Won. Name/fuzzy candidates
+# stay gated to MATCH_WINDOW_DAYS to avoid false positives.
+DOMAIN_MATCH_WINDOW_DAYS = 30
+
+# Free/personal email domains — a shared personal domain (both @gmail.com) proves nothing,
+# so it never triggers a corporate-domain match.
+PERSONAL_DOMAINS = {
+    "gmail.com", "yahoo.com", "hotmail.com", "outlook.com",
+    "icloud.com", "me.com", "aol.com", "protonmail.com",
+}
 
 # Whop product IDs that count as "high-ticket" (for plan type classification)
 HIGH_TICKET_PRODUCT_IDS = {
@@ -117,12 +129,9 @@ def score_match(
     whop_domain = whop_email.split("@")[1] if "@" in whop_email else ""
 
     # Skip personal domains for domain-based matching — they prove nothing
-    personal_domains = {"gmail.com", "yahoo.com", "hotmail.com", "outlook.com",
-                        "icloud.com", "me.com", "aol.com", "protonmail.com"}
-
     if ghl_domain and whop_domain:
-        ghl_personal = ghl_domain in personal_domains
-        whop_personal = whop_domain in personal_domains
+        ghl_personal = ghl_domain in PERSONAL_DOMAINS
+        whop_personal = whop_domain in PERSONAL_DOMAINS
 
         if ghl_domain == whop_domain and not ghl_personal:
             score = 0.80
@@ -862,10 +871,13 @@ async def _match_one_deal(
                     best_method = method
 
     # ── Step B: Time-windowed fuzzy search (only if no exact match) ───────
-    # For domain/name matches, use ±MATCH_WINDOW_DAYS to avoid false positives.
+    # Name/fuzzy candidates use the tight ±MATCH_WINDOW_DAYS to avoid false positives.
+    # A candidate sharing the exact corporate (non-personal) domain is high-signal, so it
+    # gets the wider ±DOMAIN_MATCH_WINDOW_DAYS — a company payer can sign up on Whop days
+    # or weeks apart from when the rep marks the GHL deal Won.
     if not best_m:
-        window_start = close_date - timedelta(days=MATCH_WINDOW_DAYS)
-        window_end = close_date + timedelta(days=MATCH_WINDOW_DAYS)
+        ghl_domain = ghl_email.split("@")[1] if "@" in ghl_email else ""
+        ghl_corporate = bool(ghl_domain) and ghl_domain not in PERSONAL_DOMAINS
 
         candidates: list[tuple[dict, int]] = []  # (membership, days_diff)
         for m in memberships:
@@ -881,25 +893,40 @@ async def _match_one_deal(
                     ).date()
             except (ValueError, AttributeError, OSError):
                 continue
-            if window_start <= m_date <= window_end:
-                candidates.append((m, (m_date - close_date).days))
+
+            days_diff = (m_date - close_date).days
+            w_email, _ = _extract_whop_identity(m)
+            w_domain = w_email.split("@")[1] if "@" in w_email else ""
+            same_corp_domain = ghl_corporate and w_domain == ghl_domain
+            window = DOMAIN_MATCH_WINDOW_DAYS if same_corp_domain else MATCH_WINDOW_DAYS
+            if abs(days_diff) <= window:
+                candidates.append((m, days_diff))
 
         logger.info(
             f"Deal {deal.ghl_opportunity_id} ({ghl_email or 'no-email'}): "
-            f"close={close_date}, window=[{window_start}→{window_end}], "
-            f"candidates={len(candidates)}"
+            f"close={close_date}, corporate={ghl_corporate}, candidates={len(candidates)}"
         )
 
-        for m, _days_diff in candidates:
+        best_days: int | None = None
+        for m, days_diff in candidates:
             w_email, w_name = _extract_whop_identity(m)
             score, method = score_match(ghl_email, ghl_name, w_email, w_name)
             logger.info(
-                f"  candidate {m.get('id')} ({w_email}): score={score:.2f} method={method}"
+                f"  candidate {m.get('id')} ({w_email}, {days_diff:+d}d): "
+                f"score={score:.2f} method={method}"
             )
-            if score > best_score:
+            # Higher score wins; on a tie, the membership closest to the close date wins
+            # (matters now that same-domain candidates share a wide window).
+            better = score > best_score or (
+                score == best_score
+                and best_days is not None
+                and abs(days_diff) < abs(best_days)
+            )
+            if better:
                 best_score = score
                 best_m = m
                 best_method = method
+                best_days = days_diff
 
     if best_m:
         logger.info(
