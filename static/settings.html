@@ -147,9 +147,9 @@
       </div>
 
       <div class="field">
-        <label>Scopes <span class="src" id="src-scopes"></span></label>
-        <input type="text" id="xero-scopes" autocomplete="off" spellcheck="false" />
-        <div class="hint">Space-separated OAuth scopes. Xero retired the old broad <code style="font-size:11px">accounting.reports.read</code> — if Connect fails with <strong>invalid_scope</strong>, use the granular default shown here.</div>
+        <label>Scopes <span class="src">· managed in app code</span></label>
+        <div id="xero-scopes" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+        <div class="hint">What the dashboard requests from Xero. Every one of these must also be <strong>enabled in the Xero app's own scope list</strong> (developer portal → your app → Configuration) — otherwise Xero rejects the connection with <strong>invalid_scope</strong>.</div>
       </div>
 
       <div class="btn-row">
@@ -217,13 +217,14 @@
     $("xero-client-secret").placeholder = s.client_secret_set ? `saved (${s.client_secret_hint})` : "paste client secret";
     $("xero-tenant-id").value = s.tenant_id || "";
     $("xero-redirect-uri").value = s.redirect_uri || "";
-    $("xero-scopes").value = s.scopes || "";
+    $("xero-scopes").innerHTML = (s.scopes || "").split(/\s+/).filter(Boolean)
+      .map(sc => `<code style="background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:3px 8px;font-size:11.5px;">${sc}</code>`)
+      .join("");
 
     $("src-client-id").textContent = `· ${SRC_LABELS[s.client_id_source]}`;
     $("src-client-secret").textContent = `· ${SRC_LABELS[s.client_secret_source]}`;
     $("src-tenant-id").textContent = `· ${SRC_LABELS[s.tenant_id_source]}`;
     $("src-redirect-uri").textContent = `· ${SRC_LABELS[s.redirect_uri_source]}`;
-    $("src-scopes").textContent = `· ${SRC_LABELS[s.scopes_source]}`;
 
     $("btn-connect").disabled = !s.client_secret_set;
     $("btn-disconnect").style.display = s.connected ? "" : "none";
@@ -247,12 +248,10 @@
     const sec = $("xero-client-secret").value.trim();
     const ten = $("xero-tenant-id").value.trim();
     const uri = $("xero-redirect-uri").value.trim();
-    const sco = $("xero-scopes").value.trim();
     if (cid !== current.client_id) body.client_id = cid;
     if (sec) body.client_secret = sec;   // blank = keep existing secret
     if (ten !== current.tenant_id) body.tenant_id = ten;
     if (uri !== current.redirect_uri) body.redirect_uri = uri;
-    if (sco !== current.scopes) body.scopes = sco;
     if (!Object.keys(body).length) { setMsg("Nothing changed.", true); return; }
 
     const credsChanged = "client_id" in body || "client_secret" in body;
