@@ -17,6 +17,7 @@ from api.utils.xero_utils import (
     XERO_SETTING_CLIENT_SECRET,
     XERO_SETTING_REDIRECT_URI,
     XERO_SETTING_REFRESH_TOKEN,
+    XERO_SETTING_SCOPES,
     XERO_SETTING_TENANT_ID,
     get_xero_config,
 )
@@ -39,6 +40,7 @@ class XeroConnectorStatus(BaseModel):
     redirect_uri: str
     redirect_uri_source: str       # "app" | "default"
     scopes: str
+    scopes_source: str             # "app" | "default"
     connected: bool
     token_updated_at: str | None   # ISO timestamp of last refresh-token rotation
 
@@ -50,6 +52,7 @@ class XeroConnectorUpdate(BaseModel):
     client_secret: str | None = None
     tenant_id: str | None = None
     redirect_uri: str | None = None
+    scopes: str | None = None
 
 
 def _mask(secret: str) -> str:
@@ -72,6 +75,7 @@ async def _xero_status() -> XeroConnectorStatus:
         redirect_uri=cfg.redirect_uri,
         redirect_uri_source=cfg.redirect_uri_source,
         scopes=cfg.scopes,
+        scopes_source=cfg.scopes_source,
         connected=bool(token_meta and token_meta[0]),
         token_updated_at=token_meta[1].isoformat() if token_meta else None,
     )
@@ -96,6 +100,7 @@ async def update_xero_connector(body: XeroConnectorUpdate) -> XeroConnectorStatu
         XERO_SETTING_CLIENT_SECRET: body.client_secret,
         XERO_SETTING_TENANT_ID:     body.tenant_id,
         XERO_SETTING_REDIRECT_URI:  body.redirect_uri,
+        XERO_SETTING_SCOPES:        body.scopes,
     }
     credentials_changed = False
     async with AsyncSessionLocal() as session:

@@ -146,6 +146,12 @@
         <div class="hint">Must be registered as an OAuth 2.0 redirect URI in the Xero app configuration — otherwise Xero rejects the connection.</div>
       </div>
 
+      <div class="field">
+        <label>Scopes <span class="src" id="src-scopes"></span></label>
+        <input type="text" id="xero-scopes" autocomplete="off" spellcheck="false" />
+        <div class="hint">Space-separated OAuth scopes. Xero retired the old broad <code style="font-size:11px">accounting.reports.read</code> — if Connect fails with <strong>invalid_scope</strong>, use the granular default shown here.</div>
+      </div>
+
       <div class="btn-row">
         <button class="btn-secondary" id="btn-save">Save credentials</button>
         <button class="btn-primary" id="btn-connect">Connect to Xero</button>
@@ -211,11 +217,13 @@
     $("xero-client-secret").placeholder = s.client_secret_set ? `saved (${s.client_secret_hint})` : "paste client secret";
     $("xero-tenant-id").value = s.tenant_id || "";
     $("xero-redirect-uri").value = s.redirect_uri || "";
+    $("xero-scopes").value = s.scopes || "";
 
     $("src-client-id").textContent = `· ${SRC_LABELS[s.client_id_source]}`;
     $("src-client-secret").textContent = `· ${SRC_LABELS[s.client_secret_source]}`;
     $("src-tenant-id").textContent = `· ${SRC_LABELS[s.tenant_id_source]}`;
     $("src-redirect-uri").textContent = `· ${SRC_LABELS[s.redirect_uri_source]}`;
+    $("src-scopes").textContent = `· ${SRC_LABELS[s.scopes_source]}`;
 
     $("btn-connect").disabled = !s.client_secret_set;
     $("btn-disconnect").style.display = s.connected ? "" : "none";
@@ -239,10 +247,12 @@
     const sec = $("xero-client-secret").value.trim();
     const ten = $("xero-tenant-id").value.trim();
     const uri = $("xero-redirect-uri").value.trim();
+    const sco = $("xero-scopes").value.trim();
     if (cid !== current.client_id) body.client_id = cid;
     if (sec) body.client_secret = sec;   // blank = keep existing secret
     if (ten !== current.tenant_id) body.tenant_id = ten;
     if (uri !== current.redirect_uri) body.redirect_uri = uri;
+    if (sco !== current.scopes) body.scopes = sco;
     if (!Object.keys(body).length) { setMsg("Nothing changed.", true); return; }
 
     const credsChanged = "client_id" in body || "client_secret" in body;

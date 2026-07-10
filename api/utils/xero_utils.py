@@ -29,14 +29,20 @@ XERO_TENANT_ID = "3bead22e-28ff-4eb1-92cd-9b9d648e188a"
 XERO_AUTH_URL  = "https://login.xero.com/identity/connect/authorize"
 XERO_TOKEN_URL = "https://identity.xero.com/connect/token"
 
-# Broad scope — valid for pre-March 2026 apps until September 2027.
-XERO_SCOPES = "openid profile email offline_access accounting.reports.read"
+# Granular scopes — required for apps created after March 2026 (the old broad
+# accounting.reports.read now returns invalid_scope). Covers everything the
+# dashboard reads: P&L report, ACCREC invoices, Wise bank transactions.
+XERO_SCOPES = (
+    "openid profile email offline_access "
+    "accounting.reports.profitandloss.read accounting.transactions.read"
+)
 
 # app_settings keys — managed via Settings → Connectors (/settings)
 XERO_SETTING_CLIENT_ID     = "xero_client_id"
 XERO_SETTING_CLIENT_SECRET = "xero_client_secret"
 XERO_SETTING_TENANT_ID     = "xero_tenant_id"
 XERO_SETTING_REDIRECT_URI  = "xero_redirect_uri"
+XERO_SETTING_SCOPES        = "xero_scopes"
 XERO_SETTING_REFRESH_TOKEN = "xero_refresh_token"
 
 # Legacy fallbacks — used only when nothing is saved in Settings → Connectors.
@@ -59,6 +65,7 @@ class XeroConfig:
     client_secret_source: str  # "app" | "env" | "none"
     tenant_id_source: str      # "app" | "default"
     redirect_uri_source: str   # "app" | "default"
+    scopes_source: str         # "app" | "default"
 
 
 async def get_xero_config() -> XeroConfig:
@@ -68,6 +75,7 @@ async def get_xero_config() -> XeroConfig:
         client_secret = await get_setting(session, XERO_SETTING_CLIENT_SECRET)
         tenant_id     = await get_setting(session, XERO_SETTING_TENANT_ID)
         redirect_uri  = await get_setting(session, XERO_SETTING_REDIRECT_URI)
+        scopes        = await get_setting(session, XERO_SETTING_SCOPES)
 
     if client_secret:
         secret_source = "app"
@@ -81,11 +89,12 @@ async def get_xero_config() -> XeroConfig:
         client_secret=client_secret,
         tenant_id=tenant_id or LEGACY_XERO_TENANT_ID,
         redirect_uri=redirect_uri or LEGACY_XERO_REDIRECT_URI,
-        scopes=XERO_SCOPES,
+        scopes=scopes or XERO_SCOPES,
         client_id_source="app" if client_id else "default",
         client_secret_source=secret_source,
         tenant_id_source="app" if tenant_id else "default",
         redirect_uri_source="app" if redirect_uri else "default",
+        scopes_source="app" if scopes else "default",
     )
 
 
