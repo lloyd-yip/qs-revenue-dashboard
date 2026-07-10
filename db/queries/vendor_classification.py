@@ -53,9 +53,10 @@ def canonicalise_vendor(name: str) -> str:
 
 
 # ── Sales ────────────────────────────────────────────────────────────────────
+# NOTE: Alexander Gessel is intentionally NOT registered here — he's paid from
+# "Salaries - Management", so he inherits that account's bucket (marketing_salaries).
 _register("sales", [
     # Individual names (transaction-level loads)
-    "Alexander Gessel",
     "Armando Valencia",
     "James Caddick",
     "Jason Bern",
@@ -200,6 +201,7 @@ _register("non_revenue", [
     "LITEMAIL AI",
     "APPS.EMTA.EE",
     "COLUMN NATIONAL ASSOCIATION",  # Doug — delivery team, not sales/marketing
+    "James Walter",                  # Paid from Salaries - Sales but not a sales rep (Lloyd, 2026-07-10)
     "Wise",                          # Bank transfer account — not an expense; confirmed not in Xero P&L
     # Xero P&L account names — hidden from dashboard
     "Salaries - Operations",         # Delivery team
