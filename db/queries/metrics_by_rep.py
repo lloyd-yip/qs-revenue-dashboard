@@ -186,11 +186,11 @@ async def get_by_rep(
             func.count(case((and_(is_1st, showed_1st, Opportunity.lead_quality == "Bad"), 1))).label("lq_bad"),
             func.count(case((and_(is_1st, showed_1st, Opportunity.lead_quality.is_(None)), 1))).label("lq_missing"),
             func.count(
-                case((is_won, 1))
+                case((and_(is_1st, is_won), 1))
             ).label("units_closed"),
             func.coalesce(
                 func.sum(
-                    case((is_won, Opportunity.projected_deal_size))
+                    case((and_(is_1st, is_won), Opportunity.projected_deal_size))
                 ),
                 0,
             ).label("projected_contract_value"),
@@ -226,6 +226,7 @@ async def get_by_rep(
             func.avg(
                 case((
                     and_(
+                        is_1st,
                         is_won,
                         Opportunity.close_date.isnot(None),
                         Opportunity.call1_appointment_date.isnot(None),
@@ -238,11 +239,11 @@ async def get_by_rep(
             ).label("avg_cycle_days"),
             # Payment data from deal_whop_matches (Whop/Stripe/Wise reconciled)
             func.coalesce(
-                func.sum(case((is_won, DealWhopMatch.total_contract_value))),
+                func.sum(case((and_(is_1st, is_won), DealWhopMatch.total_contract_value))),
                 0,
             ).label("contract_value"),
             func.coalesce(
-                func.sum(case((is_won, DealWhopMatch.upfront_cash))),
+                func.sum(case((and_(is_1st, is_won), DealWhopMatch.upfront_cash))),
                 0,
             ).label("cash_collected_sum"),
         )
@@ -256,44 +257,6 @@ async def get_by_rep(
     )
 
     rows = result.all()
-
-    # ── Close-date-based financial metrics ────────────────────────────────
-    # Closes should be counted by CLOSE DATE (when the deal was won), not
-    # appointment date. This prevents undercounting when a deal's first call
-    # was in a prior period but the close happened in the current period.
-    # Funnel metrics (booked, showed, show_rate, qual_rate) stay appointment-based.
-    close_date_where = and_(
-        Opportunity.is_excluded.is_(False),
-        Opportunity.close_date.isnot(None),
-        func.date(Opportunity.close_date) >= start,
-        func.date(Opportunity.close_date) <= end,
-        Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID,
-        sales_rep_filter(),
-    )
-    close_result = await session.execute(
-        select(
-            Opportunity.opportunity_owner_id.label("rep_id"),
-            func.count().label("units_closed"),
-            func.coalesce(func.sum(DealWhopMatch.total_contract_value), 0).label("contract_value"),
-            func.coalesce(func.sum(DealWhopMatch.upfront_cash), 0).label("cash_collected"),
-            func.avg(
-                case((
-                    Opportunity.call1_appointment_date.isnot(None),
-                    func.extract(
-                        "epoch",
-                        Opportunity.close_date - Opportunity.call1_appointment_date,
-                    ) / 86400.0,
-                ))
-            ).label("avg_cycle_days"),
-        )
-        .outerjoin(
-            DealWhopMatch,
-            Opportunity.ghl_opportunity_id == DealWhopMatch.ghl_opportunity_id,
-        )
-        .where(close_date_where)
-        .group_by(Opportunity.opportunity_owner_id)
-    )
-    close_by_rep: dict[str, object] = {r.rep_id: r for r in close_result.all()}
 
     # ── Reschedules per rep ───────────────────────────────────────────────
     # Restricted to the booked 1st-call cohort (base_filter + has_1st_call), so it matches
@@ -364,12 +327,13 @@ async def get_by_rep(
 
     rep_list = []
     for row in rows:
-        # Financial metrics come from close-date query (not appointment-date)
-        cd = close_by_rep.get(row.rep_id)
-        units = cd.units_closed if cd else 0
-        contract_val = float(cd.contract_value) if cd else 0
-        cash_val = float(cd.cash_collected) if cd else 0
-        avg_cycle = round(float(cd.avg_cycle_days), 1) if cd and cd.avg_cycle_days is not None else None
+        # Financial metrics are COHORT-based (1st call in window + now Won), matching the
+        # Units Closed card and the units_closed drill-down — not close-date. This keeps the
+        # CLOSED column, its ↗ drill-down, and the top card in agreement.
+        units = row.units_closed
+        contract_val = float(row.contract_value)
+        cash_val = float(row.cash_collected_sum)
+        avg_cycle = round(float(row.avg_cycle_days), 1) if row.avg_cycle_days is not None else None
 
         # Cost allocation
         rep_name_norm = " ".join((row.rep_name or "").split())
