@@ -29,12 +29,15 @@ XERO_TENANT_ID = "3bead22e-28ff-4eb1-92cd-9b9d648e188a"
 XERO_AUTH_URL  = "https://login.xero.com/identity/connect/authorize"
 XERO_TOKEN_URL = "https://identity.xero.com/connect/token"
 
-# Granular scopes — required for apps created after March 2026 (the old broad
-# accounting.reports.read now returns invalid_scope). Covers everything the
-# dashboard reads: P&L report, ACCREC invoices, Wise bank transactions.
+# Granular scopes — must each appear in the Xero app's own Authorisation scope
+# list (developer portal → app → Configuration) or Xero returns invalid_scope.
+# Post-March-2026 naming splits the old accounting.transactions into
+# invoices / banktransactions / payments. Covers everything the dashboard
+# reads: P&L report, ACCREC invoices, Wise bank transactions.
 XERO_SCOPES = (
     "openid profile email offline_access "
-    "accounting.reports.profitandloss.read accounting.transactions.read"
+    "accounting.reports.profitandloss.read "
+    "accounting.invoices.read accounting.banktransactions.read"
 )
 
 # app_settings keys — managed via Settings → Connectors (/settings)
