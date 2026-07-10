@@ -262,6 +262,27 @@
     });
     allPeriods.sort((a, b) => b.period_start.localeCompare(a.period_start));
 
+    // Pad with calendar months up to the current month so recent months are
+    // selectable for "Sync from Xero" before any data exists — otherwise a new
+    // month is unreachable (the dropdown only had months that already have data).
+    const haveMonths = new Set(allPeriods.map(p => p.period_start.slice(0, 7)));
+    const newestData = allPeriods.length ? allPeriods[0].period_start.slice(0, 7) : null;
+    const now = new Date();
+    let py = now.getFullYear(), pm = now.getMonth();  // 0-based month
+    for (let i = 0; i < 12; i++) {
+      const key = `${py}-${String(pm + 1).padStart(2, "0")}`;
+      if (newestData && key <= newestData) break;
+      if (!haveMonths.has(key)) {
+        const lastDay = new Date(py, pm + 1, 0).getDate();
+        allPeriods.splice(i, 0, {
+          period_start: `${key}-01`,
+          period_end:   `${key}-${String(lastDay).padStart(2, "0")}`,
+          no_data: true,
+        });
+      }
+      pm--; if (pm < 0) { pm = 11; py--; }
+    }
+
     if (allPeriods.length === 0) {
       periodEl.innerHTML = "<option value=''>No data loaded yet</option>";
       mainEl.innerHTML = `<div class="state-msg"><div class="icon">📭</div>No P&L data loaded yet.</div>`;
@@ -269,16 +290,19 @@
     }
 
     periodEl.innerHTML = allPeriods.map(p =>
-      `<option value="${periodKey(p)}">${formatPeriodLabel(p.period_start, p.period_end)}</option>`
+      `<option value="${periodKey(p)}">${formatPeriodLabel(p.period_start, p.period_end)}${p.no_data ? " — not synced yet" : ""}</option>`
     ).join("");
 
-    loadPnL(allPeriods[0].period_start, allPeriods[0].period_end);
-
-    periodEl.addEventListener("change", () => {
-      const [start, end] = periodEl.value.split("|");
-      if (start && end) loadPnL(start, end);
-    });
+    // Default to the newest month that actually has data (padded months would render empty)
+    const defaultPeriod = allPeriods.find(p => !p.no_data) || allPeriods[0];
+    periodEl.value = periodKey(defaultPeriod);
+    loadPnL(defaultPeriod.period_start, defaultPeriod.period_end);
   }
+
+  periodEl.addEventListener("change", () => {
+    const [start, end] = periodEl.value.split("|");
+    if (start && end) loadPnL(start, end);
+  });
 
   // ── Load both revenue + expense in parallel ─────────────────────────────────
   async function loadPnL(start, end) {
