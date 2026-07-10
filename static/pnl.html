@@ -539,6 +539,9 @@
         const names = exp.skipped_unclassified.map(u => u.vendor).join(", ");
         text += ` · ⚠ ${exp.skipped_unclassified.length} unclassified vendor(s) skipped: ${names}`;
       }
+      if (exp.warnings && exp.warnings.length) {
+        text += ` · ⚠ ${exp.warnings.join(" ")}`;
+      }
       status.textContent = text;
 
       // Reload the P&L data for this period to reflect the new numbers

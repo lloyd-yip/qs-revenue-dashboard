@@ -37,7 +37,8 @@ XERO_TOKEN_URL = "https://identity.xero.com/connect/token"
 XERO_SCOPES = (
     "openid profile email offline_access "
     "accounting.reports.profitandloss.read "
-    "accounting.invoices.read accounting.banktransactions.read"
+    "accounting.invoices.read accounting.banktransactions.read "
+    "accounting.settings.read"  # chart of accounts — maps account codes to names for expense detail
 )
 
 # app_settings keys — managed via Settings → Connectors (/settings)

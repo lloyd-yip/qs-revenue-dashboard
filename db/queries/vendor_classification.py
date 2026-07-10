@@ -26,10 +26,37 @@ def _register(bucket: str, vendors: list[str]) -> None:
         VENDOR_BUCKET_MAP[_normalise_vendor(v)] = bucket
 
 
+# ── Payee aliases ────────────────────────────────────────────────────────────
+# Some people invoice under a company name. Canonicalise to the person's name
+# BEFORE classification so the P&L shows the person and rep-comp matching
+# (expense vendor == GHL rep name) works.
+
+VENDOR_ALIASES: dict[str, str] = {}
+
+
+def _alias(canonical: str, variants: list[str]) -> None:
+    for v in variants:
+        VENDOR_ALIASES[_normalise_vendor(v)] = canonical
+
+
+_alias("Armando Valencia", [
+    "J.A Valencia Enterprices LLC",
+    "J.A. Valencia Enterprices LLC",
+    "J.A Valencia Enterprises LLC",
+    "JA Valencia Enterprices LLC",
+])
+
+
+def canonicalise_vendor(name: str) -> str:
+    """Return the canonical payee name for a vendor (aliases resolved)."""
+    return VENDOR_ALIASES.get(_normalise_vendor(name), name)
+
+
 # ── Sales ────────────────────────────────────────────────────────────────────
 _register("sales", [
     # Individual names (transaction-level loads)
     "Alexander Gessel",
+    "Armando Valencia",
     "James Caddick",
     "Jason Bern",
     "Mathieu Hutin",
@@ -181,6 +208,7 @@ _register("non_revenue", [
     "Payoneer Bank Fees",
     "Stripe Collection Fees",
     "Whop Fees",                     # Payment processing
+    "Splitit fee Whop",              # Payment processing (Splitit fees routed via Whop)
     "Foreign Currency Gains and Losses",
     "Consulting & Accounting",       # Accountant fees
 ])
