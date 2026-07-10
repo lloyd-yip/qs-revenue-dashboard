@@ -15,6 +15,7 @@ from db.queries.common import (
     has_1st_call,
     has_2nd_call,
     prorated_expense_amount,
+    sales_cycle_days_expr,
     sales_rep_filter,
     showed_1st_call_expr,
     showed_2nd_call_expr,
@@ -222,19 +223,15 @@ async def get_by_rep(
             func.count(
                 case((and_(is_1st, Opportunity.outcome_unfilled.is_(True)), 1))
             ).label("outcome_not_logged_count"),
-            # Avg deal cycle: first call date → close date, won deals only.
+            # Avg deal cycle: first SHOWED call → first payment, cohort won deals only.
             func.avg(
                 case((
                     and_(
                         is_1st,
                         is_won,
-                        Opportunity.close_date.isnot(None),
                         Opportunity.call1_appointment_date.isnot(None),
                     ),
-                    func.extract(
-                        "epoch",
-                        Opportunity.close_date - Opportunity.call1_appointment_date,
-                    ) / 86400.0,
+                    sales_cycle_days_expr(DealWhopMatch.first_payment_date),
                 ))
             ).label("avg_cycle_days"),
             # Payment data from deal_whop_matches (Whop/Stripe/Wise reconciled)

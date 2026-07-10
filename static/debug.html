@@ -816,6 +816,13 @@
         { key: 'created_at_ghl', label: 'Created' },
       ];
 
+      // Sales-cycle column: days from first showed call → first payment. Present on the
+      // units_closed drill-down so each deal's days-to-close is visible (verifies the avg).
+      const hasCycle = rows.some(r => r.sales_cycle_days !== null && r.sales_cycle_days !== undefined);
+      if (hasCycle) {
+        headerCells.push({ key: 'sales_cycle_days', label: 'Sales Cycle' });
+      }
+
       // Add anomaly column for data quality mode or when anomalies exist
       const hasAnomalies = rows.some(r => r.anomalies && r.anomalies.length > 0);
       if (hasAnomalies) {
@@ -887,6 +894,7 @@
       <td>${r.canonical_channel || '–'}</td>
       <td class="num">${money(r.projected_deal_size)}</td>
       <td>${formatDate(r.created_at_ghl)}</td>
+      ${hasCycle ? `<td class="num" title="${r.first_payment_date ? 'First showed call → first payment (' + r.first_payment_date + ')' : 'First showed call → close date (no matched payment)'}">${(r.sales_cycle_days !== null && r.sales_cycle_days !== undefined) ? r.sales_cycle_days + 'd' : '–'}</td>` : ''}
       ${anomalyCell}
     </tr>`;
       }).join('');

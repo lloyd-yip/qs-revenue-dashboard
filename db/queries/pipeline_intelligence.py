@@ -13,7 +13,7 @@ from datetime import date
 from sqlalchemy import and_, case, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.models import Opportunity
+from db.models import DealWhopMatch, Opportunity
 from db.queries.common import (
     QUALIFIED_LEAD_QUALITY,
     base_filter,
@@ -21,6 +21,7 @@ from db.queries.common import (
     bookable_2nd_call_expr,
     has_1st_call,
     has_2nd_call,
+    sales_cycle_days_expr,
     showed_1st_call_expr,
     showed_2nd_call_expr,
 )
@@ -106,22 +107,20 @@ async def get_pipeline_intelligence(
                 func.sum(case((and_(is_1st, is_won), Opportunity.cash_collected))),
                 0,
             ).label("cash_collected_sum"),
-            # Avg deal cycle: first call date → close date, won deals only.
-            # Both dates must be non-null — no proxy substitution.
+            # Avg deal cycle: first SHOWED call → first payment, cohort won deals only.
             func.avg(
                 case((
                     and_(
+                        is_1st,
                         is_won,
-                        Opportunity.close_date.isnot(None),
                         Opportunity.call1_appointment_date.isnot(None),
                     ),
-                    func.extract(
-                        "epoch",
-                        Opportunity.close_date - Opportunity.call1_appointment_date,
-                    ) / 86400.0,
+                    sales_cycle_days_expr(DealWhopMatch.first_payment_date),
                 ))
             ).label("avg_cycle_days"),
         )
+        .select_from(Opportunity)
+        .outerjoin(DealWhopMatch, Opportunity.ghl_opportunity_id == DealWhopMatch.ghl_opportunity_id)
         .where(bf)
         .group_by(group_col)
         .order_by(func.count(case((is_1st, 1))).desc())

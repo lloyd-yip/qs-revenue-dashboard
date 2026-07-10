@@ -888,7 +888,7 @@ const METRIC_TIPS = {
   'Contract Value':         'Sum of GHL monetary value for closed-won deals in the period.\nFormula: SUM(monetary_value WHERE stage = Deal Won)',
   'Cash Collected':         'Rep-entered upfront cash collected across closed-won deals.\nFormula: SUM(cash_collected WHERE stage = Deal Won)',
   'Proj. Contract Value':   'Sum of rep-entered projected deal sizes. Directional estimate — not accounting-validated.\nFormula: SUM(projected_deal_size)',
-  'Avg Cycle':              'Average days from 1st call date to close date, for won deals where both dates exist.\nFormula: AVG(close_date − call1_date) in days, won deals only',
+  'Avg Cycle':              'Average days from the first call the client SHOWED for → the first payment, for this period’s cohort of won deals.\nFormula: AVG(first_payment_date − first_showed_call_date) in days. Falls back to close_date when a won deal has no matched Whop payment.',
   // Lead quality breakdown
   'Total Opps':             'Total opportunities with a 1st call in the selected period for this segment.\nFormula: COUNT(call1_date in period AND segment = this)',
   'Great':                  'Shows rated Great — highest quality lead tier by the rep.\nSource: Lead Quality dropdown on the GHL opportunity',
@@ -1369,7 +1369,7 @@ function renderRepBreakdown(reps) {
         <th class="num">Close Rate</th>
         <th class="num" title="Units Closed ÷ Qualified 1st Call Shows">Qual Close</th>
         <th class="num">Closed</th>
-        <th class="num" title="Avg days from first call to close">Avg Cycle</th>
+        <th class="num" title="Avg days from the first showed call to the first payment (won deals)">Avg Cycle</th>
         <th class="num" title="Appointment outcome (show/no-show) never logged by rep">No Outcome</th>
         <th class="num" style="color:#22c55e;">Great</th>
         <th class="num" style="color:#84cc16;">Ok</th>
@@ -1711,7 +1711,7 @@ async function renderPipelineIntelligence() {
               <th class="num">Close%</th>
               <th class="num" title="Units Closed ÷ Qualified 1st Call Shows">Qual Close%</th>
               <th class="num">Closed</th>
-              <th class="num" title="Avg days from lead creation to won deal">Avg Cycle</th>
+              <th class="num" title="Avg days from the first showed call to the first payment (won deals)">Avg Cycle</th>
               <th class="num" style="color:var(--green);" title="Coming soon — awaiting financial data">Contract Value</th>
               <th class="num" style="color:var(--green);" title="Coming soon — awaiting financial data">Cash Collected</th>
             </tr>

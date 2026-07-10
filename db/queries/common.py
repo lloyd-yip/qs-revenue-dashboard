@@ -127,6 +127,39 @@ def rep_non_compliance_expr():
     )
 
 
+def cycle_start_expr():
+    """DATE the prospect first SHOWED for a call — the sales-cycle clock starts when
+    the client actually turned up, not when the call was merely booked.
+
+    1st call if they showed on it; otherwise the 2nd call (a deal can be a no-show on
+    call 1 then show on the reschedule); otherwise fall back to the 1st call date.
+    """
+    from db.models import Opportunity
+
+    return func.date(
+        case(
+            (showed_1st_call_expr(), Opportunity.call1_appointment_date),
+            (showed_2nd_call_expr(), Opportunity.call2_appointment_date),
+            else_=Opportunity.call1_appointment_date,
+        )
+    )
+
+
+def sales_cycle_days_expr(payment_date_col):
+    """Whole days from the first showed call → first payment.
+
+    End of the clock is the first reconciled Whop payment (payment_date_col); when a
+    won deal has no matched payment we fall back to GHL close_date so it still counts.
+    Returns an integer day count (DATE − DATE), or NULL when the start date is missing.
+    payment_date_col must be a DATE column (DealWhopMatch.first_payment_date).
+    """
+    from db.models import Opportunity
+
+    start = cycle_start_expr()
+    end = func.coalesce(payment_date_col, func.date(Opportunity.close_date))
+    return end - start
+
+
 def has_1st_call(start: date, end: date, date_by: str):
     """Opportunity had a 1st call within the relevant scope.
 

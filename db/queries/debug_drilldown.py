@@ -12,7 +12,7 @@ from datetime import date
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.models import Appointment, Opportunity
+from db.models import Appointment, DealWhopMatch, Opportunity
 from db.queries.common import (
     QUALIFIED_LEAD_QUALITY,
     base_filter,
@@ -20,6 +20,7 @@ from db.queries.common import (
     bookable_2nd_call_expr,
     has_1st_call,
     has_2nd_call,
+    sales_cycle_days_expr,
     showed_1st_call_expr,
     showed_2nd_call_expr,
 )
@@ -432,8 +433,15 @@ async def get_drilldown_opps(
     # COHORT: base_filter (date range + date_by) + the metric-specific filter.
     bf = base_filter(start, end, date_by, rep_id)
     metric_filter = _build_metric_filter(metric, start, end, date_by)
+    cycle_col = sales_cycle_days_expr(DealWhopMatch.first_payment_date).label("sales_cycle_days")
     result = await session.execute(
-        select(*_DRILLDOWN_COLUMNS)
+        select(
+            *_DRILLDOWN_COLUMNS,
+            cycle_col,
+            DealWhopMatch.first_payment_date.label("first_payment_date"),
+        )
+        .select_from(Opportunity)
+        .outerjoin(DealWhopMatch, Opportunity.ghl_opportunity_id == DealWhopMatch.ghl_opportunity_id)
         .where(and_(bf, metric_filter))
         .order_by(Opportunity.call1_appointment_date.desc().nulls_last())
     )
@@ -443,6 +451,10 @@ async def get_drilldown_opps(
 
     for r in result.all():
         row = _row_to_dict(r)
+        # Per-deal sales cycle: first showed call → first payment (fallback close_date).
+        # Lets the units_closed drill-down show days-to-close per opp and verify the avg.
+        row["sales_cycle_days"] = int(r.sales_cycle_days) if r.sales_cycle_days is not None else None
+        row["first_payment_date"] = r.first_payment_date.isoformat() if r.first_payment_date else None
 
         if is_data_quality:
             anomalies = _detect_anomalies(row)
