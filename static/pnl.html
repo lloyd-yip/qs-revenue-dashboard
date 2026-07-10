@@ -508,17 +508,38 @@
     status.textContent = `⏳ Syncing ${month}…`;
 
     try {
-      const resp = await fetch(`${API}/xero/sync-revenue?month=${month}`, {
-        method: "POST",
-        headers: { "Authorization": `Bearer ${SYNC_TOKEN}` },
-      });
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({ detail: resp.statusText }));
-        throw new Error(err.detail || `HTTP ${resp.status}`);
-      }
-      const result = await resp.json();
+      // Three passes: revenue (P&L income), expenses (P&L expense rows,
+      // vendor-classified), contract value (ACCREC invoices). All use the
+      // stored Xero connection from Settings → Connectors.
+      const call = async (path, label) => {
+        status.textContent = `⏳ Syncing ${label} (${month})…`;
+        const resp = await fetch(`${API}${path}?month=${month}`, {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${SYNC_TOKEN}` },
+        });
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+          throw new Error(`${label}: ${err.detail || `HTTP ${resp.status}`}`);
+        }
+        return resp.json();
+      };
+
+      const rev = await call("/xero/sync-revenue", "revenue");
+      const exp = await call("/xero/sync-expenses", "expenses");
+      const inv = await call("/xero/sync-invoices", "invoices");
+
       status.className = "sync-status ok";
-      status.textContent = `✓ Synced ${result.rows_upserted} rows (${month})`;
+      const parts = [
+        `revenue ${rev.rows_upserted}`,
+        `expenses ${exp.rows_upserted}`,
+        `invoices ${inv.invoice_count}`,
+      ];
+      let text = `✓ Synced ${month} — ${parts.join(", ")}`;
+      if (exp.skipped_unclassified && exp.skipped_unclassified.length) {
+        const names = exp.skipped_unclassified.map(u => u.vendor).join(", ");
+        text += ` · ⚠ ${exp.skipped_unclassified.length} unclassified vendor(s) skipped: ${names}`;
+      }
+      status.textContent = text;
 
       // Reload the P&L data for this period to reflect the new numbers
       const [start, end] = val.split("|");

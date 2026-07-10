@@ -20,6 +20,7 @@ from api.routers import connectors as connectors_router
 from api.routers import dashboard as dashboard_router
 from api.routers import whop_live as whop_live_router
 from api.routers import xero_auth as xero_auth_router
+from api.routers import xero_expenses as xero_expenses_router
 from api.routers import xero_invoices as xero_invoices_router
 from api.schemas.responses import HealthResponse
 from config import settings
@@ -112,6 +113,9 @@ app.include_router(xero_auth_router.router)
 
 # Xero invoice sync — POST /xero/sync-invoices, bearer-protected via verify_bearer dependency
 app.include_router(xero_invoices_router.router)
+
+# Xero expense sync — POST /xero/sync-expenses, bearer-protected via verify_bearer dependency
+app.include_router(xero_expenses_router.router)
 
 # Settings → Connectors — /api/settings/connectors/*, bearer-protected (secrets live here)
 app.include_router(connectors_router.router, dependencies=[Depends(verify_token)])
