@@ -11,7 +11,12 @@ from pydantic import BaseModel
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.utils.xero_utils import XERO_TENANT_ID, get_eur_usd_rate, verify_bearer
+from api.utils.xero_utils import (
+    get_eur_usd_rate,
+    get_xero_config,
+    verify_bearer,
+    xero_access_token_from_stored_refresh,
+)
 from db.models import RevenueLineItem
 from db.queries.revenue import upsert_revenue_line_items
 from db.session import AsyncSessionLocal
@@ -43,6 +48,7 @@ class InvoiceSyncResult(BaseModel):
 
 async def _fetch_xero_invoices(
     access_token: str,
+    tenant_id: str,
     period_start: date,
     period_end: date,
 ) -> list[dict]:
@@ -61,7 +67,7 @@ async def _fetch_xero_invoices(
                 XERO_INVOICES_URL,
                 headers={
                     "Authorization":  f"Bearer {access_token}",
-                    "Xero-Tenant-Id": XERO_TENANT_ID,
+                    "Xero-Tenant-Id": tenant_id,
                     "Accept":         "application/json",
                 },
                 params={
@@ -142,7 +148,11 @@ def _to_revenue_item(total_eur: float, eur_usd: float, invoice_count: int) -> di
 async def xero_sync_invoices(
     month: str = Query(..., pattern=r"^\d{4}-\d{2}$",
                        description="Month in YYYY-MM format, e.g. 2026-05"),
-    xero_token: str = Query(..., description="Xero access token from API Explorer or OAuth flow"),
+    xero_token: str | None = Query(
+        default=None,
+        description="Optional: Xero access token from API Explorer. "
+                    "Omit to use the stored Xero connection (Settings → Connectors).",
+    ),
 ) -> InvoiceSyncResult:
     """Fetch Xero ACCREC invoices for a month, convert EUR→USD, upsert as contract_value.
 
@@ -162,8 +172,11 @@ async def xero_sync_invoices(
 
     eur_usd = get_eur_usd_rate(year, mon)
 
+    access_token = xero_token or await xero_access_token_from_stored_refresh()
+    cfg = await get_xero_config()
+
     try:
-        invoices = await _fetch_xero_invoices(xero_token, period_start, period_end)
+        invoices = await _fetch_xero_invoices(access_token, cfg.tenant_id, period_start, period_end)
     except XeroApiError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
 

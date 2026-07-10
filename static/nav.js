@@ -12,8 +12,9 @@
     { key: 'deals', label: 'Deals', href: '/deals' }
   ];
   var UTIL = [
-    { key: 'dq',   label: 'Data Quality', href: '/data-quality' },
-    { key: 'sync', label: 'Sync',         href: '/sync-history' }
+    { key: 'dq',       label: 'Data Quality', href: '/data-quality' },
+    { key: 'sync',     label: 'Sync',         href: '/sync-history' },
+    { key: 'settings', label: 'Settings',     href: '/settings' }
   ];
   // detail views: dropped from the top nav but reachable from within a section → keep PARENT active
   var DETAIL = { '/expenses': 'pnl', '/channels/slwa': 'sales', '/debug': 'sales' };
@@ -26,6 +27,7 @@
     if (p === '/deals') return 'deals';
     if (p === '/data-quality') return 'dq';
     if (p === '/sync-history') return 'sync';
+    if (p === '/settings') return 'settings';
     if (Object.prototype.hasOwnProperty.call(DETAIL, p)) return DETAIL[p];
     return null;
   }

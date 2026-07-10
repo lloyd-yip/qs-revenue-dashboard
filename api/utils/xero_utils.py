@@ -1,17 +1,182 @@
-"""Shared Xero API constants and stateless helpers used across xero_* routers."""
+"""Shared Xero API constants and helpers used across xero_* routers and sync jobs.
 
+Connector credentials (client ID/secret, tenant, redirect URI) are managed in-app
+via Settings → Connectors and stored in the app_settings table. Legacy fallbacks
+(the old hardcoded values / XERO_CLIENT_SECRET env var) keep existing deployments
+working until values are saved in the UI.
+"""
+
+import base64
 import json
 import logging
 import urllib.request
+from dataclasses import dataclass
 
+import httpx
 from fastapi import HTTPException, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from config import settings
+from db.queries.settings import get_setting
+from db.session import AsyncSessionLocal
 
 logger = logging.getLogger(__name__)
 
 XERO_TENANT_ID = "3bead22e-28ff-4eb1-92cd-9b9d648e188a"
+
+# ── Xero OAuth endpoints + connector settings keys ────────────────────────────
+
+XERO_AUTH_URL  = "https://login.xero.com/identity/connect/authorize"
+XERO_TOKEN_URL = "https://identity.xero.com/connect/token"
+
+# Broad scope — valid for pre-March 2026 apps until September 2027.
+XERO_SCOPES = "openid profile email offline_access accounting.reports.read"
+
+# app_settings keys — managed via Settings → Connectors (/settings)
+XERO_SETTING_CLIENT_ID     = "xero_client_id"
+XERO_SETTING_CLIENT_SECRET = "xero_client_secret"
+XERO_SETTING_TENANT_ID     = "xero_tenant_id"
+XERO_SETTING_REDIRECT_URI  = "xero_redirect_uri"
+XERO_SETTING_REFRESH_TOKEN = "xero_refresh_token"
+
+# Legacy fallbacks — used only when nothing is saved in Settings → Connectors.
+# "Automate accounting" — certified App Store app, pre-March 2026 (bypasses the
+# per-org uncertified connection limit). Tenant: quantumSCALE Institute OÜ.
+LEGACY_XERO_CLIENT_ID    = "EE84B9CECE064FDFA44A9989AD8356AA"
+LEGACY_XERO_TENANT_ID    = XERO_TENANT_ID
+LEGACY_XERO_REDIRECT_URI = "https://qs-revenue-dashboard-production.up.railway.app/xero/callback"
+
+
+@dataclass
+class XeroConfig:
+    """Resolved Xero connector credentials with their provenance."""
+    client_id: str
+    client_secret: str
+    tenant_id: str
+    redirect_uri: str
+    scopes: str
+    client_id_source: str      # "app" | "default"
+    client_secret_source: str  # "app" | "env" | "none"
+    tenant_id_source: str      # "app" | "default"
+    redirect_uri_source: str   # "app" | "default"
+
+
+async def get_xero_config() -> XeroConfig:
+    """Resolve Xero connector config: app_settings first, legacy fallbacks second."""
+    async with AsyncSessionLocal() as session:
+        client_id     = await get_setting(session, XERO_SETTING_CLIENT_ID)
+        client_secret = await get_setting(session, XERO_SETTING_CLIENT_SECRET)
+        tenant_id     = await get_setting(session, XERO_SETTING_TENANT_ID)
+        redirect_uri  = await get_setting(session, XERO_SETTING_REDIRECT_URI)
+
+    if client_secret:
+        secret_source = "app"
+    elif settings.xero_client_secret:
+        client_secret, secret_source = settings.xero_client_secret, "env"
+    else:
+        client_secret, secret_source = "", "none"
+
+    return XeroConfig(
+        client_id=client_id or LEGACY_XERO_CLIENT_ID,
+        client_secret=client_secret,
+        tenant_id=tenant_id or LEGACY_XERO_TENANT_ID,
+        redirect_uri=redirect_uri or LEGACY_XERO_REDIRECT_URI,
+        scopes=XERO_SCOPES,
+        client_id_source="app" if client_id else "default",
+        client_secret_source=secret_source,
+        tenant_id_source="app" if tenant_id else "default",
+        redirect_uri_source="app" if redirect_uri else "default",
+    )
+
+
+def xero_basic_auth_header(cfg: XeroConfig) -> str:
+    """Return the Authorization header value for Xero token endpoint calls.
+
+    Raises 500 if no client secret is configured (Settings → Connectors, or the
+    legacy XERO_CLIENT_SECRET env var).
+    """
+    if not cfg.client_secret:
+        raise HTTPException(
+            status_code=500,
+            detail="Xero client secret is not configured. "
+                   "Set it under Settings → Connectors → Xero.",
+        )
+    raw = f"{cfg.client_id}:{cfg.client_secret}"
+    encoded = base64.b64encode(raw.encode()).decode()
+    return f"Basic {encoded}"
+
+
+async def xero_exchange_code(cfg: XeroConfig, code: str) -> dict:
+    """Exchange an authorization code for access + refresh tokens."""
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            XERO_TOKEN_URL,
+            headers={
+                "Authorization": xero_basic_auth_header(cfg),
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            data={
+                "grant_type":   "authorization_code",
+                "code":         code,
+                "redirect_uri": cfg.redirect_uri,
+            },
+            timeout=30,
+        )
+    if resp.status_code != 200:
+        logger.error("Xero token exchange failed: %s %s", resp.status_code, resp.text)
+        raise HTTPException(status_code=502, detail=f"Xero token exchange failed: {resp.text}")
+    return resp.json()
+
+
+async def xero_refresh_access_token(cfg: XeroConfig, refresh_token: str) -> dict:
+    """Exchange a refresh token for a new access token (and new refresh token)."""
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            XERO_TOKEN_URL,
+            headers={
+                "Authorization": xero_basic_auth_header(cfg),
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            data={
+                "grant_type":    "refresh_token",
+                "refresh_token": refresh_token,
+            },
+            timeout=30,
+        )
+    if resp.status_code != 200:
+        logger.error("Xero token refresh failed: %s %s", resp.status_code, resp.text)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Xero token refresh failed ({resp.status_code}). "
+                   "The refresh token may have expired (60-day limit). "
+                   "Reconnect under Settings → Connectors → Xero.",
+        )
+    return resp.json()
+
+
+async def xero_access_token_from_stored_refresh() -> str:
+    """Load the stored refresh token, exchange it, persist the rotated token.
+
+    Returns a fresh 30-min access token. Raises 400 if no token is stored —
+    the caller surfaces that to the user (connect under Settings → Connectors).
+    """
+    from db.queries.settings import set_setting  # local import avoids top-level churn
+
+    async with AsyncSessionLocal() as session:
+        refresh_token = await get_setting(session, XERO_SETTING_REFRESH_TOKEN)
+    if not refresh_token:
+        raise HTTPException(
+            status_code=400,
+            detail="Xero is not connected. Go to Settings → Connectors → Xero "
+                   "and click 'Connect to Xero' (or pass xero_token=<token> directly).",
+        )
+
+    cfg = await get_xero_config()
+    tokens = await xero_refresh_access_token(cfg, refresh_token)
+    new_refresh_token = tokens.get("refresh_token", refresh_token)
+    async with AsyncSessionLocal() as session:
+        await set_setting(session, XERO_SETTING_REFRESH_TOKEN, new_refresh_token)
+    return tokens["access_token"]
 
 # ECB monthly average EUR/USD rates — extend when syncing new months
 EUR_USD_RATES: dict[str, float] = {

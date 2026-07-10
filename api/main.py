@@ -16,6 +16,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 
 from api.routers import metrics, sync as sync_router
+from api.routers import connectors as connectors_router
 from api.routers import dashboard as dashboard_router
 from api.routers import whop_live as whop_live_router
 from api.routers import xero_auth as xero_auth_router
@@ -112,6 +113,9 @@ app.include_router(xero_auth_router.router)
 # Xero invoice sync — POST /xero/sync-invoices, bearer-protected via verify_bearer dependency
 app.include_router(xero_invoices_router.router)
 
+# Settings → Connectors — /api/settings/connectors/*, bearer-protected (secrets live here)
+app.include_router(connectors_router.router, dependencies=[Depends(verify_token)])
+
 # Serve dashboard.html at root
 _STATIC_DIR = Path(__file__).parent.parent / "static"
 _templates = Jinja2Templates(directory=str(_STATIC_DIR))
@@ -174,6 +178,15 @@ async def serve_pnl(request: Request):
 async def serve_deals(request: Request):
     return _templates.TemplateResponse(
         "deals.html",
+        {"request": request, "api_token": settings.api_bearer_token},
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+    )
+
+
+@app.get("/settings", include_in_schema=False)
+async def serve_settings(request: Request):
+    return _templates.TemplateResponse(
+        "settings.html",
         {"request": request, "api_token": settings.api_bearer_token},
         headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
     )

@@ -19,6 +19,18 @@ async def get_setting(session: AsyncSession, key: str) -> str | None:
     return row[0] if row else None
 
 
+async def get_setting_meta(
+    session: AsyncSession, key: str
+) -> tuple[str, datetime] | None:
+    """Return (value, updated_at) for a settings key, or None if not set."""
+    result = await session.execute(
+        text("SELECT value, updated_at FROM app_settings WHERE key = :key"),
+        {"key": key},
+    )
+    row = result.one_or_none()
+    return (row[0], row[1]) if row else None
+
+
 async def set_setting(session: AsyncSession, key: str, value: str) -> None:
     """Upsert a settings key/value pair."""
     await session.execute(
@@ -32,3 +44,13 @@ async def set_setting(session: AsyncSession, key: str, value: str) -> None:
         {"key": key, "value": value},
     )
     await session.commit()
+
+
+async def delete_setting(session: AsyncSession, key: str) -> bool:
+    """Delete a settings key. Returns True if a row was removed."""
+    result = await session.execute(
+        text("DELETE FROM app_settings WHERE key = :key"),
+        {"key": key},
+    )
+    await session.commit()
+    return result.rowcount > 0

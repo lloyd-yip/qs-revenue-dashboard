@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script src="/static/theme.js"></script>
+  <title>QS — Settings</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #22263a;
+      --border: #2e3347;
+      --accent: #6366f1;
+      --accent2: #818cf8;
+      --text: #e2e8f0;
+      --text2: #94a3b8;
+      --text3: #64748b;
+      --green: #22c55e;
+      --red: #ef4444;
+      --yellow: #f59e0b;
+      --radius: 10px;
+      --font: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+
+    body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; min-height: 100vh; }
+
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 16px 24px; border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    header h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.3px; }
+
+    main { padding: 24px; max-width: 760px; margin: 0 auto; }
+
+    .section-title {
+      font-size: 13px; color: var(--text2); font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.06em; margin: 4px 0 12px;
+    }
+
+    .card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      margin-bottom: 16px; overflow: hidden;
+    }
+    .card-header {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 16px 20px; border-bottom: 1px solid var(--border);
+    }
+    .card-header .name { font-size: 15px; font-weight: 600; }
+    .card-header .desc { font-size: 12px; color: var(--text3); margin-top: 2px; }
+    .card-body { padding: 20px; }
+
+    .badge {
+      font-size: 11.5px; font-weight: 600; padding: 4px 10px; border-radius: 999px;
+      white-space: nowrap;
+    }
+    .badge.ok    { color: var(--green);  background: rgba(34,197,94,0.12);  border: 1px solid rgba(34,197,94,0.3); }
+    .badge.warn  { color: var(--yellow); background: rgba(245,158,11,0.12); border: 1px solid rgba(245,158,11,0.3); }
+    .badge.err   { color: var(--red);    background: rgba(239,68,68,0.12);  border: 1px solid rgba(239,68,68,0.3); }
+
+    .meta-line { font-size: 12px; color: var(--text3); margin-bottom: 16px; }
+
+    .field { margin-bottom: 14px; }
+    .field label { display: block; font-size: 12px; color: var(--text2); font-weight: 500; margin-bottom: 5px; }
+    .field input {
+      width: 100%; background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+      padding: 8px 12px; border-radius: 6px; font-size: 13px; font-family: var(--font);
+    }
+    .field input:focus { outline: none; border-color: var(--accent); }
+    .field .hint { font-size: 11.5px; color: var(--text3); margin-top: 4px; line-height: 1.45; }
+    .field .src { font-size: 10.5px; color: var(--text3); font-weight: 500; margin-left: 6px; }
+
+    .btn-row { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap; align-items: center; }
+    button {
+      font-family: var(--font); font-size: 13px; font-weight: 600; cursor: pointer;
+      padding: 8px 16px; border-radius: 8px; border: 1px solid transparent;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { background: var(--accent2); }
+    .btn-secondary { background: none; border-color: var(--border); color: var(--text); }
+    .btn-secondary:hover { background: var(--surface2); }
+    .btn-danger { background: none; border-color: rgba(239,68,68,0.4); color: var(--red); }
+    .btn-danger:hover { background: rgba(239,68,68,0.1); }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .msg { font-size: 12.5px; margin-left: 4px; }
+    .msg.ok { color: var(--green); }
+    .msg.err { color: var(--red); }
+
+    details.guide { margin-top: 20px; border-top: 1px solid var(--border); padding-top: 14px; }
+    details.guide summary { cursor: pointer; font-size: 12.5px; color: var(--accent2); font-weight: 600; user-select: none; }
+    details.guide ol { margin: 12px 0 4px 18px; font-size: 12.5px; color: var(--text2); line-height: 1.8; }
+    details.guide code {
+      background: var(--surface2); border: 1px solid var(--border); border-radius: 4px;
+      padding: 1px 5px; font-size: 11.5px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-left"><h1>Settings</h1></div>
+</header>
+
+<main id="main-content">
+  <div class="section-title">Connectors</div>
+
+  <div class="card" id="xero-card">
+    <div class="card-header">
+      <div>
+        <div class="name">Xero</div>
+        <div class="desc">Accounting — P&amp;L revenue sync, ACCREC invoices (contract value), Wise bank-feed reconciliation</div>
+      </div>
+      <span class="badge warn" id="xero-badge">Loading…</span>
+    </div>
+    <div class="card-body">
+      <div class="meta-line" id="xero-meta"></div>
+
+      <div class="field">
+        <label>Client ID <span class="src" id="src-client-id"></span></label>
+        <input type="text" id="xero-client-id" autocomplete="off" spellcheck="false" />
+        <div class="hint">From <a href="https://developer.xero.com/app/manage" target="_blank" style="color:var(--accent2)">developer.xero.com → My Apps</a> → your app → Configuration.</div>
+      </div>
+
+      <div class="field">
+        <label>Client Secret <span class="src" id="src-client-secret"></span></label>
+        <input type="password" id="xero-client-secret" autocomplete="new-password" spellcheck="false" />
+        <div class="hint">Generated on the same Configuration page. Stored server-side, never shown again — leave blank to keep the current one.</div>
+      </div>
+
+      <div class="field">
+        <label>Tenant ID <span class="src" id="src-tenant-id"></span></label>
+        <input type="text" id="xero-tenant-id" autocomplete="off" spellcheck="false" />
+        <div class="hint">The Xero organisation to read from (quantumSCALE Institute OÜ by default). Only change this if the Xero org changes.</div>
+      </div>
+
+      <div class="field">
+        <label>Redirect URI <span class="src" id="src-redirect-uri"></span></label>
+        <input type="text" id="xero-redirect-uri" autocomplete="off" spellcheck="false" />
+        <div class="hint">Must be registered as an OAuth 2.0 redirect URI in the Xero app configuration — otherwise Xero rejects the connection.</div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn-secondary" id="btn-save">Save credentials</button>
+        <button class="btn-primary" id="btn-connect">Connect to Xero</button>
+        <button class="btn-danger" id="btn-disconnect" style="display:none">Disconnect</button>
+        <span class="msg" id="xero-msg"></span>
+      </div>
+
+      <details class="guide">
+        <summary>How to connect Xero — step by step</summary>
+        <ol>
+          <li>Open <code>developer.xero.com → My Apps</code> and pick the app (currently “Automate accounting”), or create a new one (Web app).</li>
+          <li>On its <strong>Configuration</strong> page: copy the <strong>Client ID</strong>, generate a <strong>Client Secret</strong>, and add the Redirect URI shown above to <strong>OAuth 2.0 redirect URIs</strong>.</li>
+          <li>Paste Client ID + Client Secret here and press <strong>Save credentials</strong>. (Tenant ID and Redirect URI are prefilled — leave them unless the Xero org or domain changes.)</li>
+          <li>Press <strong>Connect to Xero</strong>, log in, and approve access for the organisation. You'll land on a “Xero Connected” page.</li>
+          <li>Done — the badge above turns <strong>Connected</strong>. The P&amp;L “Sync from Xero” button and Wise reconciliation now work without pasting tokens, and a weekly keep-alive prevents the 60-day token expiry.</li>
+        </ol>
+      </details>
+    </div>
+  </div>
+</main>
+
+<script>
+  const API = "";
+  const AUTH_TOKEN = "{{ api_token }}";
+  const HEADERS = { "Authorization": `Bearer ${AUTH_TOKEN}`, "Content-Type": "application/json" };
+
+  const $ = (id) => document.getElementById(id);
+  let current = null;
+
+  const SRC_LABELS = {
+    app: "saved in app", env: "from env var (legacy)", default: "built-in default", none: "not set"
+  };
+
+  function setMsg(text, ok) {
+    const el = $("xero-msg");
+    el.textContent = text;
+    el.className = "msg " + (ok ? "ok" : "err");
+    if (text) setTimeout(() => { if (el.textContent === text) el.textContent = ""; }, 6000);
+  }
+
+  function render(s) {
+    current = s;
+    const badge = $("xero-badge");
+    if (s.connected) {
+      badge.textContent = "Connected";
+      badge.className = "badge ok";
+    } else if (s.client_secret_set) {
+      badge.textContent = "Not connected";
+      badge.className = "badge warn";
+    } else {
+      badge.textContent = "Not configured";
+      badge.className = "badge err";
+    }
+
+    $("xero-meta").textContent = s.connected
+      ? `Token last refreshed: ${new Date(s.token_updated_at).toLocaleString()} · rotates on every sync + weekly keep-alive`
+      : (s.client_secret_set
+          ? "Credentials saved — press Connect to Xero to authorize."
+          : "Enter the Client ID and Client Secret from the Xero developer portal, save, then connect.");
+
+    $("xero-client-id").value = s.client_id || "";
+    $("xero-client-secret").value = "";
+    $("xero-client-secret").placeholder = s.client_secret_set ? `saved (${s.client_secret_hint})` : "paste client secret";
+    $("xero-tenant-id").value = s.tenant_id || "";
+    $("xero-redirect-uri").value = s.redirect_uri || "";
+
+    $("src-client-id").textContent = `· ${SRC_LABELS[s.client_id_source]}`;
+    $("src-client-secret").textContent = `· ${SRC_LABELS[s.client_secret_source]}`;
+    $("src-tenant-id").textContent = `· ${SRC_LABELS[s.tenant_id_source]}`;
+    $("src-redirect-uri").textContent = `· ${SRC_LABELS[s.redirect_uri_source]}`;
+
+    $("btn-connect").disabled = !s.client_secret_set;
+    $("btn-disconnect").style.display = s.connected ? "" : "none";
+  }
+
+  async function load() {
+    try {
+      const resp = await fetch(`${API}/api/settings/connectors/xero`, { headers: HEADERS });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      render(await resp.json());
+    } catch (err) {
+      $("xero-badge").textContent = "Error";
+      $("xero-badge").className = "badge err";
+      setMsg(`Failed to load connector status: ${err.message}`, false);
+    }
+  }
+
+  $("btn-save").addEventListener("click", async () => {
+    const body = {};
+    const cid = $("xero-client-id").value.trim();
+    const sec = $("xero-client-secret").value.trim();
+    const ten = $("xero-tenant-id").value.trim();
+    const uri = $("xero-redirect-uri").value.trim();
+    if (cid !== current.client_id) body.client_id = cid;
+    if (sec) body.client_secret = sec;   // blank = keep existing secret
+    if (ten !== current.tenant_id) body.tenant_id = ten;
+    if (uri !== current.redirect_uri) body.redirect_uri = uri;
+    if (!Object.keys(body).length) { setMsg("Nothing changed.", true); return; }
+
+    const credsChanged = "client_id" in body || "client_secret" in body;
+    if (credsChanged && current.connected &&
+        !confirm("Changing the Client ID or Secret resets the Xero connection — you'll need to press Connect again. Continue?")) return;
+
+    $("btn-save").disabled = true;
+    try {
+      const resp = await fetch(`${API}/api/settings/connectors/xero`, {
+        method: "PUT", headers: HEADERS, body: JSON.stringify(body),
+      });
+      if (!resp.ok) throw new Error((await resp.json()).detail || `HTTP ${resp.status}`);
+      render(await resp.json());
+      setMsg(credsChanged ? "Saved. Now press Connect to Xero." : "Saved.", true);
+    } catch (err) {
+      setMsg(`Save failed: ${err.message}`, false);
+    } finally {
+      $("btn-save").disabled = false;
+    }
+  });
+
+  $("btn-connect").addEventListener("click", () => { window.location.href = "/xero/auth"; });
+
+  $("btn-disconnect").addEventListener("click", async () => {
+    if (!confirm("Disconnect Xero? Syncs will stop working until you reconnect.")) return;
+    try {
+      const resp = await fetch(`${API}/api/settings/connectors/xero/disconnect`, {
+        method: "POST", headers: HEADERS,
+      });
+      if (!resp.ok) throw new Error((await resp.json()).detail || `HTTP ${resp.status}`);
+      render(await resp.json());
+      setMsg("Disconnected.", true);
+    } catch (err) {
+      setMsg(`Disconnect failed: ${err.message}`, false);
+    }
+  });
+
+  load();
+</script>
+
+<script src="/static/nav.js"></script>
+</body>
+</html>

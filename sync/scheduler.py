@@ -10,6 +10,7 @@ from config import settings
 from sync.appointment_resolver import resolve_appointments
 from sync.sync_engine import run_sync
 from sync.whop_refresh import refresh_current_month_payment_metrics
+from sync.xero_keepalive import keepalive_xero_token
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,19 @@ def create_scheduler() -> AsyncIOScheduler:
         max_instances=1,
     )
 
+    # Weekly Xero token keep-alive — Mondays 06:00 UTC. Xero refresh tokens die after
+    # 60 days without use; syncs are manual/monthly, so this rotation keeps the
+    # connection alive even when nobody syncs for a while.
+    scheduler.add_job(
+        _run_xero_keepalive,
+        trigger=CronTrigger(day_of_week="mon", hour=6, minute=0),
+        id="weekly_xero_keepalive",
+        name="Weekly Xero refresh-token keep-alive",
+        replace_existing=True,
+        misfire_grace_time=3600,
+        max_instances=1,
+    )
+
     # Weekly full sync on Sundays at configured hour — catches any data GHL didn't surface incrementally
     scheduler.add_job(
         _run_full,
@@ -88,6 +102,16 @@ async def _run_whop_refresh() -> None:
         logger.info("Scheduler: Whop refresh complete — %s", stats)
     except Exception as exc:
         logger.error("Scheduler: Whop refresh failed — %s", exc)
+
+
+async def _run_xero_keepalive() -> None:
+    logger.info("Scheduler: starting weekly Xero token keep-alive")
+    try:
+        result = await keepalive_xero_token()
+        logger.info("Scheduler: Xero keep-alive complete — %s", result)
+    except Exception as exc:
+        logger.error("Scheduler: Xero keep-alive FAILED — token may expire if unused 60 days. "
+                     "Reconnect via Settings → Connectors if syncs start failing. Error: %s", exc)
 
 
 async def _run_incremental() -> None:
