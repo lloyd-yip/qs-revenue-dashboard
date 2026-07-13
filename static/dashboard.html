@@ -627,7 +627,7 @@
       <span style="font-size:11px; color:var(--text2);">Rep cost = base salary (prorated over the window) + commission % × cash collected + marketing allocation · click ✎ to edit a rep's comp model</span>
     </div>
     <div style="overflow-x:auto;">
-      <table id="reps-table" style="min-width:1560px;">
+      <table id="reps-table" style="min-width:1700px;">
         <thead><tr>
           <th>Rep</th>
           <th title="Monthly base salary + commission % of cash collected. Click ✎ to edit. 'default' = not reviewed yet (base $0 + 10%).">Comp Model</th>
@@ -639,6 +639,8 @@
           <th class="num">Close Rate</th>
           <th class="num" title="Average sales cycle: first showed call → first payment">Avg Cycle</th>
           <th class="num" style="color:var(--green);">Cash Collected</th>
+          <th class="num" title="Sum of GHL-entered deal size (monetary value) on this cohort's won deals — same figure as the Sales Performance CONTRACT VALUE column. Rep-entered, not payment-verified.">Contract Value</th>
+          <th class="num" style="color:var(--green);" title="Payment-verified projected full contract, from Whop plan math: Splitit/ClarityPay settle 100% upfront (paid = full contract); internal plans project avg installment × plan length.">Projected Total</th>
           <th class="num" title="Cash Collected ÷ Units Closed">Avg Cash</th>
           <th class="num" title="Cash collected ÷ 1st-call shows — revenue produced per held call">Cash / Show</th>
           <th class="num" title="Monthly base salary prorated over the selected window">Base (window)</th>
@@ -953,7 +955,8 @@ const METRIC_TIPS = {
   'Closed':                 'Deals in the Deal Won pipeline stage within the selected period.\nFormula: COUNT(stage = Deal Won)',
   // Deal value
   'Contract Value':         'Sum of GHL monetary value for closed-won deals in the period.\nFormula: SUM(monetary_value WHERE stage = Deal Won)',
-  'Cash Collected':         'Rep-entered upfront cash collected across closed-won deals.\nFormula: SUM(cash_collected WHERE stage = Deal Won)',
+  'Cash Collected':         'Cash collected TO DATE on this cohort\'s won deals, from reconciled Whop/Stripe/Wise payments — all installments, stacks up as payments land.\nFormula: SUM(total_paid on matched won deals)',
+  'Projected Total':        'Payment-verified projected FULL contract value, from Whop plan math — no rep input involved.\nFormula: financed (Splitit/ClarityPay) = total paid (settles 100% upfront); internal plans = avg installment × plan length (split_pay_required_payments)',
   'Proj. Contract Value':   'Sum of rep-entered projected deal sizes. Directional estimate — not accounting-validated.\nFormula: SUM(projected_deal_size)',
   'Avg Cycle':              'Average days from the first call the client SHOWED for → the first payment, for this period’s cohort of won deals.\nFormula: AVG(first_payment_date − first_showed_call_date) in days. Falls back to close_date when a won deal has no matched Whop payment.',
   // Lead quality breakdown
@@ -1414,6 +1417,7 @@ function renderRepBreakdown(reps) {
       <td class="num" style="color:var(--red);">${num(r.lq_bad)}</td>
       <td class="num ${r.lq_missing > 0 ? 'rate-warn' : ''}" style="color:var(--text2);">${num(r.lq_missing)}</td>
       <td class="num" style="color:var(--green);">${r.contract_value ? money(r.contract_value) : dash}</td>
+      <td class="num" style="color:var(--green);">${r.whop_projected_total ? money(r.whop_projected_total) : dash}</td>
       <td class="num" style="color:var(--green);">${r.cash_collected ? money(r.cash_collected) : dash}</td>
       <td class="num" style="color:var(--green);">${r.avg_contract_value ? money(r.avg_contract_value) : dash}</td>
       <td class="num" style="color:var(--green);">${r.avg_cash_collected ? money(r.avg_cash_collected) : dash}</td>
@@ -1443,11 +1447,12 @@ function renderRepBreakdown(reps) {
         <th class="num" style="color:var(--yellow);">Barely Pass.</th>
         <th class="num" style="color:var(--red);">Bad</th>
         <th class="num" style="color:var(--text2);" title="Showed but lead quality never graded by rep">Not Graded</th>
-        <th class="num" style="color:var(--green);" title="Total contract value from Whop/Stripe/Wise matched deals">Contract Value</th>
-        <th class="num" style="color:var(--green);" title="Upfront cash collected from Whop/Stripe/Wise matched deals">Cash Collected</th>
+        <th class="num" style="color:var(--green);" title="GHL-entered deal size (monetary value) summed over this cohort's won deals. Rep-entered, not payment-verified.">Contract Value</th>
+        <th class="num" style="color:var(--green);" title="Payment-verified projected full contract, from Whop plan math: Splitit/ClarityPay settle 100% upfront (paid = full contract); internal plans project avg installment × plan length.">Projected Total</th>
+        <th class="num" style="color:var(--green);" title="Cash collected to date on this cohort's won deals — all installments, stacks as payments land (reconciled Whop/Stripe/Wise)">Cash Collected</th>
         <th class="num" style="color:var(--green);" title="Contract Value ÷ Units Closed">Avg Contract</th>
         <th class="num" style="color:var(--green);" title="Cash Collected ÷ Units Closed">Avg Cash</th>
-        <th class="num" style="color:var(--green);" title="Cash Collected ÷ Contract Value">% Upfront</th>
+        <th class="num" style="color:var(--green);" title="Upfront Cash ÷ Contract Value — how much of the (rep-entered) contract landed as the first payment">% Upfront</th>
         <th class="num" title="Prorated base salary + commission on cash collected + allocated lead cost (marketing spend proportional to calls booked). Comp model set in the Sales Reps tab.">Total Invested</th>
         <th class="num" title="Total Invested ÷ Units Closed">Cost/Close</th>
         <th class="num" style="color:var(--green);" title="Cash Collected ÷ Total Invested">Cash RORI</th>
@@ -2655,7 +2660,7 @@ function renderRepsTable() {
   });
 
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="19" class="empty" style="text-align:center;padding:20px;">No reps found.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="21" class="empty" style="text-align:center;padding:20px;">No reps found.</td></tr>';
     return;
   }
 
@@ -2687,6 +2692,8 @@ function renderRepsTable() {
       <td class="num">${m ? pct(m.close_rate) : dash}</td>
       <td class="num">${m && m.avg_cycle_days !== null ? m.avg_cycle_days + 'd' : dash}</td>
       <td class="num" style="color:var(--green);">${m && m.cash_collected ? money(m.cash_collected) : dash}</td>
+      <td class="num">${m && m.contract_value ? money(m.contract_value) : dash}</td>
+      <td class="num" style="color:var(--green);">${m && m.whop_projected_total ? money(m.whop_projected_total) : dash}</td>
       <td class="num">${m && m.avg_cash_collected ? money(m.avg_cash_collected) : dash}</td>
       <td class="num">${cashPerShow}</td>
       <td class="num">${m && m.base_salary_alloc ? money(m.base_salary_alloc) : dash}</td>

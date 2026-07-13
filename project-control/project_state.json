@@ -170,6 +170,12 @@
   ],
   "decision_log": [
     {
+      "decision": "Rep tables get a payment-verified 'Projected Total' column (Whop plan math: financed Splitit/ClarityPay = total paid, settles 100% upfront; internal plans = avg installment x total_installments from split_pay_required_payments). Cash Collected switched from upfront_cash to total_paid so monthly installments stack as they land; commission accrues on cash-to-date. upfront_cash kept for the % Upfront metric.",
+      "reasoning": "The CONTRACT VALUE column is a passthrough of GHL monetary_value (rep-entered, match_deals_whop.py denormalizes it) and diverges wildly from payment reality (e.g. GHL $25k vs $8k actual plan). The Whop-derived projection needs no rep input and self-corrects. Cash-as-upfront never accumulated installments, understating collections and freezing commission at the first payment. Known rough edges: assumes equal installments; $0-paid matches project $0; partial Splitit settlements project low. Note: lead_source.py and funnel_economics.py still use upfront_cash — align later if needed.",
+      "phase": "Phase 1 - Live & Iterating",
+      "date": "2026-07-13"
+    },
+    {
       "decision": "Rep cost is DERIVED from a per-rep comp model (rep_comp_settings: monthly base salary + commission % of cash collected; defaults $0 + 10%), not read from Xero 'sales' bucket payouts. Total Invested = prorated base + commission x cohort cash collected + marketing allocation. Editable in the new Sales Reps tab.",
       "reasoning": "Xero payouts are cash-basis: with split payments, a rep's May payout reflects deals closed months earlier, so cost and revenue described different cohorts and RORI drifted. Deriving commission from cohort cash collected self-corrects — when an installment lands, both the numerator (cash) and denominator (commission cost) update together in the same window. Also fixes the silent gap where Armando (invoicing as J.A Valencia Enterprices LLC) never appeared in the Xero Salaries-Sales account, so his comp was $0. Xero payouts remain on the P&L/Expenses pages as actual cash out (reconciliation check).",
       "phase": "Phase 1 - Live & Iterating",

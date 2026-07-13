@@ -128,6 +128,33 @@ async def get_rep_opps(
     ]
 
 
+def _whop_projected_expr():
+    """Payment-verified projected full contract value for one matched deal.
+
+    Splitit/ClarityPay settle 100% upfront, so total_paid IS the full contract.
+    Internal payment plans only record collected installments, so project
+    avg installment × total_installments (the membership's authoritative
+    split_pay_required_payments). Falls back to total_paid (pay-in-full, or
+    plan length unknown). Assumes roughly equal installments.
+    """
+    return case(
+        (
+            or_(DealWhopMatch.is_splitit.is_(True), DealWhopMatch.is_claritypay.is_(True)),
+            DealWhopMatch.total_paid,
+        ),
+        (
+            and_(
+                DealWhopMatch.total_installments.isnot(None),
+                DealWhopMatch.total_installments > 0,
+                DealWhopMatch.payment_count.isnot(None),
+                DealWhopMatch.payment_count > 0,
+            ),
+            DealWhopMatch.total_paid / DealWhopMatch.payment_count * DealWhopMatch.total_installments,
+        ),
+        else_=DealWhopMatch.total_paid,
+    )
+
+
 async def get_by_rep(
     session: AsyncSession,
     start: date,
@@ -249,10 +276,23 @@ async def get_by_rep(
                 func.sum(case((and_(is_1st, is_won), DealWhopMatch.total_contract_value))),
                 0,
             ).label("contract_value"),
+            # Cash collected = total paid to date, so monthly installments stack
+            # up as they land (upfront_cash kept separately for the % upfront metric)
+            func.coalesce(
+                func.sum(case((and_(is_1st, is_won), DealWhopMatch.total_paid))),
+                0,
+            ).label("cash_collected_sum"),
             func.coalesce(
                 func.sum(case((and_(is_1st, is_won), DealWhopMatch.upfront_cash))),
                 0,
-            ).label("cash_collected_sum"),
+            ).label("upfront_cash_sum"),
+            # Payment-verified projected full contract: financed (Splitit/ClarityPay)
+            # settles 100% upfront so total_paid IS the contract; internal plans
+            # project avg installment × plan length (split_pay_required_payments).
+            func.coalesce(
+                func.sum(case((and_(is_1st, is_won), _whop_projected_expr()))),
+                0,
+            ).label("whop_projected_total"),
         )
         .outerjoin(
             DealWhopMatch,
@@ -332,6 +372,8 @@ async def get_by_rep(
         units = row.units_closed
         contract_val = float(row.contract_value)
         cash_val = float(row.cash_collected_sum)
+        upfront_val = float(row.upfront_cash_sum)
+        whop_projected = float(row.whop_projected_total)
         avg_cycle = round(float(row.avg_cycle_days), 1) if row.avg_cycle_days is not None else None
 
         # Allocate lead spend proportional to calls booked
@@ -382,6 +424,8 @@ async def get_by_rep(
             "projected_contract_value": float(row.projected_contract_value),
             "contract_value": contract_val,
             "cash_collected": cash_val,
+            "upfront_cash": upfront_val,
+            "whop_projected_total": round(whop_projected, 2),
             "total_shows": row.total_shows,
             "compliance_failures": row.compliance_failures,
             "outcome_not_logged_count": row.outcome_not_logged_count,
@@ -394,7 +438,7 @@ async def get_by_rep(
             # New: averages per close
             "avg_contract_value": safe_div(contract_val, units) if contract_val > 0 else None,
             "avg_cash_collected": safe_div(cash_val, units) if cash_val > 0 else None,
-            "avg_cash_pct_upfront": round(cash_val / contract_val * 100, 1) if contract_val > 0 and cash_val > 0 else None,
+            "avg_cash_pct_upfront": round(upfront_val / contract_val * 100, 1) if contract_val > 0 and upfront_val > 0 else None,
             # New: cost & RORI (rep comp derived from rep_comp_settings)
             "rep_comp": rep_comp,
             "base_salary_monthly": base_salary_monthly,

@@ -66,6 +66,10 @@ class RepMetrics(BaseModel):
     projected_contract_value: float
     contract_value: float = 0
     cash_collected: float = 0
+    upfront_cash: float = 0
+    # Payment-verified projected full contract (Whop plan math: financed deals
+    # settle upfront; internal plans project avg installment × plan length)
+    whop_projected_total: float = 0
     total_shows: int
     compliance_failures: int
     outcome_not_logged_count: int
