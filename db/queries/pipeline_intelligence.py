@@ -189,11 +189,15 @@ async def get_segment_closes(
             Opportunity.intent_to_transform,
             Opportunity.pre_call_indoctrination,
             Opportunity.monetary_value,
-            Opportunity.cash_collected,
+            DealWhopMatch.total_paid,
             Opportunity.close_date,
             Opportunity.call1_appointment_date,
             Opportunity.call2_appointment_date,
             Opportunity.ghl_opportunity_id,
+        )
+        .outerjoin(
+            DealWhopMatch,
+            Opportunity.ghl_opportunity_id == DealWhopMatch.ghl_opportunity_id,
         )
         .where(and_(bf, seg_filter, Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID))
         .order_by(Opportunity.close_date.desc().nullslast())
@@ -213,7 +217,8 @@ async def get_segment_closes(
             "intent": r.intent_to_transform or "—",
             "indoctrination": r.pre_call_indoctrination or "—",
             "contract_value": float(r.monetary_value) if r.monetary_value else None,
-            "cash_collected": float(r.cash_collected) if r.cash_collected else None,
+            # Reconciled cash to date (all installments) — not the rep-entered GHL field
+            "cash_collected": float(r.total_paid) if r.total_paid is not None else None,
             "close_date": _fmt(r.close_date),
             "call1_date": _fmt(r.call1_appointment_date),
             "call2_date": _fmt(r.call2_appointment_date),

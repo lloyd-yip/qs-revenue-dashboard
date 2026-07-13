@@ -212,9 +212,10 @@ async def get_auto_funnel_economics(
             func.sum(case((showed, 1), else_=0)).label("shows"),
             func.sum(case((qual_show, 1), else_=0)).label("qual_shows"),
             func.sum(case((closed_won, 1), else_=0)).label("closed"),
-            # avg from deal_whop_matches — only over closed-won rows with matched payment data
+            # avg from deal_whop_matches — only over closed-won rows with matched payment data.
+            # avg_cash_collected = total paid to date (installments stack); % upfront keeps upfront_cash.
             func.avg(case((closed_won, DealWhopMatch.total_contract_value))).label("avg_contract_value"),
-            func.avg(case((closed_won, DealWhopMatch.upfront_cash))).label("avg_cash_collected"),
+            func.avg(case((closed_won, DealWhopMatch.total_paid))).label("avg_cash_collected"),
             func.avg(
                 case(
                     (
@@ -258,7 +259,7 @@ async def get_auto_funnel_economics(
         select(
             func.count().label("closed"),
             func.avg(DealWhopMatch.total_contract_value).label("avg_cv"),
-            func.avg(DealWhopMatch.upfront_cash).label("avg_cc"),
+            func.avg(DealWhopMatch.total_paid).label("avg_cc"),
             func.avg(
                 case(
                     (

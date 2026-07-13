@@ -114,6 +114,7 @@ class ChannelBreakdown(BaseModel):
     projected_contract_value: float
     contract_value: float = 0
     cash_collected: float = 0
+    whop_projected_total: float = 0
     qual_rate: float | None
     dq_rate: float | None
     great_count: int
@@ -280,6 +281,8 @@ class ClosedDealRow(BaseModel):
     rep: str
     close_date: str
     value: float | None
+    cash_paid: float | None = None       # total paid to date (reconciled payments)
+    whop_projected: float | None = None  # payment-verified projected full contract
 
 
 class ChannelClosesResponse(BaseModel):

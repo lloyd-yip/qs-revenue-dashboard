@@ -796,11 +796,17 @@
             <td>${escapeHtml(row.rep)}</td>
             <td>${escapeHtml(row.close_date)}</td>
             <td class="num">${row.value === null ? '–' : money(row.value)}</td>
+            <td class="num">${row.cash_paid == null ? '–' : money(row.cash_paid)}</td>
+            <td class="num">${row.whop_projected == null ? '–' : money(row.whop_projected)}</td>
           </tr>
         `).join('');
         document.getElementById('closes-body').innerHTML = `
           <table>
-            <thead><tr><th>Opportunity</th><th>Closer</th><th>Close Date</th><th class="num">Deal Value</th></tr></thead>
+            <thead><tr><th>Opportunity</th><th>Closer</th><th>Close Date</th>
+              <th class="num" title="Rep-entered GHL projected deal size">Deal Value (GHL)</th>
+              <th class="num" title="Cash collected to date — all installments (reconciled payments)">Cash Paid</th>
+              <th class="num" title="Payment-verified projected full contract (Whop plan math)">Projected Total</th>
+            </tr></thead>
             <tbody>${rows}</tbody>
           </table>
         `;

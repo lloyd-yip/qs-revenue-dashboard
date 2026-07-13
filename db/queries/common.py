@@ -12,6 +12,35 @@ from sync.ghl_client import (
     SHOWED_STAGE_IDS,
 )
 
+def whop_projected_total_expr():
+    """Payment-verified projected full contract value for one matched deal.
+
+    Splitit/ClarityPay settle 100% upfront, so total_paid IS the full contract.
+    Internal payment plans only record collected installments, so project
+    avg installment × total_installments (the membership's authoritative
+    split_pay_required_payments). Falls back to total_paid (pay-in-full, or
+    plan length unknown). Assumes roughly equal installments.
+    """
+    from db.models import DealWhopMatch
+
+    return case(
+        (
+            or_(DealWhopMatch.is_splitit.is_(True), DealWhopMatch.is_claritypay.is_(True)),
+            DealWhopMatch.total_paid,
+        ),
+        (
+            and_(
+                DealWhopMatch.total_installments.isnot(None),
+                DealWhopMatch.total_installments > 0,
+                DealWhopMatch.payment_count.isnot(None),
+                DealWhopMatch.payment_count > 0,
+            ),
+            DealWhopMatch.total_paid / DealWhopMatch.payment_count * DealWhopMatch.total_installments,
+        ),
+        else_=DealWhopMatch.total_paid,
+    )
+
+
 def prorated_expense_amount(start: date, end: date):
     """ExpenseLineItem.amount prorated by the fraction of days its period overlaps [start,end].
 

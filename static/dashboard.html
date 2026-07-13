@@ -472,7 +472,7 @@
         <div class="kpi-sub">Avg contract value per close</div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-label">Avg Cash Collected Upfront</div>
+        <div class="kpi-label">Avg Cash Collected</div>
         <div id="fe-avg-cash" class="kpi-value" style="font-size:22px; color:var(--text2);">—</div>
         <div class="kpi-sub">Cash collected upfront per close</div>
       </div>
@@ -980,8 +980,8 @@ const METRIC_TIPS = {
   'Cash RORI':              'Cash collected per $1 invested in this rep (comp + marketing allocation).\nFormula: Cash Collected ÷ (Rep Comp + Mktg Alloc)',
   // Funnel Economics — Revenue Metrics tiles
   'Avg Contract Value':          'Average contract value per closed-won deal in the period.\nFormula: Sum Contract Value ÷ Units Closed',
-  'Avg Cash Collected Upfront':  'Average upfront cash collected per closed-won deal.\nFormula: Sum Cash Collected ÷ Units Closed',
-  'Avg % Cash Upfront':          'Average % of contract value collected upfront per deal.\nFormula: Avg Cash Collected ÷ Avg Contract Value',
+  'Avg Cash Collected':          'Average cash collected TO DATE per closed-won deal — all installments, stacks as payments land (reconciled Whop/Stripe/Wise).\nFormula: AVG(total paid on matched won deals)',
+  'Avg % Cash Upfront':          'Average % of the (rep-entered) contract value collected as the FIRST payment.\nFormula: AVG(Upfront Cash ÷ Contract Value)',
   // Compliance
   'Not Logged':                  'Appointments that passed without the rep logging a result (Showed / No Show / Cancelled).\nFormula: COUNT(appointment passed AND status still Confirmed or blank)',
   'Call Outcome Not Logged':     'Calls where the rep never logged the result within 12 hours of the appointment.\nFormula: COUNT(call passed + 12h grace AND status = Confirmed or blank)',
@@ -1552,6 +1552,7 @@ function renderChannelTable(data, groupBy = 'channel') {
         <td class="num ${rateClass(showRate)}">${pct(showRate)}</td>
         <td class="num">${closesCell}</td>
         <td class="num" style="color:var(--green);">${d.contract_value ? money(d.contract_value) : '—'}</td>
+        <td class="num" style="color:var(--green);">${d.whop_projected_total ? money(d.whop_projected_total) : '—'}</td>
         <td class="num" style="color:var(--green);">${d.cash_collected ? money(d.cash_collected) : '—'}</td>
         <td class="num ${rateClass(d.qual_rate)}">${pct(d.qual_rate)}</td>
         <td class="num ${d.dq_rate !== null && d.dq_rate > 0.3 ? 'rate-bad' : ''}">${pct(d.dq_rate)}</td>
@@ -1567,8 +1568,9 @@ function renderChannelTable(data, groupBy = 'channel') {
     <table style="min-width: 1200px;">
       <thead><tr>
         <th>${colLabel}</th><th class="num">Total Opps</th><th class="num">Shows</th><th class="num">Show Rate</th><th class="num">Units Closed</th>
-        <th class="num" style="color:var(--green);" title="Coming soon">Contract Value</th>
-        <th class="num" style="color:var(--green);" title="Coming soon">Cash Collected</th>
+        <th class="num" style="color:var(--green);" title="GHL-entered deal size (monetary value) on this channel's cohort won deals. Rep-entered, not payment-verified.">Contract Value</th>
+        <th class="num" style="color:var(--green);" title="Payment-verified projected full contract, from Whop plan math: financed deals settle upfront; internal plans project avg installment × plan length.">Projected Total</th>
+        <th class="num" style="color:var(--green);" title="Cash collected to date on this channel's cohort won deals — all installments, stacks as payments land (reconciled Whop/Stripe/Wise)">Cash Collected</th>
         <th class="num">Qual Rate</th><th class="num">DQ Rate</th>
         <th class="num" style="color:var(--green);">Great</th><th class="num" style="color:#84cc16;">Ok</th><th class="num" style="color:var(--yellow);">Barely Pass.</th><th class="num" style="color:var(--red);">Bad</th><th class="num" style="color:var(--yellow);">Missing Data</th>
       </tr></thead>
@@ -1598,11 +1600,17 @@ async function showClosesModal(channel) {
         <td>${d.rep}</td>
         <td>${d.close_date}</td>
         <td class="num">${d.value !== null ? money(d.value) : '–'}</td>
+        <td class="num" style="color:var(--green);">${d.cash_paid ? money(d.cash_paid) : '–'}</td>
+        <td class="num" style="color:var(--green);">${d.whop_projected ? money(d.whop_projected) : '–'}</td>
       </tr>
     `).join('');
     body.innerHTML = `
       <table>
-        <thead><tr><th>Opportunity</th><th>Closer</th><th>Close Date</th><th class="num">Deal Value</th></tr></thead>
+        <thead><tr><th>Opportunity</th><th>Closer</th><th>Close Date</th>
+          <th class="num" title="Rep-entered GHL projected deal size">Deal Value (GHL)</th>
+          <th class="num" title="Cash collected to date — all installments (reconciled payments)">Cash Paid</th>
+          <th class="num" title="Payment-verified projected full contract (Whop plan math)">Projected Total</th>
+        </tr></thead>
         <tbody>${rows}</tbody>
       </table>
     `;
@@ -1707,11 +1715,17 @@ async function showAllClosesModal() {
         <td>${d.rep}</td>
         <td>${d.close_date}</td>
         <td class="num">${d.value !== null ? money(d.value) : '–'}</td>
+        <td class="num" style="color:var(--green);">${d.cash_paid ? money(d.cash_paid) : '–'}</td>
+        <td class="num" style="color:var(--green);">${d.whop_projected ? money(d.whop_projected) : '–'}</td>
       </tr>
     `).join('');
     body.innerHTML = `
       <table>
-        <thead><tr><th>Opportunity</th><th>Closer</th><th>Close Date</th><th class="num">Deal Value</th></tr></thead>
+        <thead><tr><th>Opportunity</th><th>Closer</th><th>Close Date</th>
+          <th class="num" title="Rep-entered GHL projected deal size">Deal Value (GHL)</th>
+          <th class="num" title="Cash collected to date — all installments (reconciled payments)">Cash Paid</th>
+          <th class="num" title="Payment-verified projected full contract (Whop plan math)">Projected Total</th>
+        </tr></thead>
         <tbody>${rows}</tbody>
       </table>
     `;

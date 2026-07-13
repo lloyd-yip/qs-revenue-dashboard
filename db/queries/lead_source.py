@@ -8,7 +8,13 @@ from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import DealWhopMatch, Opportunity
-from db.queries.common import QUALIFIED_LEAD_QUALITY, base_filter, has_1st_call, showed_1st_call_expr
+from db.queries.common import (
+    QUALIFIED_LEAD_QUALITY,
+    base_filter,
+    has_1st_call,
+    showed_1st_call_expr,
+    whop_projected_total_expr,
+)
 
 
 async def get_lead_source_breakdown(
@@ -54,8 +60,9 @@ async def get_lead_source_breakdown(
                 ),
                 0,
             ).label("projected_contract_value"),
-            # Contract value + cash from the reconciled Whop source (DealWhopMatch), matching
-            # the Rep table — not the unreliable GHL monetary_value/cash_collected.
+            # Payment data from DealWhopMatch, matching the Rep table.
+            # NOTE: total_contract_value is a passthrough of the rep-entered GHL
+            # monetary_value; whop_projected_total is the payment-verified figure.
             func.coalesce(
                 func.sum(
                     case((and_(is_1st, Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID),
@@ -63,13 +70,21 @@ async def get_lead_source_breakdown(
                 ),
                 0,
             ).label("contract_value"),
+            # Cash collected = total paid to date (all installments, stacks as they land)
             func.coalesce(
                 func.sum(
                     case((and_(is_1st, Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID),
-                          DealWhopMatch.upfront_cash))
+                          DealWhopMatch.total_paid))
                 ),
                 0,
             ).label("cash_collected_sum"),
+            func.coalesce(
+                func.sum(
+                    case((and_(is_1st, Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID),
+                          whop_projected_total_expr()))
+                ),
+                0,
+            ).label("whop_projected_total"),
             # Qual/DQ per channel (1st call shows only)
             func.count(
                 case((and_(is_1st, showed_1st), 1))
@@ -126,6 +141,7 @@ async def get_lead_source_breakdown(
             "projected_contract_value": float(row.projected_contract_value),
             "contract_value": float(row.contract_value),
             "cash_collected": float(row.cash_collected_sum),
+            "whop_projected_total": round(float(row.whop_projected_total), 2),
             "qual_rate": safe_rate(row.qualified_shows, row.shows_1st),
             "dq_rate": safe_rate(row.dq_count, row.shows_1st),
             "great_count": row.great_count,
@@ -247,6 +263,12 @@ async def get_channel_closes(
             Opportunity.opportunity_owner_name,
             Opportunity.updated_at_ghl,
             Opportunity.projected_deal_size,
+            DealWhopMatch.total_paid,
+            whop_projected_total_expr().label("whop_projected"),
+        )
+        .outerjoin(
+            DealWhopMatch,
+            Opportunity.ghl_opportunity_id == DealWhopMatch.ghl_opportunity_id,
         )
         .where(
             and_(
@@ -264,6 +286,8 @@ async def get_channel_closes(
             "rep": row.opportunity_owner_name or "Unassigned",
             "close_date": row.updated_at_ghl.strftime("%b %d, %Y") if row.updated_at_ghl else "—",
             "value": float(row.projected_deal_size) if row.projected_deal_size else None,
+            "cash_paid": float(row.total_paid) if row.total_paid is not None else None,
+            "whop_projected": round(float(row.whop_projected), 2) if row.whop_projected is not None else None,
         }
         for row in result.all()
     ]

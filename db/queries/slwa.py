@@ -6,8 +6,13 @@ from sqlalchemy import Date, and_, case, cast, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.models import Opportunity, SLWAWeeklyInput
-from db.queries.common import ALL_TEAM_SENTINEL, QUALIFIED_LEAD_QUALITY, sales_rep_filter
+from db.models import DealWhopMatch, Opportunity, SLWAWeeklyInput
+from db.queries.common import (
+    ALL_TEAM_SENTINEL,
+    QUALIFIED_LEAD_QUALITY,
+    sales_rep_filter,
+    whop_projected_total_expr,
+)
 from sync.ghl_client import DEAL_WON_STAGE_ID, DISQUALIFIED_STAGE_ID
 
 SLWA_SCOPE_LABELS = {
@@ -536,6 +541,12 @@ async def get_slwa_closes(
             Opportunity.opportunity_owner_name,
             Opportunity.close_date,
             Opportunity.projected_deal_size,
+            DealWhopMatch.total_paid,
+            whop_projected_total_expr().label("whop_projected"),
+        )
+        .outerjoin(
+            DealWhopMatch,
+            Opportunity.ghl_opportunity_id == DealWhopMatch.ghl_opportunity_id,
         )
         .where(row_filter)
         .order_by(Opportunity.close_date.desc().nulls_last(), Opportunity.updated_at_ghl.desc())
@@ -547,6 +558,8 @@ async def get_slwa_closes(
             "rep": row.opportunity_owner_name or "Unassigned",
             "close_date": row.close_date.strftime("%b %d, %Y") if row.close_date else "—",
             "value": float(row.projected_deal_size) if row.projected_deal_size is not None else None,
+            "cash_paid": float(row.total_paid) if row.total_paid is not None else None,
+            "whop_projected": round(float(row.whop_projected), 2) if row.whop_projected is not None else None,
         }
         for row in result.all()
     ]

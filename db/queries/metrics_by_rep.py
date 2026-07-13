@@ -24,6 +24,7 @@ from db.queries.common import (
     sales_rep_filter,
     showed_1st_call_expr,
     showed_2nd_call_expr,
+    whop_projected_total_expr,
 )
 from sync.ghl_client import DEAL_WON_STAGE_ID, DISQUALIFIED_STAGE_ID
 
@@ -61,6 +62,12 @@ async def get_rep_closes(
             Opportunity.opportunity_owner_name,
             Opportunity.close_date,
             Opportunity.projected_deal_size,
+            DealWhopMatch.total_paid,
+            whop_projected_total_expr().label("whop_projected"),
+        )
+        .outerjoin(
+            DealWhopMatch,
+            Opportunity.ghl_opportunity_id == DealWhopMatch.ghl_opportunity_id,
         )
         .where(and_(*conditions))
         .order_by(Opportunity.close_date.desc())
@@ -72,6 +79,8 @@ async def get_rep_closes(
             "rep": row.opportunity_owner_name or "Unassigned",
             "close_date": row.close_date.strftime("%b %d, %Y") if row.close_date else "—",
             "value": float(row.projected_deal_size) if row.projected_deal_size else None,
+            "cash_paid": float(row.total_paid) if row.total_paid is not None else None,
+            "whop_projected": round(float(row.whop_projected), 2) if row.whop_projected is not None else None,
         }
         for row in result.all()
     ]
@@ -126,33 +135,6 @@ async def get_rep_opps(
         }
         for row in result.all()
     ]
-
-
-def _whop_projected_expr():
-    """Payment-verified projected full contract value for one matched deal.
-
-    Splitit/ClarityPay settle 100% upfront, so total_paid IS the full contract.
-    Internal payment plans only record collected installments, so project
-    avg installment × total_installments (the membership's authoritative
-    split_pay_required_payments). Falls back to total_paid (pay-in-full, or
-    plan length unknown). Assumes roughly equal installments.
-    """
-    return case(
-        (
-            or_(DealWhopMatch.is_splitit.is_(True), DealWhopMatch.is_claritypay.is_(True)),
-            DealWhopMatch.total_paid,
-        ),
-        (
-            and_(
-                DealWhopMatch.total_installments.isnot(None),
-                DealWhopMatch.total_installments > 0,
-                DealWhopMatch.payment_count.isnot(None),
-                DealWhopMatch.payment_count > 0,
-            ),
-            DealWhopMatch.total_paid / DealWhopMatch.payment_count * DealWhopMatch.total_installments,
-        ),
-        else_=DealWhopMatch.total_paid,
-    )
 
 
 async def get_by_rep(
@@ -290,7 +272,7 @@ async def get_by_rep(
             # settles 100% upfront so total_paid IS the contract; internal plans
             # project avg installment × plan length (split_pay_required_payments).
             func.coalesce(
-                func.sum(case((and_(is_1st, is_won), _whop_projected_expr()))),
+                func.sum(case((and_(is_1st, is_won), whop_projected_total_expr()))),
                 0,
             ).label("whop_projected_total"),
         )
