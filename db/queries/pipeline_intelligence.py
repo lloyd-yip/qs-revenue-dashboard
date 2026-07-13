@@ -24,6 +24,7 @@ from db.queries.common import (
     sales_cycle_days_expr,
     showed_1st_call_expr,
     showed_2nd_call_expr,
+    whop_projected_total_expr,
 )
 from sync.ghl_client import DEAL_WON_STAGE_ID
 
@@ -98,15 +99,22 @@ async def get_pipeline_intelligence(
             ).label("total_shows"),
             # COHORT: won deals whose 1st call is in the window (subset of shows_1st → close_rate <=100%)
             func.count(case((and_(is_1st, is_won), 1))).label("units_closed"),
-            # Contract value and cash collected — cohort won deals only
+            # Contract value and cash collected — cohort won deals only.
+            # Same basis as the rep/channel tables: contract = GHL-entered value
+            # via the match table; cash = reconciled total paid to date (stacks);
+            # projected = payment-verified full contract (Whop plan math).
             func.coalesce(
-                func.sum(case((and_(is_1st, is_won), Opportunity.monetary_value))),
+                func.sum(case((and_(is_1st, is_won), DealWhopMatch.total_contract_value))),
                 0,
             ).label("contract_value"),
             func.coalesce(
-                func.sum(case((and_(is_1st, is_won), Opportunity.cash_collected))),
+                func.sum(case((and_(is_1st, is_won), DealWhopMatch.total_paid))),
                 0,
             ).label("cash_collected_sum"),
+            func.coalesce(
+                func.sum(case((and_(is_1st, is_won), whop_projected_total_expr()))),
+                0,
+            ).label("whop_projected_total"),
             # Avg deal cycle: first SHOWED call → first payment, cohort won deals only.
             func.avg(
                 case((
@@ -148,6 +156,7 @@ async def get_pipeline_intelligence(
             "close_rate_qual": safe_rate(row.units_closed, row.qualified_shows),
             "avg_cycle_days": round(float(row.avg_cycle_days), 1) if row.avg_cycle_days is not None else None,
             "contract_value": float(row.contract_value),
+            "whop_projected_total": round(float(row.whop_projected_total), 2),
             "cash_collected": float(row.cash_collected_sum),
         })
 

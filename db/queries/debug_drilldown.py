@@ -9,7 +9,7 @@ where the data is inconsistent (stage/status mismatches, missing fields, etc.).
 
 from datetime import date
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Appointment, DealWhopMatch, Opportunity
@@ -210,6 +210,31 @@ def _build_metric_filter(metric: str, start: date, end: date, date_by: str):
                 and_(is_2nd, showed_2nd),
             )
 
+        # ── Channel-table metrics (Lead Quality by Channel) ──────────────
+        # These mirror lead_source.py exactly. Note channel_shows deliberately
+        # has NO outcome_unfilled filter (unlike shows_1st) — the channel table
+        # counts stage-based shows regardless of outcome logging.
+        case "channel_total_opps":
+            return true()  # base_filter (+ channel clause) already scopes the set
+
+        case "channel_shows":
+            return and_(is_1st, showed_1st)
+
+        case "lq_great":
+            return and_(is_1st, showed_1st, Opportunity.lead_quality == "Great")
+
+        case "lq_ok":
+            return and_(is_1st, showed_1st, Opportunity.lead_quality == "Ok")
+
+        case "lq_barely":
+            return and_(is_1st, showed_1st, Opportunity.lead_quality == "Barely Passable")
+
+        case "lq_bad":
+            return and_(is_1st, showed_1st, Opportunity.lead_quality == "Bad")
+
+        case "lq_missing":
+            return and_(is_1st, showed_1st, Opportunity.lead_quality.is_(None))
+
         case "data_quality":
             # Return all opps with a 1st call — anomaly detection happens in Python
             return is_1st
@@ -393,13 +418,26 @@ async def get_drilldown_opps(
     end: date,
     date_by: str,
     rep_id: str | None = None,
+    channel: str | None = None,
 ) -> list[dict]:
     """Return the individual opportunity rows behind a dashboard KPI.
 
     Most metrics use appointment-date base_filter to match the main query.
     units_closed / close_rate use close-date filtering to match the CLOSED
     column in the rep table (which counts by close_date, not appointment date).
+
+    channel: restrict to one canonical_channel — drives the Lead Quality by
+    Channel table drill-downs. 'Unknown' matches NULL/Unknown, same as the
+    channel closes modal.
     """
+    if channel:
+        channel_clause = (
+            or_(Opportunity.canonical_channel.is_(None), Opportunity.canonical_channel == "Unknown")
+            if channel == "Unknown"
+            else Opportunity.canonical_channel == channel
+        )
+    else:
+        channel_clause = true()
     # units_closed and close_rate are counted by close_date in get_by_rep —
     # use the same filter here so the drilldown row count matches the column.
     # Rescheduled — opps in the BOOKED cohort (base_filter + has_Nth) with >1 appointment
@@ -411,6 +449,7 @@ async def get_drilldown_opps(
             base_filter(start, end, date_by, rep_id),
             has_1st_call(start, end, date_by) if call_type == "call_1"
             else has_2nd_call(start, end, date_by),
+            channel_clause,
         )
         per_opp = (
             select(
@@ -446,7 +485,7 @@ async def get_drilldown_opps(
         )
         .select_from(Opportunity)
         .outerjoin(DealWhopMatch, Opportunity.ghl_opportunity_id == DealWhopMatch.ghl_opportunity_id)
-        .where(and_(bf, metric_filter))
+        .where(and_(bf, metric_filter, channel_clause))
         .order_by(Opportunity.call1_appointment_date.desc().nulls_last())
     )
 

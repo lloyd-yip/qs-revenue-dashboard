@@ -383,7 +383,7 @@
       </select>
     </div>
     <div style="font-size:12px; color:var(--text2); padding:7px 12px; background:rgba(99,102,241,0.08); border:1px solid rgba(99,102,241,0.2); border-radius:6px;">
-      Uses the date range and rep filter above &nbsp;·&nbsp; Contract Value &amp; Cash Collected columns unlock once financial data is provided
+      Uses the date range and rep filter above &nbsp;·&nbsp; Contract Value is rep-entered (GHL); Projected Total &amp; Cash Collected come from reconciled payments
     </div>
   </div>
   <div class="data-table-wrap">
@@ -855,6 +855,12 @@ function setRepView(mode) {
 // ─── API helpers ──────────────────────────────────────────────────────────────
 function qs() {
   return `start=${AppState.dateStart}&end=${AppState.dateEnd}&date_by=${AppState.dateBy}`;
+}
+
+function channelDebugUrl(metric, channel) {
+  let url = `/debug?metric=${metric}&channel=${encodeURIComponent(channel)}&start=${AppState.dateStart}&end=${AppState.dateEnd}&date_by=${AppState.dateBy}`;
+  if (AppState.repId) url += `&rep_id=${encodeURIComponent(AppState.repId)}`;
+  return url;
 }
 
 function debugUrl(metric, repId) {
@@ -1540,27 +1546,34 @@ function renderChannelTable(data, groupBy = 'channel') {
     const channelCell = isSlwa
       ? `<a class="closes-link" href="${channelDetailUrl('overall')}" title="Open Slack / WhatsApp / SMS detail">${label} ↗</a>`
       : label;
-    // Closes drill-down keys off canonical_channel; only wire it in channel mode.
+    // Drill-downs key off canonical_channel; only wire them in channel mode.
+    // Count cells → debug page (opportunity list); money cells → closes modal.
+    const dbg = (metric, val) => (!isFunnel && val > 0)
+      ? `<a class="closes-link" href="${channelDebugUrl(metric, d.channel)}" target="_blank">↗ ${num(val)}</a>`
+      : num(val);
     const closesCell = (!isFunnel && d.units_closed > 0)
       ? `<span class="closes-link" onclick="showClosesModal('${d.channel.replace(/'/g, "\\'")}'); event.stopPropagation();">↗ ${num(d.units_closed)}</span>`
       : num(d.units_closed);
+    const moneyCell = (val) => (!isFunnel && d.units_closed > 0 && val)
+      ? `<span class="closes-link" onclick="showClosesModal('${d.channel.replace(/'/g, "\\'")}'); event.stopPropagation();">${money(val)}</span>`
+      : (val ? money(val) : '—');
     return `
       <tr>
         <td>${channelCell}</td>
-        <td class="num">${num(d.total_ops)}</td>
-        <td class="num">${num(d.shows)}</td>
+        <td class="num">${dbg('channel_total_opps', d.total_ops)}</td>
+        <td class="num">${dbg('channel_shows', d.shows)}</td>
         <td class="num ${rateClass(showRate)}">${pct(showRate)}</td>
         <td class="num">${closesCell}</td>
-        <td class="num" style="color:var(--green);">${d.contract_value ? money(d.contract_value) : '—'}</td>
-        <td class="num" style="color:var(--green);">${d.whop_projected_total ? money(d.whop_projected_total) : '—'}</td>
-        <td class="num" style="color:var(--green);">${d.cash_collected ? money(d.cash_collected) : '—'}</td>
+        <td class="num" style="color:var(--green);">${moneyCell(d.contract_value)}</td>
+        <td class="num" style="color:var(--green);">${moneyCell(d.whop_projected_total)}</td>
+        <td class="num" style="color:var(--green);">${moneyCell(d.cash_collected)}</td>
         <td class="num ${rateClass(d.qual_rate)}">${pct(d.qual_rate)}</td>
         <td class="num ${d.dq_rate !== null && d.dq_rate > 0.3 ? 'rate-bad' : ''}">${pct(d.dq_rate)}</td>
-        <td class="num" style="color:var(--green);">${num(d.great_count)}</td>
-        <td class="num" style="color:#84cc16;">${num(d.ok_count)}</td>
-        <td class="num" style="color:var(--yellow);">${num(d.barely_passable_count)}</td>
-        <td class="num" style="color:var(--red);">${num(d.bad_count)}</td>
-        <td class="num ${d.missing_data_count > 0 ? 'rate-warn' : ''}">${num(d.missing_data_count)}</td>
+        <td class="num" style="color:var(--green);">${dbg('lq_great', d.great_count)}</td>
+        <td class="num" style="color:#84cc16;">${dbg('lq_ok', d.ok_count)}</td>
+        <td class="num" style="color:var(--yellow);">${dbg('lq_barely', d.barely_passable_count)}</td>
+        <td class="num" style="color:var(--red);">${dbg('lq_bad', d.bad_count)}</td>
+        <td class="num ${d.missing_data_count > 0 ? 'rate-warn' : ''}">${dbg('lq_missing', d.missing_data_count)}</td>
       </tr>
     `;
   }).join('');
@@ -1777,6 +1790,7 @@ async function renderPipelineIntelligence() {
         ${closedCell}
         <td class="num" style="color:var(--text2);">${cycleTxt}</td>
         <td class="num" style="color:var(--green);">${r.contract_value ? money(r.contract_value) : '—'}</td>
+        <td class="num" style="color:var(--green);">${r.whop_projected_total ? money(r.whop_projected_total) : '—'}</td>
         <td class="num" style="color:var(--green);">${r.cash_collected ? money(r.cash_collected) : '—'}</td>
       </tr>`;
     }).join('');
@@ -1798,8 +1812,9 @@ async function renderPipelineIntelligence() {
               <th class="num" title="Units Closed ÷ Qualified 1st Call Shows">Qual Close%</th>
               <th class="num">Closed</th>
               <th class="num" title="Avg days from the first showed call to the first payment (won deals)">Avg Cycle</th>
-              <th class="num" style="color:var(--green);" title="Coming soon — awaiting financial data">Contract Value</th>
-              <th class="num" style="color:var(--green);" title="Coming soon — awaiting financial data">Cash Collected</th>
+              <th class="num" style="color:var(--green);" title="GHL-entered deal size (monetary value) on this segment's cohort won deals. Rep-entered, not payment-verified.">Contract Value</th>
+              <th class="num" style="color:var(--green);" title="Payment-verified projected full contract, from Whop plan math: financed deals settle upfront; internal plans project avg installment × plan length.">Projected Total</th>
+              <th class="num" style="color:var(--green);" title="Cash collected to date on this segment's cohort won deals — all installments, stacks as payments land (reconciled Whop/Stripe/Wise)">Cash Collected</th>
             </tr>
           </thead>
           <tbody>${tableRows}</tbody>

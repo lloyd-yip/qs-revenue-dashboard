@@ -463,12 +463,13 @@ async def followup_by_quality(
 async def debug_drilldown(
     metric: str = Query(..., description="Metric key, e.g. 'calls_booked_1st', 'shows_1st', 'units_closed'"),
     rep_id: str | None = Query(None),
+    channel: str | None = Query(None, description="Restrict to one canonical channel (Lead Quality by Channel drill-downs)"),
     params: tuple = Depends(_date_params),
     db: AsyncSession = Depends(get_db),
 ):
     """Debug drill-down — returns every opportunity behind a dashboard KPI number."""
     start, end, date_by = params
-    data = await get_drilldown_opps(db, metric, start, end, date_by, rep_id)
+    data = await get_drilldown_opps(db, metric, start, end, date_by, rep_id, channel)
     return {"metric": metric, "count": len(data), "data": data, "meta": _meta(start, end, date_by).__dict__}
 
 

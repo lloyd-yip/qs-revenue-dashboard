@@ -641,6 +641,14 @@
       outcome_unfilled: 'Call Outcome Not Logged',
       total_shows: 'Total Shows (1st + 2nd)',
       data_quality: '🔍 Data Quality Audit',
+      // Lead Quality by Channel table drill-downs
+      channel_total_opps: 'Total Opps',
+      channel_shows: 'Shows',
+      lq_great: 'Lead Quality: Great',
+      lq_ok: 'Lead Quality: Ok',
+      lq_barely: 'Lead Quality: Barely Passable',
+      lq_bad: 'Lead Quality: Bad',
+      lq_missing: 'Lead Quality: Missing / Not Graded',
     };
 
     const ANOMALY_LABELS = {
@@ -671,6 +679,7 @@
     const end = params.get('end') || '';
     const dateBy = params.get('date_by') || 'appointment';
     const repId = params.get('rep_id') || '';
+    const channel = params.get('channel') || '';
     const isDataQuality = metric === 'data_quality';
 
     // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -779,12 +788,13 @@
     // ─── Render ──────────────────────────────────────────────────────────────────
     function renderHeader() {
       const title = METRIC_LABELS[metric] || metric;
-      document.getElementById('page-title').textContent = title;
+      document.getElementById('page-title').textContent = channel ? `${title} — ${channel}` : title;
 
       const parts = [];
       if (start && end) parts.push(`<span>📅 ${start} → ${end}</span>`);
       parts.push(`<span>📊 Date by: ${dateBy}</span>`);
       if (repId) parts.push(`<span>👤 Rep filtered</span>`);
+      if (channel) parts.push(`<span>📣 Channel: ${channel}</span>`);
       document.getElementById('page-subtitle').innerHTML = parts.join('');
     }
 
@@ -1105,6 +1115,7 @@
 
       const apiParams = new URLSearchParams({ metric, start, end, date_by: dateBy });
       if (repId) apiParams.set('rep_id', repId);
+      if (channel) apiParams.set('channel', channel);
 
       try {
         const res = await fetch(`/api/dashboard/debug?${apiParams}`);
