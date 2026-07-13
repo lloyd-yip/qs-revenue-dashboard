@@ -6,6 +6,11 @@ from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Appointment, DealWhopMatch, ExpenseLineItem, Opportunity
+from db.queries.rep_comp import (
+    DEFAULT_BASE_SALARY_MONTHLY,
+    DEFAULT_COMMISSION_PCT,
+    get_rep_comp_settings_map,
+)
 from db.queries.common import (
     ALL_TEAM_SENTINEL,
     QUALIFIED_LEAD_QUALITY,
@@ -133,8 +138,13 @@ async def get_by_rep(
 
     Payment data (contract_value, cash_collected) comes from deal_whop_matches
     (Whop/Stripe/Wise reconciled) rather than GHL's monetary_value/cash_collected.
-    Cost metrics (rep_comp, lead_cost, total_invested, RORI) pulled from
-    expense_line_items and allocated proportionally by calls booked.
+
+    Cost metrics are cohort-aligned to match the revenue side:
+    - Lead cost: expense_line_items marketing spend in the window, allocated
+      proportionally by calls booked.
+    - Rep comp: DERIVED from rep_comp_settings (prorated base salary +
+      commission % × cohort cash collected) — NOT read from Xero payouts,
+      which are cash-basis and lag split-payment deals by months.
     """
 
     bf = base_filter(start, end, date_by)
@@ -279,26 +289,18 @@ async def get_by_rep(
     reschedule_by_rep: dict[str, int] = {r.owner: r.rescheduled for r in _resched_rows.all()}
 
     # ── Expense-based cost data ───────────────────────────────────────────
-    # Pull per-rep sales comp and total lead gen spend for the same period.
-    # Lead cost is allocated proportionally by calls booked per rep.
+    # Total lead gen spend for the period, allocated proportionally by calls
+    # booked per rep. Rep comp is derived from rep_comp_settings below.
     expense_overlap = and_(
         ExpenseLineItem.period_start <= end,
         ExpenseLineItem.period_end >= start,
     )
     _prorated = prorated_expense_amount(start, end)  # prorate partial-overlap periods by days
 
-    # Per-rep sales compensation (bucket='sales', vendor = rep name)
-    comp_result = await session.execute(
-        select(
-            ExpenseLineItem.vendor.label("rep_name"),
-            func.sum(_prorated).label("comp"),
-        )
-        .where(expense_overlap, ExpenseLineItem.bucket == "sales")
-        .group_by(ExpenseLineItem.vendor)
-    )
-    comp_by_name: dict[str, float] = {
-        " ".join(r.rep_name.split()): float(r.comp) for r in comp_result.all()
-    }
+    # Per-rep comp model (base salary + commission %). Missing reps fall back
+    # to base $0 / commission 10%.
+    comp_settings = await get_rep_comp_settings_map(session)
+    window_months = ((end - start).days + 1) / 30.4375  # avg days per month
 
     # Total lead gen spend (marketing_salaries + tech_tools + paid_ads)
     lead_spend_result = await session.execute(
@@ -332,19 +334,26 @@ async def get_by_rep(
         cash_val = float(row.cash_collected_sum)
         avg_cycle = round(float(row.avg_cycle_days), 1) if row.avg_cycle_days is not None else None
 
-        # Cost allocation
-        rep_name_norm = " ".join((row.rep_name or "").split())
-        rep_comp = comp_by_name.get(rep_name_norm)
         # Allocate lead spend proportional to calls booked
         if total_lead_spend is not None and total_calls_all_reps > 0 and row.calls_booked_1st > 0:
             lead_cost_alloc = round(total_lead_spend * row.calls_booked_1st / total_calls_all_reps, 2)
         else:
             lead_cost_alloc = None
 
-        # Total invested = rep comp + allocated lead cost
-        if rep_comp is not None and lead_cost_alloc is not None:
+        # Rep comp = prorated base salary + commission on cohort cash collected.
+        # Commission accrues only when deals close and cash lands, so it stays
+        # in the same cohort window as the revenue it produced.
+        setting = comp_settings.get(row.rep_id) if row.rep_id else None
+        base_salary_monthly = setting["base_salary_monthly"] if setting else DEFAULT_BASE_SALARY_MONTHLY
+        commission_pct = setting["commission_pct"] if setting else DEFAULT_COMMISSION_PCT
+        base_salary_alloc = round(base_salary_monthly * window_months, 2)
+        commission_amount = round(cash_val * commission_pct / 100.0, 2) if cash_val > 0 else 0.0
+        rep_comp = round(base_salary_alloc + commission_amount, 2)
+
+        # Total invested = derived rep comp + allocated lead cost
+        if rep_comp > 0 and lead_cost_alloc is not None:
             total_invested = round(rep_comp + lead_cost_alloc, 2)
-        elif rep_comp is not None:
+        elif rep_comp > 0:
             total_invested = rep_comp
         elif lead_cost_alloc is not None:
             total_invested = lead_cost_alloc
@@ -386,8 +395,12 @@ async def get_by_rep(
             "avg_contract_value": safe_div(contract_val, units) if contract_val > 0 else None,
             "avg_cash_collected": safe_div(cash_val, units) if cash_val > 0 else None,
             "avg_cash_pct_upfront": round(cash_val / contract_val * 100, 1) if contract_val > 0 and cash_val > 0 else None,
-            # New: cost & RORI
+            # New: cost & RORI (rep comp derived from rep_comp_settings)
             "rep_comp": rep_comp,
+            "base_salary_monthly": base_salary_monthly,
+            "base_salary_alloc": base_salary_alloc,
+            "commission_pct": commission_pct,
+            "commission_amount": commission_amount,
             "lead_cost_alloc": lead_cost_alloc,
             "total_invested": total_invested,
             "cost_per_close": safe_div(total_invested, units),

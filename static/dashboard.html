@@ -260,6 +260,7 @@
   <button class="stab" onclick="setTab('compliance')">Compliance</button>
   <button class="stab" onclick="setTab('dead')">Dead Deals</button>
   <button class="stab" onclick="setTab('upsells')">Upsells</button>
+  <button class="stab" onclick="setTab('reps')">Sales Reps</button>
 </nav>
 
 <!-- TAB: Sales Performance -->
@@ -617,6 +618,71 @@
   </div>
 </div>
 
+<!-- Sales Reps Tab — comp model settings + per-rep economics for manager decisions -->
+<div id="tab-reps" class="tab-content">
+  <div class="kpi-row" id="reps-kpis" style="margin-bottom:20px;"></div>
+  <div class="chart-box">
+    <div style="display:flex; align-items:baseline; justify-content:space-between; gap:16px; margin-bottom:12px; flex-wrap:wrap;">
+      <h3>Rep Economics <span style="font-weight:400; color:var(--text2); font-size:12px;">(uses date filter)</span></h3>
+      <span style="font-size:11px; color:var(--text2);">Rep cost = base salary (prorated over the window) + commission % × cash collected + marketing allocation · click ✎ to edit a rep's comp model</span>
+    </div>
+    <div style="overflow-x:auto;">
+      <table id="reps-table" style="min-width:1560px;">
+        <thead><tr>
+          <th>Rep</th>
+          <th title="Monthly base salary + commission % of cash collected. Click ✎ to edit. 'default' = not reviewed yet (base $0 + 10%).">Comp Model</th>
+          <th class="num">Booked</th>
+          <th class="num">Showed</th>
+          <th class="num">Show Rate</th>
+          <th class="num">Qual Rate</th>
+          <th class="num">Closed</th>
+          <th class="num">Close Rate</th>
+          <th class="num" title="Average sales cycle: first showed call → first payment">Avg Cycle</th>
+          <th class="num" style="color:var(--green);">Cash Collected</th>
+          <th class="num" title="Cash Collected ÷ Units Closed">Avg Cash</th>
+          <th class="num" title="Cash collected ÷ 1st-call shows — revenue produced per held call">Cash / Show</th>
+          <th class="num" title="Monthly base salary prorated over the selected window">Base (window)</th>
+          <th class="num" title="Commission % × cash collected on this cohort's deals — accrues only when deals close and cash lands">Commission</th>
+          <th class="num" title="Marketing spend allocated by this rep's share of calls booked">Mktg Alloc</th>
+          <th class="num" style="color:var(--accent2);">Total Invested</th>
+          <th class="num" title="Total Invested ÷ Units Closed">Cost/Close</th>
+          <th class="num" style="color:var(--green);" title="Cash Collected ÷ Total Invested">Cash RORI</th>
+          <th></th>
+        </tr></thead>
+        <tbody id="reps-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Rep comp model edit modal -->
+<div id="rep-comp-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:1000; align-items:center; justify-content:center;" onclick="if(event.target===this)closeRepCompModal()">
+  <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); width:420px; max-width:92vw;">
+    <div style="display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid var(--border);">
+      <h3 id="rep-comp-modal-title" style="font-size:14px; font-weight:600;">Edit Comp Model</h3>
+      <button onclick="closeRepCompModal()" style="background:none; border:none; color:var(--text2); font-size:20px; cursor:pointer; line-height:1;">×</button>
+    </div>
+    <div style="padding:20px; display:flex; flex-direction:column; gap:14px;">
+      <label style="display:flex; flex-direction:column; gap:6px; font-size:12px; color:var(--text2);">
+        Base salary per month (USD)
+        <input id="rep-comp-base" type="number" min="0" step="100" placeholder="0"
+          style="background:var(--bg); border:1px solid var(--border); color:var(--text); padding:8px 10px; border-radius:6px; font-size:13px;" />
+      </label>
+      <label style="display:flex; flex-direction:column; gap:6px; font-size:12px; color:var(--text2);">
+        Commission (% of cash collected)
+        <input id="rep-comp-pct" type="number" min="0" max="100" step="0.5" placeholder="10"
+          style="background:var(--bg); border:1px solid var(--border); color:var(--text); padding:8px 10px; border-radius:6px; font-size:13px;" />
+      </label>
+      <div style="font-size:11px; color:var(--text2); line-height:1.5;">Commission accrues on cash collected from the rep's closed deals — it lands in the same period as the revenue, even for split payments. Base is prorated over the selected date window.</div>
+      <div id="rep-comp-modal-err" style="display:none; color:var(--red); font-size:12px;"></div>
+      <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:4px;">
+        <button onclick="closeRepCompModal()" style="background:none; border:1px solid var(--border); color:var(--text2); padding:7px 16px; border-radius:6px; font-size:12px; cursor:pointer;">Cancel</button>
+        <button id="rep-comp-save-btn" onclick="saveRepCompModal()" style="background:var(--accent); border:none; color:#fff; padding:7px 16px; border-radius:6px; font-size:12px; cursor:pointer; font-weight:600;">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- PI closed deals drill-down modal (wider — shows full opp details) -->
 <div id="pi-closes-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:1000; align-items:center; justify-content:center;" onclick="if(event.target===this)closePiClosesModal()">
   <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); width:1000px; max-width:96vw; max-height:88vh; display:flex; flex-direction:column;">
@@ -847,6 +913,7 @@ async function renderTab(tab) {
   else if (tab === 'compliance') await renderCompliance();
   else if (tab === 'dead') await renderDeadDeals();
   else if (tab === 'upsells') await renderUpsells();
+  else if (tab === 'reps') await renderSalesReps();
   injectTooltips();
 }
 
@@ -905,7 +972,7 @@ const METRIC_TIPS = {
   'Channel Spend':          'Manually entered marketing spend for this channel in the period.\nSource: Period Financial Inputs panel on Funnel Economics tab',
   'Rep Comp':               'Manually entered total compensation (base + bonus) for this rep in the period.\nSource: Period Financial Inputs panel on Funnel Economics tab',
   'Mktg Alloc':             "This rep's share of total marketing spend, proportional to their share of team shows.\nFormula: (Total Mktg Spend ÷ Team Total Shows) × Rep's Shows",
-  'Total Invested':         "All-in cost attributed to this rep: comp plus their allocated share of marketing spend.\nFormula: Rep Comp + Mktg Alloc",
+  'Total Invested':         "All-in cost attributed to this rep for this cohort: prorated base salary + commission on cash collected + allocated share of marketing spend.\nFormula: Base (window) + Commission% × Cash Collected + Mktg Alloc — comp model set in the Sales Reps tab",
   'Contract RORI':          'Contract value returned per $1 invested in this rep (comp + marketing allocation).\nFormula: Contract Value ÷ (Rep Comp + Mktg Alloc)',
   'Cash RORI':              'Cash collected per $1 invested in this rep (comp + marketing allocation).\nFormula: Cash Collected ÷ (Rep Comp + Mktg Alloc)',
   // Funnel Economics — Revenue Metrics tiles
@@ -1381,7 +1448,7 @@ function renderRepBreakdown(reps) {
         <th class="num" style="color:var(--green);" title="Contract Value ÷ Units Closed">Avg Contract</th>
         <th class="num" style="color:var(--green);" title="Cash Collected ÷ Units Closed">Avg Cash</th>
         <th class="num" style="color:var(--green);" title="Cash Collected ÷ Contract Value">% Upfront</th>
-        <th class="num" title="Rep compensation + allocated lead cost (marketing spend proportional to calls booked)">Total Invested</th>
+        <th class="num" title="Prorated base salary + commission on cash collected + allocated lead cost (marketing spend proportional to calls booked). Comp model set in the Sales Reps tab.">Total Invested</th>
         <th class="num" title="Total Invested ÷ Units Closed">Cost/Close</th>
         <th class="num" style="color:var(--green);" title="Cash Collected ÷ Total Invested">Cash RORI</th>
         <th class="num" style="color:var(--green);" title="Contract Value ÷ Total Invested">Contract RORI</th>
@@ -2520,6 +2587,173 @@ function renderUpsellRepTable(rows) {
       <td class="num">${r.avg_deal_value ? money(r.avg_deal_value) : '—'}</td>
       <td class="num" style="color:var(--green);">${r.total_revenue ? money(r.total_revenue) : '—'}</td>
     </tr>`).join('');
+}
+
+// ─── Sales Reps Tab ───────────────────────────────────────────────────────────
+// Comp model settings (base + commission %) + per-rep economics for manager decisions.
+let RepSettingsCache = [];   // /rep-settings — all reps with stored/default comp model
+let RepMetricsCache = [];    // /by-rep — window-scoped metrics incl. derived cost fields
+
+async function renderSalesReps() {
+  document.getElementById('reps-kpis').innerHTML = '<div class="loading">Loading...</div>';
+  document.getElementById('reps-tbody').innerHTML = '';
+  try {
+    const [byRep, settings] = await Promise.all([
+      apiFetch(`/api/dashboard/by-rep?${qs()}`),
+      apiFetch('/api/dashboard/rep-settings'),
+    ]);
+    RepMetricsCache = byRep.data;
+    RepSettingsCache = settings.data;
+    renderRepsKPIs(byRep.data);
+    renderRepsTable();
+  } catch (e) {
+    document.getElementById('reps-kpis').innerHTML =
+      `<div class="empty">Failed to load rep data. ${e.message}</div>`;
+  }
+}
+
+function renderRepsKPIs(rows) {
+  const cash     = rows.reduce((s, r) => s + (r.cash_collected || 0), 0);
+  const invested = rows.reduce((s, r) => s + (r.total_invested || 0), 0);
+  const closes   = rows.reduce((s, r) => s + (r.units_closed || 0), 0);
+  const comms    = rows.reduce((s, r) => s + (r.commission_amount || 0), 0);
+  const kpis = [
+    { label: 'Team Cash Collected', value: cash ? money(cash) : '—', color: 'var(--green)',
+      tip: 'Reconciled cash collected across all reps for this cohort.' },
+    { label: 'Team Total Invested', value: invested ? money(invested) : '—', color: 'var(--accent2)',
+      tip: 'Sum of every rep\'s Total Invested: prorated base + commission + marketing allocation.' },
+    { label: 'Blended Cash RORI', value: invested > 0 && cash > 0 ? (cash / invested).toFixed(2) + 'x' : '—', color: 'var(--green)',
+      tip: 'Team Cash Collected ÷ Team Total Invested.' },
+    { label: 'Cost per Close', value: closes > 0 && invested > 0 ? money(invested / closes) : '—', color: '',
+      tip: 'Team Total Invested ÷ team units closed — all-in cost per client acquired.' },
+    { label: 'Commission Accrued', value: comms ? money(comms) : '—', color: '',
+      tip: 'Commission earned on this cohort\'s cash collected (commission % × cash, per rep).' },
+  ];
+  document.getElementById('reps-kpis').innerHTML = kpis.map(k => `
+    <div class="kpi-card">
+      <div class="kpi-label">${k.label}</div>
+      <div class="kpi-value" ${k.color ? `style="color:${k.color};"` : ''}>${k.value}</div>
+    </div>`).join('');
+}
+
+function renderRepsTable() {
+  const tbody = document.getElementById('reps-tbody');
+  const metricsById = {};
+  RepMetricsCache.forEach(r => { if (r.rep_id) metricsById[r.rep_id] = r; });
+
+  // Active reps always listed (even with no window activity); others only when
+  // they have metrics in the window. Metric rows without a settings entry
+  // (e.g. Unassigned) are appended at the end.
+  const rows = [];
+  const seen = new Set();
+  RepSettingsCache.forEach(s => {
+    const m = metricsById[s.rep_id];
+    if (s.category === 'active' || m) { rows.push({ s, m }); seen.add(s.rep_id); }
+  });
+  RepMetricsCache.forEach(m => {
+    if (!m.rep_id || !seen.has(m.rep_id)) rows.push({ s: null, m });
+  });
+
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="19" class="empty" style="text-align:center;padding:20px;">No reps found.</td></tr>';
+    return;
+  }
+
+  const dash = '<span style="color:var(--text2);">—</span>';
+  tbody.innerHTML = rows.map(({ s, m }) => {
+    const name = (s && s.rep_name) || (m && m.rep_name) || 'Unassigned';
+    const repId = (s && s.rep_id) || (m && m.rep_id) || null;
+    const base = m ? m.base_salary_monthly : (s ? s.base_salary_monthly : null);
+    const commPct = m ? m.commission_pct : (s ? s.commission_pct : null);
+    const compModel = base !== null && commPct !== null
+      ? `$${Math.round(base).toLocaleString()}/mo + ${commPct}%`
+      : '—';
+    const defaultBadge = s && s.is_default
+      ? ' <span style="font-size:10px; color:var(--text2); border:1px solid var(--border); border-radius:4px; padding:1px 5px;" title="Comp model not reviewed yet — using defaults (base $0 + 10%)">default</span>'
+      : '';
+    const cashPerShow = m && m.cash_collected > 0 && m.shows_1st > 0 ? money(m.cash_collected / m.shows_1st) : dash;
+    const editBtn = repId
+      ? `<button onclick="openRepCompModal('${repId}')" title="Edit comp model" style="background:none; border:1px solid var(--border); color:var(--text2); border-radius:5px; padding:3px 9px; cursor:pointer; font-size:12px;">✎</button>`
+      : '';
+    return `
+    <tr>
+      <td>${name}</td>
+      <td style="white-space:nowrap;">${compModel}${defaultBadge}</td>
+      <td class="num">${m ? num(m.calls_booked_1st) : dash}</td>
+      <td class="num">${m ? num(m.shows_1st) : dash}</td>
+      <td class="num ${m ? rateClass(m.show_rate_1st) : ''}">${m ? pct(m.show_rate_1st) : dash}</td>
+      <td class="num">${m ? pct(m.qualification_rate) : dash}</td>
+      <td class="num">${m ? num(m.units_closed) : dash}</td>
+      <td class="num">${m ? pct(m.close_rate) : dash}</td>
+      <td class="num">${m && m.avg_cycle_days !== null ? m.avg_cycle_days + 'd' : dash}</td>
+      <td class="num" style="color:var(--green);">${m && m.cash_collected ? money(m.cash_collected) : dash}</td>
+      <td class="num">${m && m.avg_cash_collected ? money(m.avg_cash_collected) : dash}</td>
+      <td class="num">${cashPerShow}</td>
+      <td class="num">${m && m.base_salary_alloc ? money(m.base_salary_alloc) : dash}</td>
+      <td class="num">${m && m.commission_amount ? money(m.commission_amount) : dash}</td>
+      <td class="num">${m && m.lead_cost_alloc ? money(m.lead_cost_alloc) : dash}</td>
+      <td class="num" style="color:var(--accent2);">${m && m.total_invested ? money(m.total_invested) : dash}</td>
+      <td class="num">${m && m.cost_per_close ? money(m.cost_per_close) : dash}</td>
+      <td class="num" style="color:var(--green);">${m && m.cash_rori ? m.cash_rori.toFixed(2) + 'x' : dash}</td>
+      <td>${editBtn}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Comp model edit modal ──
+let RepCompModalTarget = null;
+
+function openRepCompModal(repId) {
+  const s = RepSettingsCache.find(r => r.rep_id === repId);
+  const m = RepMetricsCache.find(r => r.rep_id === repId);
+  if (!s && !m) return;
+  RepCompModalTarget = {
+    rep_id: repId,
+    rep_name: (s && s.rep_name) || (m && m.rep_name) || '',
+  };
+  document.getElementById('rep-comp-modal-title').textContent = `Comp Model — ${RepCompModalTarget.rep_name}`;
+  document.getElementById('rep-comp-base').value = s ? s.base_salary_monthly : (m ? m.base_salary_monthly : 0);
+  document.getElementById('rep-comp-pct').value = s ? s.commission_pct : (m ? m.commission_pct : 10);
+  document.getElementById('rep-comp-modal-err').style.display = 'none';
+  document.getElementById('rep-comp-modal').style.display = 'flex';
+}
+
+function closeRepCompModal() {
+  document.getElementById('rep-comp-modal').style.display = 'none';
+  RepCompModalTarget = null;
+}
+
+async function saveRepCompModal() {
+  if (!RepCompModalTarget) return;
+  const errEl = document.getElementById('rep-comp-modal-err');
+  const base = parseFloat(document.getElementById('rep-comp-base').value || '0');
+  const commPct = parseFloat(document.getElementById('rep-comp-pct').value || '0');
+  if (isNaN(base) || base < 0 || isNaN(commPct) || commPct < 0 || commPct > 100) {
+    errEl.textContent = 'Base must be ≥ 0 and commission between 0 and 100.';
+    errEl.style.display = 'block';
+    return;
+  }
+  const btn = document.getElementById('rep-comp-save-btn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    await apiFetch('/api/dashboard/rep-settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        rep_id: RepCompModalTarget.rep_id,
+        rep_name: RepCompModalTarget.rep_name,
+        base_salary_monthly: base,
+        commission_pct: commPct,
+      }),
+    });
+    closeRepCompModal();
+    await renderSalesReps();  // re-fetch — derived cost columns change with the model
+  } catch (e) {
+    errEl.textContent = `Save failed: ${e.message}`;
+    errEl.style.display = 'block';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Save';
+  }
 }
 </script>
 <script src="/static/nav.js"></script>

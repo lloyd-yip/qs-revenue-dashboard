@@ -83,8 +83,13 @@ class RepMetrics(BaseModel):
     avg_contract_value: float | None = None
     avg_cash_collected: float | None = None
     avg_cash_pct_upfront: float | None = None
-    # Cost & RORI (from expense_line_items)
+    # Cost & RORI — rep comp derived from rep_comp_settings (base + commission
+    # on cohort cash collected); lead cost from expense_line_items marketing spend
     rep_comp: float | None = None
+    base_salary_monthly: float | None = None
+    base_salary_alloc: float | None = None
+    commission_pct: float | None = None
+    commission_amount: float | None = None
     lead_cost_alloc: float | None = None
     total_invested: float | None = None
     cost_per_close: float | None = None
