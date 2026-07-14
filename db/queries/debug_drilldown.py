@@ -484,6 +484,10 @@ async def get_drilldown_opps(
             DealWhopMatch.total_contract_value.label("total_contract_value"),
             DealWhopMatch.total_paid.label("total_paid"),
             whop_projected_total_expr().label("whop_projected"),
+            DealWhopMatch.payment_count.label("payment_count"),
+            DealWhopMatch.total_installments.label("total_installments"),
+            DealWhopMatch.is_splitit.label("is_splitit"),
+            DealWhopMatch.is_claritypay.label("is_claritypay"),
         )
         .select_from(Opportunity)
         .outerjoin(DealWhopMatch, Opportunity.ghl_opportunity_id == DealWhopMatch.ghl_opportunity_id)
@@ -506,6 +510,11 @@ async def get_drilldown_opps(
         row["total_paid"] = float(r.total_paid) if r.total_paid is not None else None
         # Payment-verified projected full contract (Whop plan math — no rep input)
         row["whop_projected"] = round(float(r.whop_projected), 2) if r.whop_projected is not None else None
+        # Installment plan detail — drives the Cash Collected hover tooltip
+        row["payment_count"] = r.payment_count
+        row["total_installments"] = r.total_installments
+        row["is_splitit"] = r.is_splitit
+        row["is_claritypay"] = r.is_claritypay
 
         if is_data_quality:
             anomalies = _detect_anomalies(row)

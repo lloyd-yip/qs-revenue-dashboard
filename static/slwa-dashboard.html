@@ -366,6 +366,23 @@
       return '$' + Math.round(v).toLocaleString();
     }
 
+    // Installment-plan hover for a per-deal cash figure (same as dashboard.html).
+    function installmentTooltip(paid, r) {
+      if (paid == null) return 'No reconciled payment data (deal not matched)';
+      if (r.is_splitit || r.is_claritypay) {
+        return `${r.is_splitit ? 'Splitit' : 'ClarityPay'} financed — customer pays installments to the provider; QS received 100% upfront in a single settlement of ${money(paid)} (before the 15% provider fee)`;
+      }
+      const n = r.total_installments, k = r.payment_count || 0;
+      if (!n || n <= 1) return `Paid in full — single payment of ${money(paid)}`;
+      const instSize = k > 0 ? paid / k : null;
+      const left = Math.max(n - k, 0);
+      let tip = `Installment plan: ${k} of ${n} paid · ${money(paid)} collected so far`;
+      if (instSize !== null) tip += ` · ~${money(instSize)} per installment`;
+      tip += ` · ${left} left`;
+      if (instSize !== null && left > 0) tip += ` (~${money(instSize * left)} remaining)`;
+      return tip;
+    }
+
     function rateClass(v) {
       if (v === null || v === undefined) return '';
       if (v >= 0.6) return 'rate-good';
@@ -796,7 +813,7 @@
             <td>${escapeHtml(row.rep)}</td>
             <td>${escapeHtml(row.close_date)}</td>
             <td class="num">${row.value === null ? '–' : money(row.value)}</td>
-            <td class="num">${row.cash_paid == null ? '–' : money(row.cash_paid)}</td>
+            <td class="num" title="${installmentTooltip(row.cash_paid, row).replace(/"/g, '&quot;')}">${row.cash_paid == null ? '–' : money(row.cash_paid)}</td>
             <td class="num">${row.whop_projected == null ? '–' : money(row.whop_projected)}</td>
           </tr>
         `).join('');

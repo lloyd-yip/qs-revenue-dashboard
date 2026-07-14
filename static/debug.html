@@ -701,6 +701,25 @@
       return '$' + Math.round(v).toLocaleString();
     }
 
+    // Cash Collected hover: installment plan status for one deal.
+    function cashTooltip(r) {
+      if (r.total_paid == null) return 'No reconciled payment data (deal not matched)';
+      if (r.is_splitit || r.is_claritypay) {
+        return `${r.is_splitit ? 'Splitit' : 'ClarityPay'} financed — customer pays installments to the provider; QS received 100% upfront in a single settlement of ${money(r.total_paid)} (before the 15% provider fee)`;
+      }
+      const n = r.total_installments, k = r.payment_count;
+      if (!n || n <= 1) return `Paid in full — single payment of ${money(r.total_paid)}`;
+      const paid = k || 0;
+      const instSize = paid > 0 ? r.total_paid / paid : null;
+      const left = Math.max(n - paid, 0);
+      const remaining = instSize !== null ? instSize * left : null;
+      let tip = `Installment plan: ${paid} of ${n} paid · ${money(r.total_paid)} collected so far`;
+      if (instSize !== null) tip += `\n~${money(instSize)} per installment`;
+      tip += `\n${left} installment${left === 1 ? '' : 's'} left`;
+      if (remaining !== null && left > 0) tip += ` (~${money(remaining)} remaining)`;
+      return tip;
+    }
+
     function statusClass(s) {
       if (!s) return '';
       const low = s.toLowerCase();
@@ -914,7 +933,7 @@
       <td class="num">${money(r.projected_deal_size)}</td>
       ${hasMoney ? `<td class="num" title="Reconciled contract value (Whop)">${r.total_contract_value != null ? money(r.total_contract_value) : '–'}</td>
       <td class="num" title="Payment-verified projected FULL contract value, from Whop plan math — no rep input involved. Financed (Splitit/ClarityPay) = total paid (settles 100% upfront); internal plans = avg installment × plan length (split_pay_required_payments)">${r.whop_projected != null ? money(r.whop_projected) : '–'}</td>
-      <td class="num" title="Cash collected so far (Whop paid to date)">${r.total_paid != null ? money(r.total_paid) : '–'}</td>` : ''}
+      <td class="num" title="${cashTooltip(r).replace(/"/g, '&quot;')}">${r.total_paid != null ? money(r.total_paid) : '–'}</td>` : ''}
       <td>${formatDate(r.created_at_ghl)}</td>
       ${hasCloseDate ? `<td title="${r.first_payment_date ? 'First payment date' : 'GHL close date (no matched payment)'}">${r._close_paid_date ? formatDate(r._close_paid_date) : '–'}</td>` : ''}
       ${hasCycle ? `<td class="num" title="${r.first_payment_date ? 'First showed call → first payment (' + r.first_payment_date + ')' : 'First showed call → close date (no matched payment)'}">${(r.sales_cycle_days !== null && r.sales_cycle_days !== undefined) ? r.sales_cycle_days + 'd' : '–'}</td>` : ''}

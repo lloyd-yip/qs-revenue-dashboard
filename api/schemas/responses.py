@@ -283,6 +283,11 @@ class ClosedDealRow(BaseModel):
     value: float | None
     cash_paid: float | None = None       # total paid to date (reconciled payments)
     whop_projected: float | None = None  # payment-verified projected full contract
+    # Installment plan detail — drives the Cash Paid hover tooltip
+    payment_count: int | None = None
+    total_installments: int | None = None
+    is_splitit: bool | None = None
+    is_claritypay: bool | None = None
 
 
 class ChannelClosesResponse(BaseModel):

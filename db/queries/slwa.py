@@ -543,6 +543,10 @@ async def get_slwa_closes(
             Opportunity.projected_deal_size,
             DealWhopMatch.total_paid,
             whop_projected_total_expr().label("whop_projected"),
+            DealWhopMatch.payment_count,
+            DealWhopMatch.total_installments,
+            DealWhopMatch.is_splitit,
+            DealWhopMatch.is_claritypay,
         )
         .outerjoin(
             DealWhopMatch,
@@ -560,6 +564,10 @@ async def get_slwa_closes(
             "value": float(row.projected_deal_size) if row.projected_deal_size is not None else None,
             "cash_paid": float(row.total_paid) if row.total_paid is not None else None,
             "whop_projected": round(float(row.whop_projected), 2) if row.whop_projected is not None else None,
+            "payment_count": row.payment_count,
+            "total_installments": row.total_installments,
+            "is_splitit": row.is_splitit,
+            "is_claritypay": row.is_claritypay,
         }
         for row in result.all()
     ]

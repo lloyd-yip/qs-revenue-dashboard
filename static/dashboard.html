@@ -897,6 +897,24 @@ function money(v) {
   return '$' + Math.round(v).toLocaleString();
 }
 
+// Installment-plan hover for a per-deal cash figure. `paid` = cash to date;
+// r carries payment_count / total_installments / is_splitit / is_claritypay.
+function installmentTooltip(paid, r) {
+  if (paid == null) return 'No reconciled payment data (deal not matched)';
+  if (r.is_splitit || r.is_claritypay) {
+    return `${r.is_splitit ? 'Splitit' : 'ClarityPay'} financed — customer pays installments to the provider; QS received 100% upfront in a single settlement of ${money(paid)} (before the 15% provider fee)`;
+  }
+  const n = r.total_installments, k = r.payment_count || 0;
+  if (!n || n <= 1) return `Paid in full — single payment of ${money(paid)}`;
+  const instSize = k > 0 ? paid / k : null;
+  const left = Math.max(n - k, 0);
+  let tip = `Installment plan: ${k} of ${n} paid · ${money(paid)} collected so far`;
+  if (instSize !== null) tip += ` · ~${money(instSize)} per installment`;
+  tip += ` · ${left} left`;
+  if (instSize !== null && left > 0) tip += ` (~${money(instSize * left)} remaining)`;
+  return tip;
+}
+
 function rateClass(v) {
   if (v === null) return '';
   if (v >= 0.6) return 'rate-good';
@@ -1613,7 +1631,7 @@ async function showClosesModal(channel) {
         <td>${d.rep}</td>
         <td>${d.close_date}</td>
         <td class="num">${d.value !== null ? money(d.value) : '–'}</td>
-        <td class="num" style="color:var(--green);">${d.cash_paid ? money(d.cash_paid) : '–'}</td>
+        <td class="num" style="color:var(--green);" title="${installmentTooltip(d.cash_paid, d).replace(/"/g, '&quot;')}">${d.cash_paid ? money(d.cash_paid) : '–'}</td>
         <td class="num" style="color:var(--green);">${d.whop_projected ? money(d.whop_projected) : '–'}</td>
       </tr>
     `).join('');
@@ -1728,7 +1746,7 @@ async function showAllClosesModal() {
         <td>${d.rep}</td>
         <td>${d.close_date}</td>
         <td class="num">${d.value !== null ? money(d.value) : '–'}</td>
-        <td class="num" style="color:var(--green);">${d.cash_paid ? money(d.cash_paid) : '–'}</td>
+        <td class="num" style="color:var(--green);" title="${installmentTooltip(d.cash_paid, d).replace(/"/g, '&quot;')}">${d.cash_paid ? money(d.cash_paid) : '–'}</td>
         <td class="num" style="color:var(--green);">${d.whop_projected ? money(d.whop_projected) : '–'}</td>
       </tr>
     `).join('');
@@ -2534,7 +2552,7 @@ async function showPiClosesModal(groupBy, segment) {
       <td>${d.business_fit}</td>
       <td>${d.intent}</td>
       <td class="num" style="color:var(--green);">${d.contract_value !== null ? money(d.contract_value) : '—'}</td>
-      <td class="num" style="color:var(--green);">${d.cash_collected !== null ? money(d.cash_collected) : '—'}</td>
+      <td class="num" style="color:var(--green);" title="${installmentTooltip(d.cash_collected, d).replace(/"/g, '&quot;')}">${d.cash_collected !== null ? money(d.cash_collected) : '—'}</td>
     </tr>`).join('');
     body.innerHTML = `
       <div style="overflow-x:auto; padding:0;">
