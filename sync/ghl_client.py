@@ -313,12 +313,19 @@ class GHLClient:
         yield empty data.
         """
         url = f"{self._base_url}{path}"
-        for attempt in range(5):
+        for attempt in range(8):
             response = await client.get(url, headers=self._headers, params=params)
             if response.status_code == 429:
+                # Another sync (e.g. the ~35-min hourly incremental) may be holding
+                # the rate limit — a few seconds of backoff never outlasts that.
+                # Honour Retry-After when present; otherwise back off exponentially
+                # up to 2 minutes per attempt (worst case ~7 min total wait).
                 retry_after = response.headers.get("Retry-After")
-                delay = float(retry_after) if retry_after else 0.8 * (attempt + 1)
-                await asyncio.sleep(min(delay, 5.0))
+                delay = min(float(retry_after), 300.0) if retry_after else min(2.0 * (2 ** attempt), 120.0)
+                logger.warning(
+                    "GHL 429 on %s (attempt %d/8) — backing off %.0fs", path, attempt + 1, delay
+                )
+                await asyncio.sleep(delay)
                 continue
             response.raise_for_status()
             return response.json()
