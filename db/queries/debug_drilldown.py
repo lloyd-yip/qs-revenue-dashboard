@@ -23,6 +23,7 @@ from db.queries.common import (
     sales_cycle_days_expr,
     showed_1st_call_expr,
     showed_2nd_call_expr,
+    whop_projected_total_expr,
 )
 from sync.ghl_client import (
     DEAL_WON_STAGE_ID,
@@ -482,6 +483,7 @@ async def get_drilldown_opps(
             DealWhopMatch.first_payment_date.label("first_payment_date"),
             DealWhopMatch.total_contract_value.label("total_contract_value"),
             DealWhopMatch.total_paid.label("total_paid"),
+            whop_projected_total_expr().label("whop_projected"),
         )
         .select_from(Opportunity)
         .outerjoin(DealWhopMatch, Opportunity.ghl_opportunity_id == DealWhopMatch.ghl_opportunity_id)
@@ -502,6 +504,8 @@ async def get_drilldown_opps(
         # projected_deal_size is often blank, so show the authoritative numbers alongside).
         row["total_contract_value"] = float(r.total_contract_value) if r.total_contract_value is not None else None
         row["total_paid"] = float(r.total_paid) if r.total_paid is not None else None
+        # Payment-verified projected full contract (Whop plan math — no rep input)
+        row["whop_projected"] = round(float(r.whop_projected), 2) if r.whop_projected is not None else None
 
         if is_data_quality:
             anomalies = _detect_anomalies(row)

@@ -834,6 +834,7 @@
         { key: 'projected_deal_size', label: 'Value' },
         ...(hasMoney ? [
           { key: 'total_contract_value', label: 'Deal Size' },
+          { key: 'whop_projected', label: 'Projected Total' },
           { key: 'total_paid', label: 'Cash Collected' },
         ] : []),
         { key: 'created_at_ghl', label: 'Created' },
@@ -912,6 +913,7 @@
       <td>${r.canonical_channel || '–'}</td>
       <td class="num">${money(r.projected_deal_size)}</td>
       ${hasMoney ? `<td class="num" title="Reconciled contract value (Whop)">${r.total_contract_value != null ? money(r.total_contract_value) : '–'}</td>
+      <td class="num" title="Payment-verified projected FULL contract value, from Whop plan math — no rep input involved. Financed (Splitit/ClarityPay) = total paid (settles 100% upfront); internal plans = avg installment × plan length (split_pay_required_payments)">${r.whop_projected != null ? money(r.whop_projected) : '–'}</td>
       <td class="num" title="Cash collected so far (Whop paid to date)">${r.total_paid != null ? money(r.total_paid) : '–'}</td>` : ''}
       <td>${formatDate(r.created_at_ghl)}</td>
       ${hasCloseDate ? `<td title="${r.first_payment_date ? 'First payment date' : 'GHL close date (no matched payment)'}">${r._close_paid_date ? formatDate(r._close_paid_date) : '–'}</td>` : ''}
