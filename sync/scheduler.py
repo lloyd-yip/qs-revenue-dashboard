@@ -20,16 +20,18 @@ logger = logging.getLogger(__name__)
 def create_scheduler() -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler(timezone="UTC")
 
-    # Hourly incremental sync — keeps dashboard data fresh.
-    # Each sync takes ~30 min (fetches contact appointments per opp), so 60 min
-    # interval gives ~30 min rest between runs. Data is at most ~1.5h old.
+    # Incremental sync every 6 hours — keeps dashboard data reasonably fresh.
+    # Was hourly, but each run makes per-opportunity GHL calls (~35 min, thousands
+    # of requests) and 24 runs/day exhausted the 200k/day GHL quota (2026-07-14),
+    # blocking manual full syncs entirely. 4 runs/day leaves ample quota headroom.
+    # Fixed clock times (not boot-relative interval) so deploys don't re-phase the cadence.
     scheduler.add_job(
         _run_incremental,
-        trigger=IntervalTrigger(minutes=60),
-        id="compliance_sync_60min",
-        name="Hourly incremental GHL sync",
+        trigger=CronTrigger(hour="1,7,13,19", minute=10, timezone="UTC"),
+        id="incremental_sync_6h",
+        name="6-hourly incremental GHL sync",
         replace_existing=True,
-        misfire_grace_time=60,
+        misfire_grace_time=600,
         max_instances=1,  # Never overlap — if one is still running, skip the next fire
     )
 
