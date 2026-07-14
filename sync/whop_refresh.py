@@ -146,10 +146,18 @@ async def refresh_current_month_payment_metrics() -> dict:
                             f"[whop-refresh] {snap['ghl_opportunity_id']}: folded — "
                             + "; ".join(fold_notes)
                         )
+                    # Plan-length override comes from the LIVE membership's
+                    # split_pay_required_payments (authoritative), NOT the stored
+                    # total_installments — the stored value may itself be an old
+                    # inference, and re-using it as authoritative would freeze it.
+                    live_override = (
+                        matched_m.get("split_pay_required_payments")
+                        if matched_m else snap["total_installments"]
+                    )
                     metrics = _compute_payment_metrics(
                         payments,
                         snap["ghl_monetary_value"],
-                        installments_override=snap["total_installments"],
+                        installments_override=live_override,
                         is_recurring=membership_is_recurring(matched_m),
                     )
                     updated = await update_live_payment_metrics(

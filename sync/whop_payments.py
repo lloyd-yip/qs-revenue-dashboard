@@ -12,7 +12,6 @@ other ("sibling") memberships, guarded against double-counting (see docstring).
 """
 
 import logging
-import math
 from datetime import datetime, timezone
 
 import httpx
@@ -411,7 +410,11 @@ def _compute_payment_metrics(
     # Renewal-plan inference: internal recurring memberships (e.g. "$6,000 /
     # 3-months" renewing quarterly) have no split_pay_required_payments, so the
     # plan length is unknown. Infer the intended count from the GHL contract as
-    # a COUNT hint only — never trust its amount: ceil(contract ÷ avg installment).
+    # a COUNT hint only — never trust its amount: round-to-NEAREST of
+    # contract ÷ avg installment. Nearest (not ceil) because plans are typically
+    # 3/6/12 payments and the GHL value skews high — prefer UNDER-projecting;
+    # when more installments actually land, the plan length grows to match, and
+    # a fully-paid deal always ends at its true total.
     # Triggers on ≥2 installments (a proven repeating pattern), or from the FIRST
     # payment when the membership itself is a renewing plan (is_recurring).
     # Single-payment one-time deals are untouched (a rep-overstated GHL value
@@ -424,7 +427,8 @@ def _compute_payment_metrics(
         and total_paid > 0
     ):
         avg_installment = total_paid / payment_count
-        inferred = math.ceil(contract_value / avg_installment - 1e-9)
+        inferred = int(contract_value / avg_installment + 0.5)  # round half up
+        inferred = max(inferred, payment_count)  # never below what already landed
         if inferred > (total_installments or 0):
             total_installments = min(inferred, 12)
     # plan_months_flag: internal plan (no external financing) running longer than 3.
