@@ -52,6 +52,7 @@ class RepMetrics(BaseModel):
     rep_name: str
     calls_booked_1st: int
     shows_1st: int
+    occurred_1st: int = 0  # show-rate denominator (determinate-outcome calls)
     show_rate_1st: float | None
     no_show_rate_1st: float | None
     calls_booked_2nd: int

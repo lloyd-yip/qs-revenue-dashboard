@@ -718,7 +718,10 @@ const GHL_BASE = 'https://app.gohighlevel.com/v2/location/G7ZOWCq78JrzUjlLMCxt/o
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
 function toISO(d) {
-  return d.toISOString().split('T')[0];
+  // LOCAL date, not toISOString (UTC) — for UTC+ timezones the UTC conversion
+  // rolls local midnight back to the previous day, making "today" windows end
+  // yesterday (e.g. the 7-day activity widget missing today's calls in CET).
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 function applyUrlState() {
@@ -777,11 +780,32 @@ function applyPresetAllTime() {
   event.target.classList.add('active');
 }
 
+// Highlight the preset button that matches the CURRENT date range — or none
+// when the range is custom (e.g. pasted URL). Prevents a stale "Last 30d"
+// highlight misrepresenting an arbitrary range.
+function highlightMatchingPreset() {
+  const btns = document.querySelectorAll('.preset-btn');
+  btns.forEach(b => b.classList.remove('active'));
+  const today = toISO(new Date());
+  if (AppState.dateEnd !== today) return;  // every preset ends today
+  const daysAgo = n => { const d = new Date(); d.setDate(d.getDate() - n + 1); return toISO(d); };
+  const now = new Date();
+  const monthStart = toISO(new Date(now.getFullYear(), now.getMonth(), 1));
+  let label = null;
+  if (AppState.dateStart === daysAgo(7)) label = 'Last 7d';
+  else if (AppState.dateStart === daysAgo(30)) label = 'Last 30d';
+  else if (AppState.dateStart === daysAgo(90)) label = 'Last 90d';
+  else if (AppState.dateStart === monthStart) label = 'This month';
+  else if (AppState.dateStart === '2020-01-01') label = 'All time';
+  if (label) btns.forEach(b => { if (b.textContent.trim() === label) b.classList.add('active'); });
+}
+
 function setDateRange(start, end) {
   AppState.dateStart = start;
   AppState.dateEnd = end;
   document.getElementById('date-start').value = start;
   document.getElementById('date-end').value = end;
+  highlightMatchingPreset();
   syncUrlState();
   renderAll();
 }
@@ -808,6 +832,7 @@ function onDateInputChange() {
   applyUrlState();
   document.getElementById('date-start').value = AppState.dateStart;
   document.getElementById('date-end').value   = AppState.dateEnd;
+  highlightMatchingPreset();  // URL may carry a custom range — don't leave "Last 30d" lit
 })();
 
 // ─── Filter controls ──────────────────────────────────────────────────────────
@@ -1244,8 +1269,7 @@ function weekDates(offset) {
   endDate.setDate(today.getDate() + offset * 7);
   const startDate = new Date(endDate);
   startDate.setDate(endDate.getDate() - 6);
-  const toISO = d => d.toISOString().split('T')[0];
-  return { start: toISO(startDate), end: toISO(endDate) };
+  return { start: toISO(startDate), end: toISO(endDate) };  // global toISO — local date
 }
 
 function weekLabel(offset) {
@@ -1452,6 +1476,49 @@ function renderRepBreakdown(reps) {
       <td class="num">${roriStyle(r.contract_rori)}</td>
     </tr>`;
   }).join('');
+
+  // ── TOTAL row — counts and money summed; rates recomputed from the sums ──
+  const sum = k => reps.reduce((s, r) => s + (r[k] || 0), 0);
+  const tBooked = sum('calls_booked_1st'), tShowed = sum('shows_1st'), tResched = sum('rescheduled_1st');
+  const tOccurred = sum('occurred_1st');
+  const tClosed = sum('units_closed'), tNoOut = sum('outcome_not_logged_count');
+  const tQual = reps.reduce((s, r) => s + ((r.shows_1st && r.qualification_rate) ? Math.round(r.shows_1st * r.qualification_rate) : 0), 0);
+  const tContract = sum('contract_value'), tProjected = sum('whop_projected_total'), tCash = sum('cash_collected');
+  const tUpfront = sum('upfront_cash'), tInvested = sum('total_invested');
+  const cycleRows = reps.filter(r => r.avg_cycle_days !== null && r.avg_cycle_days !== undefined && r.units_closed > 0);
+  const cycleClosed = cycleRows.reduce((s, r) => s + r.units_closed, 0);
+  const tCycle = cycleClosed > 0 ? cycleRows.reduce((s, r) => s + r.avg_cycle_days * r.units_closed, 0) / cycleClosed : null;
+  const rate = (n, d) => d > 0 ? pct(n / d) : dash;
+  const moneyOr = v => v > 0 ? money(v) : dash;
+  const totalsRow = `
+    <tr style="font-weight:600; border-top:2px solid var(--border); background:rgba(99,102,241,0.06);">
+      <td>TOTAL</td>
+      <td class="num">${num(tBooked)}</td>
+      <td class="num">${num(tShowed)}</td>
+      <td class="num" title="Showed ÷ Occurred — same definition as the per-rep rows">${rate(tShowed, tOccurred)}</td>
+      <td class="num">${num(tResched)}${tBooked > 0 ? ` <span style="color:var(--text2); font-weight:400;">(${pct(tResched / tBooked)})</span>` : ''}</td>
+      <td class="num">${rate(tQual, tShowed)}</td>
+      <td class="num">${rate(tClosed, tShowed)}</td>
+      <td class="num">${rate(tClosed, tQual)}</td>
+      <td class="num">${num(tClosed)}</td>
+      <td class="num" style="color:var(--text2);" title="Weighted by units closed">${tCycle !== null ? tCycle.toFixed(1) + 'd' : '—'}</td>
+      <td class="num">${num(tNoOut)}</td>
+      <td class="num" style="color:#22c55e;">${num(sum('lq_great'))}</td>
+      <td class="num" style="color:#84cc16;">${num(sum('lq_ok'))}</td>
+      <td class="num" style="color:var(--yellow);">${num(sum('lq_barely'))}</td>
+      <td class="num" style="color:var(--red);">${num(sum('lq_bad'))}</td>
+      <td class="num" style="color:var(--text2);">${num(sum('lq_missing'))}</td>
+      <td class="num" style="color:var(--green);">${moneyOr(tContract)}</td>
+      <td class="num" style="color:var(--green);">${moneyOr(tProjected)}</td>
+      <td class="num" style="color:var(--green);">${moneyOr(tCash)}</td>
+      <td class="num" style="color:var(--green);">${tClosed > 0 && tProjected > 0 ? money(tProjected / tClosed) : dash}</td>
+      <td class="num" style="color:var(--green);">${tClosed > 0 && tCash > 0 ? money(tCash / tClosed) : dash}</td>
+      <td class="num" style="color:var(--green);">${tProjected > 0 && tUpfront > 0 ? (tUpfront / tProjected * 100).toFixed(1) + '%' : dash}</td>
+      <td class="num">${moneyOr(tInvested)}</td>
+      <td class="num">${tClosed > 0 && tInvested > 0 ? money(tInvested / tClosed) : dash}</td>
+      <td class="num">${roriStyle(tInvested > 0 && tCash > 0 ? tCash / tInvested : null)}</td>
+      <td class="num">${roriStyle(tInvested > 0 && tProjected > 0 ? tProjected / tInvested : null)}</td>
+    </tr>`;
   document.getElementById('rep-table-view').innerHTML = `
     <table>
       <thead><tr>
@@ -1483,6 +1550,7 @@ function renderRepBreakdown(reps) {
         <th class="num" style="color:var(--green);" title="Projected Total ÷ Total Invested — payment-verified contract per $1 invested">Contract RORI</th>
       </tr></thead>
       <tbody>${rows}</tbody>
+      <tfoot>${totalsRow}</tfoot>
     </table>
   `;
 

@@ -400,6 +400,9 @@ async def get_by_rep(
             "reschedule_rate_1st": safe_rate(resc, row.calls_booked_1st),
             "calls_booked_1st": row.calls_booked_1st,
             "shows_1st": row.shows_1st,
+            # occurred = show-rate denominator (calls with a determinate outcome) —
+            # exposed so table totals can recompute Show Rate consistently
+            "occurred_1st": row.bookable_1st,
             "show_rate_1st": safe_rate(row.shows_1st, row.bookable_1st),
             "no_show_rate_1st": safe_rate(row.bookable_1st - row.shows_1st, row.bookable_1st),
             "calls_booked_2nd": row.calls_booked_2nd,
