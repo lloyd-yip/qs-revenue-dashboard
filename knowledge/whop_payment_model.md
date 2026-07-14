@@ -63,6 +63,15 @@ known gap).
 
 ## Data-quality gotchas observed
 
+- **One deal can settle across MULTIPLE memberships (2026-07-14).** Splitit sometimes cannot
+  approve the full contract on one card, so the customer completes it as two memberships —
+  e.g. james@polarinsight.com: an $18,000 "quantumSCALE Institute" membership (Jun 11) plus a
+  separate "Splitit $2,700" top-up membership (Jul 6). Counting only the matched membership's
+  payments understated cash ($2,700 vs $20,700), projected total, first_payment_date, and cycle.
+  Fixed by customer-level "sibling folding" in `sync/whop_payments.py`: payments from the
+  customer's other memberships are folded in when (a) same email, (b) the membership is not
+  claimed by a different deal, (c) the customer has no other matched deals, (d) created within
+  ±60d of the deal close date, and (e) each folded payment is paid and > $100 (sub floor).
 - **GHL contract value is unreliable.** Seen: a Splitit deal with `ghl_monetary_value` = $10,000
   but actual Splitit charge ~$18,000 → net cash ($15,296) exceeds the displayed "contract."
   Trust the Whop `total_paid`, not GHL `monetary_value`. This is the core reason the live-revenue
@@ -72,8 +81,10 @@ known gap).
 
 ## Where this is used
 
-- `sync/match_deals_whop.py::_compute_payment_metrics` + `_detect_external_processor` — computes
-  net cash, fee, flags during full Run Match.
+- `sync/whop_payments.py` — payment fetching, `_compute_payment_metrics`, sibling folding
+  (extracted from match_deals_whop.py 2026-07-14; matcher re-exports for compat).
+- `sync/match_deals_whop.py` — matching engine; folds sibling payments during full Run Match.
 - `sync/whop_refresh.py::refresh_current_month_payment_metrics` — lightweight EOD refresh of
-  current-month rows (Whop-membership deals only).
+  current-month rows (Whop-membership deals only); also folds siblings and can move
+  first_payment_date earlier when a folded payment predates the matched membership's.
 - `db/queries/whop_live.py` + `api/routers/whop_live.py` — the P&L "Live Whop Revenue" section.

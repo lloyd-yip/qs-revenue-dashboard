@@ -19,12 +19,21 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 
+from sqlalchemy import select
+
+from db.models import DealWhopMatch
 from db.queries.whop_live import (
     get_current_month_refresh_targets,
     update_live_payment_metrics,
 )
 from db.session import AsyncSessionLocal
-from sync.match_deals_whop import _compute_payment_metrics, _fetch_membership_payments
+from sync.whop_payments import (
+    _compute_payment_metrics,
+    _fetch_whop_memberships,
+    build_membership_email_index,
+    fetch_customer_payments,
+    sibling_memberships,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +74,8 @@ async def refresh_current_month_payment_metrics() -> dict:
                 "whop_membership_id": r.whop_membership_id,
                 "ghl_monetary_value": float(r.ghl_monetary_value or 0),
                 "total_installments": r.total_installments,
+                "whop_email": r.whop_email,
+                "ghl_close_date": r.ghl_close_date,
             }
             for r in targets
         ]
@@ -76,12 +87,54 @@ async def refresh_current_month_payment_metrics() -> dict:
             logger.info("[whop-refresh] no targets — nothing to refresh")
             return stats
 
+        # Membership index + claim maps for sibling-payment folding — a customer
+        # can settle one deal across multiple memberships (Splitit over two cards).
+        # Same guards as the matching engine: never fold when the customer has
+        # other matched deals, or a membership claimed by a different deal.
+        claim_rows = await session.execute(
+            select(
+                DealWhopMatch.ghl_opportunity_id,
+                DealWhopMatch.whop_membership_id,
+                DealWhopMatch.whop_email,
+            ).where(DealWhopMatch.whop_membership_id.isnot(None))
+        )
+        claimed_by_membership: dict[str, str] = {}
+        deals_by_email: dict[str, set] = {}
+        for opp_id, mid, email in claim_rows.all():
+            claimed_by_membership[mid] = opp_id
+            if email:
+                deals_by_email.setdefault(email, set()).add(opp_id)
+
         async with httpx.AsyncClient(timeout=30.0) as whop_client:
+            memberships = await _fetch_whop_memberships(whop_client)
+            memberships_by_email = build_membership_email_index(memberships)
+            membership_by_id = {m.get("id"): m for m in memberships if m.get("id")}
+
             for snap in snapshots:
                 try:
-                    payments = await _fetch_membership_payments(
-                        whop_client, snap["whop_membership_id"]
+                    matched_m = membership_by_id.get(snap["whop_membership_id"])
+                    siblings = []
+                    other_deal_ids = {
+                        o for o in deals_by_email.get(snap["whop_email"] or "", set())
+                        if o != snap["ghl_opportunity_id"]
+                    }
+                    if matched_m and not other_deal_ids:
+                        claimed_other = {
+                            mid for mid, opp in claimed_by_membership.items()
+                            if opp != snap["ghl_opportunity_id"]
+                        }
+                        siblings = sibling_memberships(
+                            matched_m, memberships_by_email, claimed_other,
+                            snap["ghl_close_date"],
+                        )
+                    payments, folded_ids = await fetch_customer_payments(
+                        whop_client, snap["whop_membership_id"], siblings
                     )
+                    if folded_ids:
+                        logger.info(
+                            f"[whop-refresh] {snap['ghl_opportunity_id']}: folded "
+                            f"sibling membership(s) {folded_ids}"
+                        )
                     metrics = _compute_payment_metrics(
                         payments,
                         snap["ghl_monetary_value"],

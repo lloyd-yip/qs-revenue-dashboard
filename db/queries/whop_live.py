@@ -68,6 +68,10 @@ async def update_live_payment_metrics(
         "payment_count": metrics.get("payment_count"),
         "remaining_ar": metrics.get("remaining_ar"),
         "is_financing": metrics.get("is_financing"),
+        # first_payment_date can move EARLIER when a sibling membership's payment
+        # is folded in (one deal settled across two memberships) — keep it true
+        # to the earliest paid payment; sales cycle + month bucketing follow.
+        "first_payment_date": metrics.get("first_payment_date"),
         "metrics_updated_at": func.now(),
         "updated_at": func.now(),
     }
