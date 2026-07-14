@@ -37,6 +37,47 @@ async def get_existing_match(
     return row
 
 
+async def demote_duplicate_match(session: AsyncSession, ghl_opportunity_id: str) -> None:
+    """Strip the Whop match (identity + payment metrics) off a row whose membership
+    was re-claimed by a better-scoring deal.
+
+    One membership's payment stream can only belong to ONE deal — two GHL won
+    deals matched to the same membership means one is a duplicate opportunity.
+    The demoted row shows as unmatched with method 'duplicate_membership' so it
+    stops counting cash and is visible for GHL cleanup. Never called for
+    is_confirmed rows (manual matches always win).
+    """
+    await session.execute(
+        update(DealWhopMatch)
+        .where(DealWhopMatch.ghl_opportunity_id == ghl_opportunity_id)
+        .values(
+            match_confidence="unmatched",
+            match_method="duplicate_membership",
+            match_score=0,
+            whop_membership_id=None,
+            whop_email=None,
+            whop_name=None,
+            whop_product_id=None,
+            whop_plan_name=None,
+            whop_created_at=None,
+            upfront_cash=None,
+            total_paid=None,
+            payment_count=None,
+            total_installments=None,
+            is_splitit=None,
+            is_claritypay=None,
+            provider_fee_pct=None,
+            net_cash_collected=None,
+            plan_months_flag=None,
+            remaining_ar=None,
+            is_financing=None,
+            first_payment_date=None,
+            updated_at=func.now(),
+        )
+    )
+    await session.commit()
+
+
 async def upsert_deal_match(session: AsyncSession, data: dict) -> None:
     """Insert or update a deal match row.
 

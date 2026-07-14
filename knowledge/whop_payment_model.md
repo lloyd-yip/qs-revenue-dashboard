@@ -72,6 +72,21 @@ known gap).
   customer's other memberships are folded in when (a) same email, (b) the membership is not
   claimed by a different deal, (c) the customer has no other matched deals, (d) created within
   ±60d of the deal close date, and (e) each folded payment is paid and > $100 (sub floor).
+- **Renewing subscription plans have no split_pay_required_payments (2026-07-14).** E.g.
+  wikifri.com pays "$6,000 / 3-months" for quantumSCALE Institute — a renewal plan, not a
+  split-pay plan, so plan length is unknown and used to fall back to len(payments)=1
+  (projected $6,000 instead of $18,000). Fixed two ways in `_compute_payment_metrics`:
+  (a) stale-override guard — a stored plan length smaller than payment_count is discarded;
+  (b) renewal inference — once ≥2 installments landed, plan length = ceil(GHL contract ÷ avg
+  installment), capped at 12. GHL is used as a COUNT hint only, never an amount; single-payment
+  deals are never inflated. Also: the nightly refresh window widened from current-month to a
+  190-day lookback so later installments keep stacking, and total_installments may grow
+  monotonically on refresh (never shrinks).
+- **Two GHL won deals can match ONE membership (duplicate opportunities, 2026-07-14).**
+  "Bill Freitag" (email_domain) and "William K Freitag" (email_exact) both matched
+  mem_qaEKM2YnNCeqQJ → $6,000 counted twice. The matcher now dedupes: stronger method rank
+  wins (manual > email_exact > email_domain > fuzzy); the loser is recorded as unmatched with
+  match_method='duplicate_membership' so it counts no cash and is visible for GHL cleanup.
 - **GHL contract value is unreliable.** Seen: a Splitit deal with `ghl_monetary_value` = $10,000
   but actual Splitit charge ~$18,000 → net cash ($15,296) exceeds the displayed "contract."
   Trust the Whop `total_paid`, not GHL `monetary_value`. This is the core reason the live-revenue

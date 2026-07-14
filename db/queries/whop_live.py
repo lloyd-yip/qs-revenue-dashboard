@@ -72,6 +72,16 @@ async def update_live_payment_metrics(
         # is folded in (one deal settled across two memberships) — keep it true
         # to the earliest paid payment; sales cycle + month bucketing follow.
         "first_payment_date": metrics.get("first_payment_date"),
+        # total_installments may GROW (renewal-plan inference once ≥2 installments
+        # land, or more payments than the stored plan length) but never shrinks —
+        # an authoritative split_pay_required_payments is never downgraded.
+        "total_installments": func.nullif(
+            func.greatest(
+                func.coalesce(DealWhopMatch.total_installments, 0),
+                metrics.get("total_installments") or 0,
+            ),
+            0,
+        ),
         "metrics_updated_at": func.now(),
         "updated_at": func.now(),
     }

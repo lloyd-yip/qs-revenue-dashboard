@@ -766,6 +766,46 @@ async def _match_one_deal(
 
     confidence = classify_confidence(best_score)
 
+    # ── Duplicate-membership dedupe ────────────────────────────────────────
+    # One membership's payment stream can only belong to ONE deal. If this
+    # membership is already claimed by a different deal (a duplicate GHL
+    # opportunity for the same customer), the stronger match method wins;
+    # the loser is recorded as unmatched with method 'duplicate_membership'
+    # so its cash never double-counts. Confirmed (manual) matches always win.
+    def _method_rank(method: str | None) -> int:
+        if method and method.startswith("manual"):
+            return 4
+        return {"email_exact": 3, "email_domain": 2}.get(method or "", 1)
+
+    if best_m and best_m.get("id"):
+        prior_opp = claimed_by_membership.get(best_m["id"])
+        if prior_opp and prior_opp != deal.ghl_opportunity_id:
+            prior = await get_existing_match(session, prior_opp)
+            prior_wins = bool(prior) and (
+                prior.is_confirmed
+                or _method_rank(prior.match_method) >= _method_rank(best_method)
+            )
+            if prior_wins:
+                logger.warning(
+                    f"Deal {deal.ghl_opportunity_id}: membership {best_m['id']} already "
+                    f"claimed by {prior_opp} ({prior.match_method} beats {best_method}) — "
+                    f"recording as duplicate_membership, counting no payments"
+                )
+                best_m = None
+                confidence = "unmatched"
+                best_method = "duplicate_membership"
+            else:
+                from db.queries.deal_matches import demote_duplicate_match
+                logger.warning(
+                    f"Deal {prior_opp}: demoted to duplicate_membership — membership "
+                    f"{best_m['id']} re-claimed by {deal.ghl_opportunity_id} "
+                    f"({best_method} beats {prior.match_method if prior else 'missing row'})"
+                )
+                await demote_duplicate_match(session, prior_opp)
+                claimed_by_membership[best_m["id"]] = deal.ghl_opportunity_id
+                for _opps in deals_by_email.values():
+                    _opps.discard(prior_opp)
+
     # ── Build the record ──────────────────────────────────────────────────
     record: dict = {
         "ghl_opportunity_id": deal.ghl_opportunity_id,

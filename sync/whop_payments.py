@@ -12,6 +12,7 @@ other ("sibling") memberships, guarded against double-counting (see docstring).
 """
 
 import logging
+import math
 from datetime import datetime, timezone
 
 import httpx
@@ -278,10 +279,38 @@ def _compute_payment_metrics(
     # total_installments: authoritative plan length from the membership's
     # split_pay_required_payments (passed as installments_override). len(payments)
     # under-counts internal plans because Whop does not pre-create future records.
+    #
+    # Stale-override guard: if MORE paid installments exist than the override
+    # claims, the stored plan length is not authoritative (e.g. a renewal plan
+    # whose length was recorded as len(payments)=1 at match time) — discard it.
+    if (
+        installments_override
+        and not is_external
+        and payment_count > installments_override
+    ):
+        installments_override = None
     total_installments = (
         installments_override if installments_override
         else (len(payments) if payments else None)
     )
+    # Renewal-plan inference: internal recurring memberships (e.g. "$6,000 /
+    # 3-months" renewing quarterly) have no split_pay_required_payments, so the
+    # plan length is unknown. Once ≥2 installments have landed (a proven
+    # repeating pattern), infer the intended count from the GHL contract as a
+    # COUNT hint only — never trust its amount: ceil(contract ÷ avg installment).
+    # Single-payment deals are untouched (a rep-overstated GHL value must not
+    # inflate a pay-in-full deal).
+    if (
+        not installments_override
+        and not is_external
+        and payment_count >= 2
+        and contract_value > 0
+        and total_paid > 0
+    ):
+        avg_installment = total_paid / payment_count
+        inferred = math.ceil(contract_value / avg_installment - 1e-9)
+        if inferred > (total_installments or 0):
+            total_installments = min(inferred, 12)
     # plan_months_flag: internal plan (no external financing) running longer than 3.
     plan_months_flag = bool(
         not is_external

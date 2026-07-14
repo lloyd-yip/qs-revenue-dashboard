@@ -41,24 +41,24 @@ REFRESH_STALE_HOURS = 6       # rows refreshed within this window are skipped (i
 WHOP_CALL_DELAY_SEC = 0.2     # cushion between Whop API calls to respect rate limits
 
 
-def _current_month_bounds(today) -> tuple:
-    """Return (first_day, last_day) date bounds for the month containing `today`."""
-    first = today.replace(day=1)
-    if first.month == 12:
-        next_first = first.replace(year=first.year + 1, month=1)
-    else:
-        next_first = first.replace(month=first.month + 1)
-    return first, next_first - timedelta(days=1)
+# Rolling refresh window. Was current-month-only, but Cash Collected stacks
+# installments and deals run up to ~6-month payment plans — a deal whose first
+# payment landed in a PREVIOUS month must still pick up later installments
+# (e.g. first payment Jun 11, next renewal Jul 14).
+REFRESH_LOOKBACK_DAYS = 190
 
 
 async def refresh_current_month_payment_metrics() -> dict:
-    """Re-fetch Whop payments for current-month high/medium matches and overwrite net cash.
+    """Re-fetch Whop payments for recent high/medium matches and overwrite net cash.
 
+    Covers deals whose first payment landed within REFRESH_LOOKBACK_DAYS, so
+    installment plans keep stacking after their first month.
     Returns {refreshed, skipped, errors, flagged}. `skipped` reflects stale-window
     filtering done at the query layer (those rows are never fetched).
     """
     started = datetime.now(timezone.utc)
-    month_start, month_end = _current_month_bounds(started.date())
+    month_start = started.date() - timedelta(days=REFRESH_LOOKBACK_DAYS)
+    month_end = started.date()
     stale_before = started - timedelta(hours=REFRESH_STALE_HOURS)
 
     stats = {"refreshed": 0, "skipped": 0, "errors": 0, "flagged": 0}
