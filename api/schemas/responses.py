@@ -311,6 +311,7 @@ class RepOppsResponse(BaseModel):
 class DailyActivityRow(BaseModel):
     day: str              # ISO date string YYYY-MM-DD
     booked: int
+    occurred: int = 0     # calls with a determinate outcome (show-rate denominator)
     showed: int
     show_rate: float | None
     qual: int

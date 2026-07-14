@@ -510,6 +510,7 @@ async def get_daily_activity(
         {
             "day": row.day.isoformat() if hasattr(row.day, "isoformat") else str(row.day),
             "booked": row.booked,
+            "occurred": row.occurred,
             "showed": row.showed,
             # Show rate = shows / occurred (excludes still-upcoming Confirmed calls), consistent
             # with the KPI cards and time-series — not shows / booked.

@@ -1309,6 +1309,7 @@ async function renderDailyActivity() {
       return `<tr>
         <td>${dayLabel}</td>
         <td class="num">${num(d.booked)}</td>
+        <td class="num" style="color:var(--text2);">${num(d.occurred)}</td>
         <td class="num">${num(d.showed)}</td>
         <td class="num ${rateClass(d.show_rate)}">${pct(d.show_rate)}</td>
         <td class="num">${num(d.qual)}</td>
@@ -1320,8 +1321,9 @@ async function renderDailyActivity() {
         <thead><tr>
           <th>Date</th>
           <th class="num">Booked</th>
+          <th class="num" title="Calls with a determinate outcome (showed + no-show + cancelled) — the Show Rate denominator. Booked minus Occurred = still upcoming.">Occurred</th>
           <th class="num">Showed</th>
-          <th class="num">Show Rate</th>
+          <th class="num" title="Showed ÷ Occurred">Show Rate</th>
           <th class="num">Qual Calls</th>
           <th class="num">Qual Rate</th>
         </tr></thead>
