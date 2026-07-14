@@ -20,6 +20,14 @@ class Settings(BaseSettings):
     # Delay between paginated GHL API calls (ms) to stay within rate limits
     ghl_page_delay_ms: int = 150
     ghl_page_size: int = 100
+    # Overall hard cap on a single sync run (seconds). A run that exceeds this is
+    # cancelled and recorded as 'failed' rather than hanging forever at 'running'.
+    # Default 2700s (45 min) — well above a normal ~20-30 min run, but finite.
+    sync_timeout_s: int = 2700
+    # Any sync_run still 'running' older than this (minutes) is a stuck/orphaned run
+    # (e.g. the process died mid-sync before it could write its status) and is reaped
+    # to 'failed'. Must be comfortably above sync_timeout_s.
+    sync_stale_reap_minutes: int = 90
 
     # Whop — optional, only needed for /deals/run-match
     # Add WHOP_API_KEY to Railway env vars to enable deal matching.

@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config import settings
 from db.models import Appointment, Opportunity, SourceNormalization, SyncRun
 from db.session import AsyncSessionLocal
+from sync.contact_cache import ContactCache
 from sync.ghl_client import (
     DEAL_WON_STAGE_ID,
     GHLClient,
@@ -164,7 +165,7 @@ def _derive_calls_from_appointments(
 async def _build_opportunity_row(
     opp: dict,
     normalization_map: dict[str, str],
-    ghl_client: GHLClient,
+    ghl_client: "GHLClient | ContactCache",
     user_map: dict[str, str] | None = None,
     pipeline_id: str | None = None,
     is_upsell: bool = False,
@@ -174,6 +175,10 @@ async def _build_opportunity_row(
 
     is_upsell=True skips the expensive per-contact API calls (appointments, contact
     dateAdded, notes) since the upsell pipeline has no call1/call2 dates to resolve.
+
+    ``ghl_client`` is a ContactCache during a real sync (dedupes the per-contact fetches
+    across opportunities that share a contact); it only needs the three get_contact_*
+    methods, which the cache duck-types.
     """
     custom = extract_custom_fields(opp)
     attrs = extract_attributions(opp)
@@ -503,132 +508,170 @@ async def run_sync(sync_type: str = "incremental") -> dict:
                 logger.info("No previous sync found — running as full sync")
                 sync_type = "full"
 
-    ghl_client = GHLClient()
+    # Counters + status live OUTSIDE the try so the final status write (in the finally
+    # block below) can always read them — even if the sync body raises or times out.
     synced_count: int = 0
     error_count: int = 0
     error_details: list = []
+    status: str = "failed"          # overwritten to 'completed' only on a clean finish
+    fatal_error: BaseException | None = None
 
-    user_map = await ghl_client.get_users()
-    logger.info("Loaded %d users for rep name resolution", len(user_map))
+    async def _do_sync() -> None:
+        """The actual fetch/build/write work. Mutates the enclosing counters. Wrapped
+        in a timeout + try below so a hang or exception can never orphan the sync_run."""
+        nonlocal synced_count, error_count
 
-    # Calendar id→name map — drives name-based appointment classification (F1 fix).
-    calendar_names = await ghl_client.get_calendars()
+        ghl_client = GHLClient()
+        # Per-run cache: dedupes the per-contact fetches (appointments/contact/notes)
+        # across opportunities that share a contactId — the sync's dominant cost.
+        contact_cache = ContactCache(ghl_client)
 
-    # Loop over both pipelines — sales first, then upsell.
-    pipeline_configs = [
-        {"pipeline_id": SALES_PIPELINE_ID,  "is_upsell": False},
-        {"pipeline_id": UPSELL_PIPELINE_ID, "is_upsell": True},
-    ]
+        user_map = await ghl_client.get_users()
+        logger.info("Loaded %d users for rep name resolution", len(user_map))
 
-    # Concurrency: the slow part is per-contact GHL fetches (appointments/contact/notes)
-    # inside _build_opportunity_row. We build a CHUNK of opportunities concurrently
-    # (bounded by a semaphore) and then write them SEQUENTIALLY in a fresh, short-lived
-    # session per chunk. Builds touch only the GHL API + pure functions (no DB), so they
-    # are safe to run in parallel; a single writer keeps the DB side safe; a fresh session
-    # per chunk keeps connections short enough that the pooler never closes one mid-run.
-    CONCURRENCY = 6      # concurrent per-contact fetches (kept under GHL's rate ceiling)
-    CHUNK_SIZE = 60      # opportunities built per chunk before the sequential write pass
-    sem = asyncio.Semaphore(CONCURRENCY)
+        # Calendar id→name map — drives name-based appointment classification (F1 fix).
+        calendar_names = await ghl_client.get_calendars()
 
-    async def _build_guarded(raw_opp, pid, is_upsell):
-        async with sem:
-            return await _build_opportunity_row(
-                raw_opp, normalization_map, ghl_client, user_map,
-                pipeline_id=pid, is_upsell=is_upsell, calendar_names=calendar_names,
+        # Loop over both pipelines — sales first, then upsell.
+        pipeline_configs = [
+            {"pipeline_id": SALES_PIPELINE_ID,  "is_upsell": False},
+            {"pipeline_id": UPSELL_PIPELINE_ID, "is_upsell": True},
+        ]
+
+        # Concurrency: the slow part is per-contact GHL fetches (appointments/contact/notes)
+        # inside _build_opportunity_row. We build a CHUNK of opportunities concurrently
+        # (bounded by a semaphore) and then write them SEQUENTIALLY in a fresh, short-lived
+        # session per chunk. Builds touch only the GHL API + pure functions (no DB), so they
+        # are safe to run in parallel; a single writer keeps the DB side safe; a fresh session
+        # per chunk keeps connections short enough that the pooler never closes one mid-run.
+        CONCURRENCY = 6      # concurrent per-contact fetches (kept under GHL's rate ceiling)
+        CHUNK_SIZE = 60      # opportunities built per chunk before the sequential write pass
+        sem = asyncio.Semaphore(CONCURRENCY)
+
+        async def _build_guarded(raw_opp, pid, is_upsell):
+            async with sem:
+                return await _build_opportunity_row(
+                    raw_opp, normalization_map, contact_cache, user_map,
+                    pipeline_id=pid, is_upsell=is_upsell, calendar_names=calendar_names,
+                )
+
+        async def _process_chunk(opps, pid, is_upsell) -> tuple[int, int]:
+            """Build a chunk concurrently, then write it in one fresh session. Returns
+            (n_synced, n_errors)."""
+            n_synced = 0
+            n_err = 0
+            built = await asyncio.gather(
+                *[_build_guarded(o, pid, is_upsell) for o in opps],
+                return_exceptions=True,
             )
-
-    async def _process_chunk(opps, pid, is_upsell) -> tuple[int, int]:
-        """Build a chunk concurrently, then write it in one fresh session. Returns
-        (n_synced, n_errors)."""
-        n_synced = 0
-        n_err = 0
-        built = await asyncio.gather(
-            *[_build_guarded(o, pid, is_upsell) for o in opps],
-            return_exceptions=True,
-        )
-        async with AsyncSessionLocal() as session:
-            for raw_opp, res in zip(opps, built):
-                oid = raw_opp.get("id", "unknown")
-                if isinstance(res, Exception):
-                    n_err += 1
-                    error_details.append({"opportunity_id": oid, "error": str(res)})
-                    logger.error("Failed to build opportunity %s: %s", oid, res)
-                    continue
-                try:
-                    await _write_opportunity_row(session, res, calendar_names, started_at)
-                    n_synced += 1
-                except Exception as exc:
-                    n_err += 1
-                    error_details.append({"opportunity_id": oid, "error": str(exc)})
-                    logger.error("Failed to write opportunity %s: %s", oid, exc)
-                    # Roll back so the aborted transaction doesn't fail the rest of the
-                    # chunk; if the connection itself died, abandon this chunk (its opps
-                    # re-sync next run — idempotent).
+            async with AsyncSessionLocal() as session:
+                for raw_opp, res in zip(opps, built):
+                    oid = raw_opp.get("id", "unknown")
+                    if isinstance(res, Exception):
+                        n_err += 1
+                        error_details.append({"opportunity_id": oid, "error": str(res)})
+                        logger.error("Failed to build opportunity %s: %s", oid, res)
+                        continue
                     try:
-                        await session.rollback()
-                    except Exception:
-                        break
-            try:
-                await session.commit()
-            except Exception as exc:
-                logger.error("Chunk commit failed: %s", exc)
-        return n_synced, n_err
+                        await _write_opportunity_row(session, res, calendar_names, started_at)
+                        n_synced += 1
+                    except Exception as exc:
+                        n_err += 1
+                        error_details.append({"opportunity_id": oid, "error": str(exc)})
+                        logger.error("Failed to write opportunity %s: %s", oid, exc)
+                        # Roll back so the aborted transaction doesn't fail the rest of the
+                        # chunk; if the connection itself died, abandon this chunk (its opps
+                        # re-sync next run — idempotent).
+                        try:
+                            await session.rollback()
+                        except Exception:
+                            break
+                try:
+                    await session.commit()
+                except Exception as exc:
+                    logger.error("Chunk commit failed: %s", exc)
+            return n_synced, n_err
 
-    for pipeline_cfg in pipeline_configs:
-        pid       = pipeline_cfg["pipeline_id"]
-        is_upsell = pipeline_cfg["is_upsell"]
-        logger.info("Syncing pipeline %s (is_upsell=%s, concurrency=%d)", pid, is_upsell, CONCURRENCY)
+        for pipeline_cfg in pipeline_configs:
+            pid       = pipeline_cfg["pipeline_id"]
+            is_upsell = pipeline_cfg["is_upsell"]
+            logger.info("Syncing pipeline %s (is_upsell=%s, concurrency=%d)", pid, is_upsell, CONCURRENCY)
 
-        seen_ids: set[str] = set()
-        pending: list[dict] = []
-        async for raw_opp in ghl_client.stream_opportunities(updated_after=updated_after, pipeline_id=pid):
-            oid = raw_opp.get("id")
-            if oid:
-                seen_ids.add(oid)
-            pending.append(raw_opp)
-            if len(pending) >= CHUNK_SIZE:
+            seen_ids: set[str] = set()
+            pending: list[dict] = []
+            async for raw_opp in ghl_client.stream_opportunities(updated_after=updated_after, pipeline_id=pid):
+                oid = raw_opp.get("id")
+                if oid:
+                    seen_ids.add(oid)
+                pending.append(raw_opp)
+                if len(pending) >= CHUNK_SIZE:
+                    s, e = await _process_chunk(pending, pid, is_upsell)
+                    synced_count += s
+                    error_count += e
+                    pending = []
+                    logger.info("Synced %d opportunities so far", synced_count)
+            if pending:
                 s, e = await _process_chunk(pending, pid, is_upsell)
                 synced_count += s
                 error_count += e
-                pending = []
-                logger.info("Synced %d opportunities so far", synced_count)
-        if pending:
-            s, e = await _process_chunk(pending, pid, is_upsell)
-            synced_count += s
-            error_count += e
-        logger.info("Pipeline %s done — %d total synced so far", pid, synced_count)
+            logger.info("Pipeline %s done — %d total synced so far", pid, synced_count)
 
-        # Auto-reconcile orphans: on a FULL sync we have the complete live set, so any DB
-        # opp for this pipeline not seen in GHL was deleted/merged/moved out — remove it.
-        # Sales pipeline only for now (Upsell is being reworked separately). Never runs on
-        # incremental (the fetch is partial).
-        if sync_type == "full" and not is_upsell:
-            await _reconcile_pipeline(pid, seen_ids)
+            # Auto-reconcile orphans: on a FULL sync we have the complete live set, so any DB
+            # opp for this pipeline not seen in GHL was deleted/merged/moved out — remove it.
+            # Sales pipeline only for now (Upsell is being reworked separately). Never runs on
+            # incremental (the fetch is partial).
+            if sync_type == "full" and not is_upsell:
+                await _reconcile_pipeline(pid, seen_ids)
 
-    # Update sync_run in a FRESH session (the loop session may have been recycled).
-    completed_at = datetime.now(timezone.utc)
-    status = "failed" if (synced_count == 0 and error_count > 0) else "completed"
-    async with AsyncSessionLocal() as status_session:
-        await status_session.execute(
-            text("""
-                UPDATE sync_runs
-                SET status = :status,
-                    completed_at = :completed_at,
-                    opportunities_synced = :synced,
-                    errors_count = :errors,
-                    error_details = CAST(:details AS jsonb)
-                WHERE id = :id
-            """),
-            {
-                "status": status,
-                "completed_at": completed_at,
-                "synced": synced_count,
-                "errors": error_count,
-                "details": json.dumps(error_details) if error_details else None,
-                "id": str(sync_run_id),
-            },
+        logger.info("Contact cache dedup stats: %s", contact_cache.stats())
+
+    # --- Run the sync body under an overall timeout, catching ANY failure. -----------
+    # The whole point: the sync_run row must ALWAYS be moved off 'running'. Previously a
+    # timeout/exception here escaped before the status write, leaving the row stuck at
+    # 'running' forever (and the scheduler firing a fresh run each hour → a pile-up).
+    try:
+        await asyncio.wait_for(_do_sync(), timeout=settings.sync_timeout_s)
+        status = "failed" if (synced_count == 0 and error_count > 0) else "completed"
+    except (asyncio.TimeoutError, TimeoutError) as exc:
+        fatal_error = exc
+        status = "failed"
+        error_details.append(
+            {"error": f"sync exceeded overall timeout of {settings.sync_timeout_s}s", "fatal": True}
         )
-        await status_session.commit()
+        logger.error("Sync timed out after %ss — marking failed", settings.sync_timeout_s)
+    except Exception as exc:
+        fatal_error = exc
+        status = "failed"
+        error_details.append({"error": str(exc), "fatal": True})
+        logger.error("Sync failed with a fatal error — marking failed: %s", exc, exc_info=True)
+
+    # --- ALWAYS write the final status (in its own try so a write failure can't mask
+    # the original error). Fresh session — the loop session may have been recycled. -----
+    completed_at = datetime.now(timezone.utc)
+    try:
+        async with AsyncSessionLocal() as status_session:
+            await status_session.execute(
+                text("""
+                    UPDATE sync_runs
+                    SET status = :status,
+                        completed_at = :completed_at,
+                        opportunities_synced = :synced,
+                        errors_count = :errors,
+                        error_details = CAST(:details AS jsonb)
+                    WHERE id = :id
+                """),
+                {
+                    "status": status,
+                    "completed_at": completed_at,
+                    "synced": synced_count,
+                    "errors": error_count,
+                    "details": json.dumps(error_details) if error_details else None,
+                    "id": str(sync_run_id),
+                },
+            )
+            await status_session.commit()
+    except Exception as exc:
+        logger.error("Failed to write final sync status for run %s: %s", sync_run_id, exc)
 
     duration_s = (datetime.now(timezone.utc) - started_at).total_seconds()
     summary = {
@@ -638,5 +681,12 @@ async def run_sync(sync_type: str = "incremental") -> dict:
         "errors_count": error_count,
         "duration_seconds": round(duration_s, 1),
     }
+
+    # Status is now durably persisted. Re-raise a fatal error so the scheduler/caller
+    # still surfaces it in the logs (the DB already records the 'failed' state).
+    if fatal_error is not None:
+        logger.error("Sync %s finished FAILED after %.1fs: %s", sync_type, duration_s, summary)
+        raise fatal_error
+
     logger.info("Sync complete: %s", summary)
     return summary

@@ -26,7 +26,7 @@ from api.routers import xero_invoices as xero_invoices_router
 from api.schemas.responses import HealthResponse
 from config import settings
 from db.models import SyncRun
-from db.queries.sync_status import check_db_health
+from db.queries.sync_status import check_db_health, reap_stale_sync_runs
 from db.session import AsyncSessionLocal, engine
 from sync.scheduler import create_scheduler
 from sync.sync_engine import run_sync
@@ -61,6 +61,16 @@ async def verify_token(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _scheduler
+
+    # Heal any sync runs orphaned at 'running' by a previous crash/restart before this
+    # process died mid-sync — otherwise they sit stuck forever and pile up.
+    try:
+        async with AsyncSessionLocal() as session:
+            reaped = await reap_stale_sync_runs(session, settings.sync_stale_reap_minutes)
+        if reaped:
+            logger.warning("Startup: reaped %d stuck 'running' sync run(s) → failed", reaped)
+    except Exception as exc:
+        logger.error("Startup: stale-sync reaper failed — %s", exc)
 
     _scheduler = create_scheduler()
     _scheduler.start()

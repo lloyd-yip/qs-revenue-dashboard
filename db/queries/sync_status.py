@@ -1,11 +1,42 @@
 """Sync run status queries."""
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import desc, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import SyncRun
+
+
+async def reap_stale_sync_runs(session: AsyncSession, older_than_minutes: int = 90) -> int:
+    """Mark orphaned 'running' sync runs as 'failed' and return how many were reaped.
+
+    A run is orphaned when the process died mid-sync (e.g. a Railway restart) before it
+    could write its final status — run_sync's own error handling can't cover that case.
+    Such rows sit at 'running' forever and, because the scheduler then fires a fresh run
+    each interval, they pile up. This sweep clears anything 'running' whose started_at is
+    older than the cutoff (which is set well above a normal run + the sync timeout, so it
+    only ever touches genuinely stuck rows).
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=older_than_minutes)
+    result = await session.execute(
+        text("""
+            UPDATE sync_runs
+            SET status = 'failed',
+                completed_at = :now,
+                error_details = CAST(:details AS jsonb)
+            WHERE status = 'running'
+              AND started_at < :cutoff
+        """),
+        {
+            "now": datetime.now(timezone.utc),
+            "cutoff": cutoff,
+            "details": '[{"error": "reaped: stuck in running past the stale threshold '
+                       '(orphaned by a restart or a hang)", "fatal": true}]',
+        },
+    )
+    await session.commit()
+    return result.rowcount or 0
 
 
 async def get_latest_sync_run(session: AsyncSession) -> SyncRun | None:

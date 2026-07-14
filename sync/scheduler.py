@@ -7,6 +7,8 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from config import settings
+from db.queries.sync_status import reap_stale_sync_runs
+from db.session import AsyncSessionLocal
 from sync.appointment_resolver import resolve_appointments
 from sync.sync_engine import run_sync
 from sync.whop_refresh import refresh_current_month_payment_metrics
@@ -29,6 +31,19 @@ def create_scheduler() -> AsyncIOScheduler:
         replace_existing=True,
         misfire_grace_time=60,
         max_instances=1,  # Never overlap — if one is still running, skip the next fire
+    )
+
+    # Stale-sync reaper — every 30 min. Heals any sync_run orphaned at 'running' (e.g. a
+    # process restart killed a run before it could write its status), so stuck rows can't
+    # pile up between deploys. Cheap single UPDATE; safe to run alongside a live sync.
+    scheduler.add_job(
+        _run_stale_sync_reaper,
+        trigger=IntervalTrigger(minutes=30),
+        id="stale_sync_reaper_30min",
+        name="Reap orphaned 'running' sync runs",
+        replace_existing=True,
+        misfire_grace_time=300,
+        max_instances=1,
     )
 
     # Daily appointment resolver — 7pm EST (midnight UTC) — auto-flips call1_appointment_status
@@ -112,6 +127,16 @@ async def _run_xero_keepalive() -> None:
     except Exception as exc:
         logger.error("Scheduler: Xero keep-alive FAILED — token may expire if unused 60 days. "
                      "Reconnect via Settings → Connectors if syncs start failing. Error: %s", exc)
+
+
+async def _run_stale_sync_reaper() -> None:
+    try:
+        async with AsyncSessionLocal() as session:
+            reaped = await reap_stale_sync_runs(session, settings.sync_stale_reap_minutes)
+        if reaped:
+            logger.warning("Scheduler: reaped %d stuck 'running' sync run(s) → failed", reaped)
+    except Exception as exc:
+        logger.error("Scheduler: stale-sync reaper failed — %s", exc)
 
 
 async def _run_incremental() -> None:
