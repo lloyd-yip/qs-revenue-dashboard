@@ -507,11 +507,21 @@ async def get_lookups():
 
     ghl = GHLClient()
 
-    # Fetch calendars
-    calendars = await ghl.get_calendars()
+    # Hard budget on the live GHL calls: when GHL is rate-limited, the client's
+    # 429 backoff can run for minutes — a cosmetic name lookup must never hang
+    # that long (it blocked the whole Debug page). On timeout/failure return the
+    # fallback names WITHOUT caching, so a later call retries once GHL recovers.
+    import asyncio as _asyncio
+    import logging as _logging
+    try:
+        calendars = await _asyncio.wait_for(ghl.get_calendars(), timeout=8.0)
+        stages = await _asyncio.wait_for(ghl.get_pipeline_stages(), timeout=8.0)
+    except Exception as exc:
+        _logging.getLogger(__name__).warning(
+            f"Lookups: GHL unavailable ({exc}) — serving fallback names, not cached"
+        )
+        return {"calendars": {}, "stages": dict(FALLBACK_STAGE_NAMES)}
 
-    # Fetch pipeline stages
-    stages = await ghl.get_pipeline_stages()
     # Merge fallback stage names for any IDs not returned by API
     merged_stages = {**FALLBACK_STAGE_NAMES, **stages}
 

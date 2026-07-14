@@ -474,6 +474,21 @@ async def _reconcile_pipeline(pipeline_id: str, seen_ids: set) -> int:
         return res.rowcount
 
 
+class _SyncCancelled(Exception):
+    """Raised inside the sync body when the run's row was cancelled by the user."""
+
+
+async def _raise_if_cancelled(sync_run_id) -> None:
+    """Abort the sync if its sync_run row is no longer 'running' (user cancel)."""
+    async with AsyncSessionLocal() as s:
+        row = (await s.execute(
+            text("SELECT status FROM sync_runs WHERE id = :id"),
+            {"id": str(sync_run_id)},
+        )).scalar_one_or_none()
+    if row is not None and row != "running":
+        raise _SyncCancelled()
+
+
 async def run_sync(sync_type: str = "incremental") -> dict:
     """Run a full or incremental sync. Returns a summary dict.
 
@@ -483,6 +498,32 @@ async def run_sync(sync_type: str = "incremental") -> dict:
     logger.info("Starting %s sync at %s", sync_type, started_at.isoformat())
 
     async with AsyncSessionLocal() as session:
+        # Concurrency guard: never start while another sync is running. Multiple
+        # schedulers can exist at once (zombie deployment containers, deploy-boot
+        # races) and manual triggers can collide with scheduled runs — overlapping
+        # syncs pile up 'running' rows and burn the GHL daily quota (2026-07-14:
+        # 200k/day exhausted). Rows older than the stale threshold are ignored
+        # (the reaper handles those).
+        blocker = (await session.execute(
+            text("""
+                SELECT id FROM sync_runs
+                WHERE status = 'running'
+                  AND started_at > now() - make_interval(mins => :stale_mins)
+                LIMIT 1
+            """),
+            {"stale_mins": settings.sync_stale_reap_minutes},
+        )).scalar_one_or_none()
+        if blocker:
+            logger.warning(
+                "Skipping %s sync — run %s is already running (concurrency guard)",
+                sync_type, blocker,
+            )
+            return {
+                "sync_type": sync_type,
+                "status": "skipped",
+                "reason": f"another sync ({blocker}) is already running",
+            }
+
         # Create sync_run record
         sync_run = SyncRun(
             sync_type=sync_type,
@@ -558,6 +599,7 @@ async def run_sync(sync_type: str = "incremental") -> dict:
         async def _process_chunk(opps, pid, is_upsell) -> tuple[int, int]:
             """Build a chunk concurrently, then write it in one fresh session. Returns
             (n_synced, n_errors)."""
+            await _raise_if_cancelled(sync_run_id)  # user cancel → abort within one chunk
             n_synced = 0
             n_err = 0
             built = await asyncio.gather(
@@ -632,6 +674,10 @@ async def run_sync(sync_type: str = "incremental") -> dict:
     try:
         await asyncio.wait_for(_do_sync(), timeout=settings.sync_timeout_s)
         status = "failed" if (synced_count == 0 and error_count > 0) else "completed"
+    except _SyncCancelled:
+        status = "cancelled"
+        logger.info("Sync run %s cancelled by user — stopping (%d synced so far)",
+                    sync_run_id, synced_count)
     except (asyncio.TimeoutError, TimeoutError) as exc:
         fatal_error = exc
         status = "failed"
@@ -658,7 +704,7 @@ async def run_sync(sync_type: str = "incremental") -> dict:
                         opportunities_synced = :synced,
                         errors_count = :errors,
                         error_details = CAST(:details AS jsonb)
-                    WHERE id = :id
+                    WHERE id = :id AND status = 'running'
                 """),
                 {
                     "status": status,
@@ -669,6 +715,8 @@ async def run_sync(sync_type: str = "incremental") -> dict:
                     "id": str(sync_run_id),
                 },
             )
+            # status='running' guard: if the user cancelled (the cancel endpoint
+            # already closed the row), don't overwrite that with a late write.
             await status_session.commit()
     except Exception as exc:
         logger.error("Failed to write final sync status for run %s: %s", sync_run_id, exc)

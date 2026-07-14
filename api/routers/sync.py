@@ -103,6 +103,35 @@ async def backfill_appointment_owners():
         return {"ok": False, "error": str(exc)}
 
 
+@router.post("/cancel/{run_id}")
+async def cancel_sync(run_id: str, db: AsyncSession = Depends(get_db)):
+    """Cancel a running sync run.
+
+    Closes the sync_run row immediately (status='cancelled'); a live sync built
+    from current code notices within one chunk (~seconds) and aborts its work.
+    Also useful to clean up rows orphaned by zombie/killed processes on demand
+    instead of waiting for the stale-run reaper.
+    """
+    import json as _json
+    from sqlalchemy import text
+
+    result = await db.execute(
+        text("""
+            UPDATE sync_runs
+            SET status = 'cancelled',
+                completed_at = now(),
+                error_details = CAST(:details AS jsonb)
+            WHERE id = CAST(:id AS uuid) AND status = 'running'
+        """),
+        {"id": run_id, "details": _json.dumps([{"error": "cancelled by user", "fatal": True}])},
+    )
+    await db.commit()
+    cancelled = (result.rowcount or 0) > 0
+    if cancelled:
+        logger.info("Sync run %s cancelled by user", run_id)
+    return {"ok": True, "cancelled": cancelled}
+
+
 @router.get("/whop-inspect")
 async def whop_inspect(email: str):
     """Diagnostic: raw Whop memberships + payments for one customer email.

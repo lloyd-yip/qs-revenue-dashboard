@@ -240,8 +240,12 @@ async function loadSyncHistory() {
         statusBadge = `<span class="badge badge-completed">✓ Completed</span>`;
       } else if (run.status === 'failed') {
         statusBadge = `<span class="badge badge-failed">✗ Failed</span>`;
+      } else if (run.status === 'cancelled') {
+        statusBadge = `<span class="badge badge-failed" style="opacity:0.75;">⊘ Cancelled</span>`;
       } else {
-        statusBadge = `<span class="badge badge-running">⟳ Running</span>`;
+        statusBadge = `<span class="badge badge-running">⟳ Running</span>
+          <button onclick="cancelSync('${run.id}')" title="Cancel this sync run"
+            style="margin-left:6px; padding:2px 8px; border-radius:5px; border:1px solid var(--red, #ef4444); background:none; color:var(--red, #ef4444); cursor:pointer; font-size:11px; vertical-align:middle;">✕ Cancel</button>`;
       }
 
       let errorsCell = run.errors_count || 0;
@@ -280,6 +284,20 @@ async function loadSyncHistory() {
 function toggleErrors(idx) {
   const el = document.getElementById('err-' + idx);
   el.style.display = el.style.display === 'none' || !el.style.display ? 'block' : 'none';
+}
+
+async function cancelSync(runId) {
+  if (!confirm('Cancel this sync run? A live run stops within seconds; the row is closed immediately.')) return;
+  try {
+    const res = await fetch(`/api/sync/cancel/${runId}`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${SYNC_TOKEN}` },
+    });
+    if (!res.ok) throw new Error(`API error ${res.status}`);
+    await loadSyncHistory();
+  } catch (e) {
+    alert('Cancel failed: ' + e.message);
+  }
 }
 
 function escHtml(str) {

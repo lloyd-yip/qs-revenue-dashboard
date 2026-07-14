@@ -598,9 +598,13 @@ const fp = flatpickr('#date-range-input', {
 
 // ─── Init ────────────────────────────────────────────────────────────────────
 async function init() {
-  // Fetch lookups (calendar names, stage names) from GHL API
+  // Fetch lookups (calendar/stage names) — cosmetic only, must never block the
+  // page (first call after a deploy hits GHL live; can hang when rate-limited).
   try {
-    const lookupRes = await fetch('/api/dashboard/lookups');
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 3000);
+    const lookupRes = await fetch('/api/dashboard/lookups', { signal: ctrl.signal });
+    clearTimeout(t);
     if (lookupRes.ok) lookupData = await lookupRes.json();
   } catch (e) {
     console.warn('Failed to load lookups:', e);
