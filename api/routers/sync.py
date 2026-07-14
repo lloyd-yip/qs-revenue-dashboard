@@ -103,6 +103,80 @@ async def backfill_appointment_owners():
         return {"ok": False, "error": str(exc)}
 
 
+@router.get("/whop-inspect")
+async def whop_inspect(email: str):
+    """Diagnostic: raw Whop memberships + payments for one customer email.
+
+    Bearer-protected (whole /api/sync router). Returns the customer's raw
+    membership objects, per-membership payment objects, and a company-wide
+    unfiltered payments probe matched to the customer — surfaces payments NOT
+    attached to any membership (direct charges), which membership-scoped
+    fetches can never see.
+    """
+    import httpx
+    from sync.whop_payments import (
+        WHOP_API_BASE,
+        _extract_whop_identity,
+        _fetch_membership_payments,
+        _fetch_whop_memberships,
+        _whop_headers,
+    )
+
+    email = email.lower().strip()
+    out: dict = {"email": email}
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        memberships = await _fetch_whop_memberships(client)
+        mine = [m for m in memberships if _extract_whop_identity(m)[0] == email]
+        out["membership_count"] = len(mine)
+        out["memberships"] = mine
+        out["payments_by_membership"] = {}
+        my_ids = set()
+        for m in mine:
+            mid = m.get("id")
+            if not mid:
+                continue
+            my_ids.add(mid)
+            out["payments_by_membership"][mid] = await _fetch_membership_payments(client, mid)
+        # Company-wide probe: unfiltered /payments, matched to this customer by
+        # membership id OR user id — catches unattached/direct charges.
+        user_ids = set()
+        for m in mine:
+            u = m.get("user")
+            if isinstance(u, dict) and u.get("id"):
+                user_ids.add(u["id"])
+            elif isinstance(u, str):
+                user_ids.add(u)
+        probe: list = []
+        page = 1
+        status = None
+        while page <= 40:
+            resp = await client.get(
+                f"{WHOP_API_BASE}/payments",
+                headers=_whop_headers(),
+                params={"per_page": 50, "page": page},
+            )
+            status = resp.status_code
+            if status != 200:
+                break
+            data = resp.json()
+            items = data.get("data", [])
+            for p in items:
+                p_m = p.get("membership")
+                p_mid = p_m.get("id") if isinstance(p_m, dict) else p_m
+                p_u = p.get("user")
+                p_uid = p_u.get("id") if isinstance(p_u, dict) else (p_u or p.get("user_id"))
+                if (p_mid and p_mid in my_ids) or (p_uid and p_uid in user_ids):
+                    probe.append(p)
+            pagination = data.get("pagination", {})
+            if not items or pagination.get("current_page", page) >= pagination.get("total_page", 1):
+                break
+            page += 1
+        out["unfiltered_probe_status"] = status
+        out["probe_pages_scanned"] = page
+        out["probe_payments"] = probe
+    return out
+
+
 async def _run_sync_background(sync_type: str) -> None:
     try:
         await run_sync(sync_type)

@@ -222,6 +222,19 @@ async def fetch_customer_payments(
     return payments, folded
 
 
+def membership_is_recurring(m: dict | None) -> bool:
+    """Best-effort: a membership with a renewal period is a recurring subscription plan.
+
+    Renewing plans (e.g. "$6,000 / 3-months") carry no split_pay_required_payments,
+    so this signal lets the plan-length inference kick in from the FIRST payment
+    instead of waiting for a second installment to prove the repeating pattern.
+    Field absent → False (no inference; pay-in-full deals stay untouched).
+    """
+    if not isinstance(m, dict):
+        return False
+    return bool(m.get("renewal_period_start") or m.get("renewal_period_end"))
+
+
 def _detect_external_processor(paid_payments: list[dict]) -> tuple[bool, bool]:
     """Detect whether any paid payment used an external financing processor.
 
@@ -237,6 +250,7 @@ def _compute_payment_metrics(
     payments: list[dict],
     ghl_monetary_value: float,
     installments_override: int | None = None,
+    is_recurring: bool = False,
 ) -> dict:
     """Derive payment summary from raw Whop payment objects.
 
@@ -283,10 +297,15 @@ def _compute_payment_metrics(
     # Stale-override guard: if MORE paid installments exist than the override
     # claims, the stored plan length is not authoritative (e.g. a renewal plan
     # whose length was recorded as len(payments)=1 at match time) — discard it.
+    # For recurring memberships, an override merely EQUAL to payments-seen is
+    # the same stale fallback signature (the plan renews beyond it).
     if (
         installments_override
         and not is_external
-        and payment_count > installments_override
+        and (
+            payment_count > installments_override
+            or (is_recurring and payment_count >= installments_override)
+        )
     ):
         installments_override = None
     total_installments = (
@@ -295,15 +314,16 @@ def _compute_payment_metrics(
     )
     # Renewal-plan inference: internal recurring memberships (e.g. "$6,000 /
     # 3-months" renewing quarterly) have no split_pay_required_payments, so the
-    # plan length is unknown. Once ≥2 installments have landed (a proven
-    # repeating pattern), infer the intended count from the GHL contract as a
-    # COUNT hint only — never trust its amount: ceil(contract ÷ avg installment).
-    # Single-payment deals are untouched (a rep-overstated GHL value must not
-    # inflate a pay-in-full deal).
+    # plan length is unknown. Infer the intended count from the GHL contract as
+    # a COUNT hint only — never trust its amount: ceil(contract ÷ avg installment).
+    # Triggers on ≥2 installments (a proven repeating pattern), or from the FIRST
+    # payment when the membership itself is a renewing plan (is_recurring).
+    # Single-payment one-time deals are untouched (a rep-overstated GHL value
+    # must not inflate a pay-in-full deal).
     if (
         not installments_override
         and not is_external
-        and payment_count >= 2
+        and (payment_count >= 2 or (is_recurring and payment_count >= 1))
         and contract_value > 0
         and total_paid > 0
     ):

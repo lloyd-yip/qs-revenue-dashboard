@@ -50,6 +50,7 @@ from sync.whop_payments import (  # noqa: F401 — re-exported for compat
     _fetch_whop_memberships,
     build_membership_email_index,
     fetch_customer_payments,
+    membership_is_recurring,
     sibling_memberships,
 )
 
@@ -889,6 +890,7 @@ async def _match_one_deal(
             metrics = _compute_payment_metrics(
                 payments, float(deal.monetary_value or 0),
                 installments_override=split_pay_count,
+                is_recurring=membership_is_recurring(best_m),
             )
             record.update(metrics)
             if split_pay_count:

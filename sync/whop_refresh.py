@@ -32,6 +32,7 @@ from sync.whop_payments import (
     _fetch_whop_memberships,
     build_membership_email_index,
     fetch_customer_payments,
+    membership_is_recurring,
     sibling_memberships,
 )
 
@@ -139,6 +140,7 @@ async def refresh_current_month_payment_metrics() -> dict:
                         payments,
                         snap["ghl_monetary_value"],
                         installments_override=snap["total_installments"],
+                        is_recurring=membership_is_recurring(matched_m),
                     )
                     updated = await update_live_payment_metrics(
                         session, snap["ghl_opportunity_id"], metrics

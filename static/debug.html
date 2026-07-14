@@ -302,6 +302,14 @@
       font-variant-numeric: tabular-nums;
     }
 
+    /* Money values with a hover tooltip (installment status / projection source) */
+    .money-hint {
+      cursor: help;
+      text-decoration: underline dotted;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 3px;
+    }
+
     /* Frozen first column (Opportunity) */
     th:first-child,
     td:first-child {
@@ -701,6 +709,28 @@
       return '$' + Math.round(v).toLocaleString();
     }
 
+    // Projected Total hover: where the projection comes from, flagging plans
+    // whose cycle/length is not set.
+    function projectedTooltip(r) {
+      if (r.whop_projected == null) return 'No reconciled payment data (deal not matched)';
+      if (r.is_splitit || r.is_claritypay) {
+        return 'Financed (Splitit/ClarityPay) — settled 100% upfront, so Projected Total = total settled';
+      }
+      const n = r.total_installments, k = r.payment_count || 0;
+      if (n && k && n > k) {
+        return `${k} of ${n} installments collected — Projected Total = avg installment × ${n}. Plan length from Whop (split-pay count) or inferred from the GHL Deal Size when the subscription cycle is not set.`;
+      }
+      if (k >= 1 && (!n || n <= k)) {
+        let tip = `⚠ Plan cycle/length not set on Whop — Projected Total = collected to date (${money(r.total_paid)}).`;
+        if (r.total_contract_value && r.total_paid && r.total_contract_value > r.total_paid) {
+          const hint = Math.ceil(r.total_contract_value / (r.total_paid / k));
+          tip += ` If this is a renewing subscription, the GHL Deal Size (${money(r.total_contract_value)}) suggests ~${hint} payments — the projection updates as installments land.`;
+        }
+        return tip;
+      }
+      return 'Projected Total = collected to date';
+    }
+
     // Cash Collected hover: installment plan status for one deal.
     function cashTooltip(r) {
       if (r.total_paid == null) return 'No reconciled payment data (deal not matched)';
@@ -931,9 +961,9 @@
       <td class="${qualClass(r.lead_quality)}">${r.lead_quality || '–'}</td>
       <td>${r.canonical_channel || '–'}</td>
       <td class="num">${money(r.projected_deal_size)}</td>
-      ${hasMoney ? `<td class="num" title="Reconciled contract value (Whop)">${r.total_contract_value != null ? money(r.total_contract_value) : '–'}</td>
-      <td class="num" title="Payment-verified projected FULL contract value, from Whop plan math — no rep input involved. Financed (Splitit/ClarityPay) = total paid (settles 100% upfront); internal plans = avg installment × plan length (split_pay_required_payments)">${r.whop_projected != null ? money(r.whop_projected) : '–'}</td>
-      <td class="num" title="${cashTooltip(r).replace(/"/g, '&quot;')}">${r.total_paid != null ? money(r.total_paid) : '–'}</td>` : ''}
+      ${hasMoney ? `<td class="num" title="GHL-entered deal size (rep-entered, not payment-verified)">${r.total_contract_value != null ? money(r.total_contract_value) : '–'}</td>
+      <td class="num"><span class="money-hint" title="${projectedTooltip(r).replace(/"/g, '&quot;')}">${r.whop_projected != null ? money(r.whop_projected) : '–'}</span></td>
+      <td class="num"><span class="money-hint" title="${cashTooltip(r).replace(/"/g, '&quot;')}">${r.total_paid != null ? money(r.total_paid) : '–'}</span></td>` : ''}
       <td>${formatDate(r.created_at_ghl)}</td>
       ${hasCloseDate ? `<td title="${r.first_payment_date ? 'First payment date' : 'GHL close date (no matched payment)'}">${r._close_paid_date ? formatDate(r._close_paid_date) : '–'}</td>` : ''}
       ${hasCycle ? `<td class="num" title="${r.first_payment_date ? 'First showed call → first payment (' + r.first_payment_date + ')' : 'First showed call → close date (no matched payment)'}">${(r.sales_cycle_days !== null && r.sales_cycle_days !== undefined) ? r.sales_cycle_days + 'd' : '–'}</td>` : ''}
