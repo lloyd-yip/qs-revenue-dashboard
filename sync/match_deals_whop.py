@@ -606,12 +606,16 @@ async def run_matching() -> dict:
             # which customers have multiple deals. Drives sibling-payment folding
             # (a customer settling ONE deal across two memberships) while
             # preventing double-counting across a customer's separate deals.
+            # Ordered so confirmed rows come last: when two rows share a
+            # membership, the confirmed claimant wins the dict entry.
             claim_rows = await session.execute(
                 select(
                     DealWhopMatch.ghl_opportunity_id,
                     DealWhopMatch.whop_membership_id,
                     DealWhopMatch.whop_email,
-                ).where(DealWhopMatch.whop_membership_id.isnot(None))
+                )
+                .where(DealWhopMatch.whop_membership_id.isnot(None))
+                .order_by(DealWhopMatch.is_confirmed.asc())
             )
             claimed_by_membership: dict[str, str] = {}
             deals_by_email: dict[str, set] = {}
@@ -667,21 +671,70 @@ async def _match_one_deal(
     # but still enrich payment metrics if they're missing.
     existing = await get_existing_match(session, deal.ghl_opportunity_id)
     if existing and existing.is_confirmed:
-        # Enrich payment metrics for confirmed Whop matches
+        # A confirmed match owns its membership ABSOLUTELY: demote any other
+        # non-confirmed row still claiming it (e.g. the auto-matched duplicate
+        # GHL opportunity the membership was manually taken from). Without this,
+        # the early return below skips the dedupe and the usurper keeps counting.
+        if existing.whop_membership_id:
+            prior_opp = claimed_by_membership.get(existing.whop_membership_id)
+            if prior_opp and prior_opp != deal.ghl_opportunity_id:
+                prior = await get_existing_match(session, prior_opp)
+                if prior and not prior.is_confirmed:
+                    from db.queries.deal_matches import demote_duplicate_match
+                    logger.warning(
+                        f"Deal {prior_opp}: demoted — membership "
+                        f"{existing.whop_membership_id} belongs to confirmed match "
+                        f"{deal.ghl_opportunity_id}"
+                    )
+                    await demote_duplicate_match(session, prior_opp)
+                    for _opps in deals_by_email.values():
+                        _opps.discard(prior_opp)
+            claimed_by_membership[existing.whop_membership_id] = deal.ghl_opportunity_id
+
+        # Enrich payment metrics for confirmed Whop matches — same customer-level
+        # collection as auto matches (sibling + unattached payments), with the
+        # same multi-deal guards.
         if existing.whop_membership_id and (
             existing.total_paid is None or float(existing.total_paid or 0) == 0
         ):
             from db.queries.deal_matches import enrich_deal_match_payments
             try:
-                payments = by_membership.get(existing.whop_membership_id)
-                if payments is None:
+                matched_m = next(
+                    (m for m in memberships if m.get("id") == existing.whop_membership_id),
+                    None,
+                )
+                w_email = (existing.whop_email or "").lower().strip()
+                other_deal_ids = {
+                    o for o in deals_by_email.get(w_email, set())
+                    if o != deal.ghl_opportunity_id
+                }
+                siblings = []
+                if matched_m and w_email and not other_deal_ids:
+                    claimed_other = {
+                        mid for mid, opp in claimed_by_membership.items()
+                        if opp != deal.ghl_opportunity_id
+                    }
+                    siblings = sibling_memberships(
+                        matched_m, memberships_by_email, claimed_other,
+                        existing.ghl_close_date,
+                    )
+                payments, _fold_notes = collect_customer_payments(
+                    matched_m or {"id": existing.whop_membership_id},
+                    siblings,
+                    by_membership,
+                    unattached_by_user if (matched_m and not other_deal_ids) else {},
+                    existing.ghl_close_date,
+                )
+                if not payments and not by_membership:
+                    # No sweep available (standalone call) — fall back to a direct fetch
                     payments = await _fetch_membership_payments(
                         whop_client, existing.whop_membership_id
                     )
                 if payments:
                     metrics = _compute_payment_metrics(
                         payments, float(deal.monetary_value or 0),
-                        installments_override=existing.total_installments,
+                        installments_override=(matched_m or {}).get("split_pay_required_payments"),
+                        is_recurring=membership_is_recurring(matched_m),
                     )
                     enriched = await enrich_deal_match_payments(
                         session, deal.ghl_opportunity_id, metrics
