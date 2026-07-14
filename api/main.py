@@ -2,6 +2,7 @@
 # noqa: force-redeploy v2
 
 import asyncio
+import json
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -13,7 +14,7 @@ from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from api.routers import metrics, sync as sync_router
 from api.routers import connectors as connectors_router
@@ -25,11 +26,12 @@ from api.routers import xero_expenses as xero_expenses_router
 from api.routers import xero_invoices as xero_invoices_router
 from api.schemas.responses import HealthResponse
 from config import settings
+from db.advisory_lock import try_acquire_scheduler_leadership
 from db.models import SyncRun
-from db.queries.sync_status import check_db_health, reap_stale_sync_runs
+from db.queries.sync_status import check_db_health
 from db.session import AsyncSessionLocal, engine
 from sync.scheduler import create_scheduler
-from sync.sync_engine import run_sync
+from sync.sync_engine import cancel_active_syncs, run_sync
 
 logging.basicConfig(
     level=logging.INFO,
@@ -58,35 +60,104 @@ async def verify_token(
 
 # --- App lifecycle ---
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+async def _start_leader() -> None:
+    """Leader-only startup: heal orphaned runs, resume a checkpointed one, start the
+    scheduler, and kick off the first-ever full sync."""
     global _scheduler
 
-    # Heal any sync runs orphaned at 'running' by a previous crash/restart before this
-    # process died mid-sync — otherwise they sit stuck forever and pile up.
+    # This process is now the SOLE scheduler, so any sync_run still 'running' must be
+    # orphaned by a previous process (a killed deploy container, a crash). Heal them so
+    # a young stuck row can't wedge the concurrency guard — EXCEPT a resumable one (has
+    # a checkpoint), which we continue from where it left off instead of failing.
+    resumable = None
     try:
         async with AsyncSessionLocal() as session:
-            reaped = await reap_stale_sync_runs(session, settings.sync_stale_reap_minutes)
-        if reaped:
-            logger.warning("Startup: reaped %d stuck 'running' sync run(s) → failed", reaped)
+            resumable = (await session.execute(text("""
+                SELECT id FROM sync_runs
+                WHERE status = 'running' AND checkpoint IS NOT NULL
+                ORDER BY started_at DESC LIMIT 1
+            """))).scalar_one_or_none()
+            healed = (await session.execute(text("""
+                UPDATE sync_runs
+                SET status = 'failed', completed_at = now(),
+                    error_details = CAST(:d AS jsonb), checkpoint = NULL
+                WHERE status = 'running'
+                  AND (CAST(:keep AS text) IS NULL OR id != CAST(:keep AS uuid))
+            """), {
+                "d": json.dumps([{"error": "orphaned by a restart — healed by the new scheduler process", "fatal": True}]),
+                "keep": str(resumable) if resumable else None,
+            })).rowcount
+            await session.commit()
+        if healed:
+            logger.warning("Startup: healed %d orphaned 'running' sync run(s) → failed", healed)
     except Exception as exc:
-        logger.error("Startup: stale-sync reaper failed — %s", exc)
+        logger.error("Startup: orphan-sync heal failed — %s", exc)
+
+    if resumable:
+        logger.info("Startup: resuming orphaned sync run %s from its checkpoint", resumable)
+        asyncio.create_task(run_sync(resume_run_id=str(resumable)))
 
     _scheduler = create_scheduler()
     _scheduler.start()
-    logger.info("Scheduler started — hourly incremental sync, daily appointment resolver, full sync on Sundays")
+    logger.info("Scheduler started (leader) — 6-hourly incremental sync, daily appointment resolver, weekly full sync")
 
-    # Trigger initial full sync if this is the first startup
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(select(SyncRun).limit(1))
-        if result.scalar_one_or_none() is None:
+    # First-ever startup: no syncs yet → kick off the initial full sync.
+    try:
+        async with AsyncSessionLocal() as session:
+            has_any = (await session.execute(select(SyncRun).limit(1))).scalar_one_or_none()
+        if has_any is None:
             logger.info("No previous sync found — triggering initial full sync")
             asyncio.create_task(run_sync("full"))
+    except Exception as exc:
+        logger.error("Startup: initial-sync check failed — %s", exc)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global _scheduler
+    app.state.leader_conn = None
+
+    # ── Single-scheduler election ───────────────────────────────────────────────
+    # Multiple app processes can coexist — a Railway deploy overlaps old+new, a
+    # container can outlive its deploy, or the app may run on a second host/replica.
+    # If each ran its own scheduler they'd each fire the incremental sync on its own
+    # boot schedule: the root cause of the duplicate hourly syncs. A Postgres advisory
+    # lock elects ONE scheduler process. NOTE: this is best-effort (a transaction-pooled
+    # connection can't hold a session lock); the atomic guard inside run_sync is the
+    # real protection against overlapping syncs, so leadership never needs to be perfect.
+    try:
+        app.state.leader_conn = await try_acquire_scheduler_leadership()
+    except Exception as exc:
+        logger.error("Startup: scheduler-leadership check failed — %s", exc)
+        app.state.leader_conn = None
+
+    if app.state.leader_conn is not None:
+        await _start_leader()
+    else:
+        logger.warning("Startup: another process holds scheduler leadership — this process serves HTTP only (no scheduler)")
 
     yield
 
+    # ── Graceful shutdown ───────────────────────────────────────────────────────
+    # Stop scheduling, then cancel any in-flight sync so THIS process exits promptly
+    # instead of lingering as a zombie that keeps firing its scheduler. A cancelled run
+    # keeps its 'running' row + checkpoint; the next leader resumes it on boot.
     if _scheduler:
-        _scheduler.shutdown(wait=False)
+        try:
+            _scheduler.shutdown(wait=False)
+        except Exception as exc:
+            logger.error("Shutdown: scheduler stop failed — %s", exc)
+    try:
+        n = await cancel_active_syncs()
+        if n:
+            logger.info("Shutdown: cancelled %d in-flight sync task(s)", n)
+    except Exception as exc:
+        logger.error("Shutdown: cancelling in-flight syncs failed — %s", exc)
+    if app.state.leader_conn is not None:
+        try:
+            await app.state.leader_conn.close()  # releases the scheduler advisory lock
+        except Exception as exc:
+            logger.error("Shutdown: releasing scheduler leadership failed — %s", exc)
     await engine.dispose()
     logger.info("Application shutdown complete")
 

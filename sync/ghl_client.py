@@ -333,18 +333,23 @@ class GHLClient:
         response.raise_for_status()
         return response.json()
 
-    async def stream_opportunities(
+    async def stream_opportunity_pages(
         self,
         updated_after: datetime | None = None,
         pipeline_id: str | None = None,
-    ) -> AsyncGenerator[dict, None]:
-        """Async generator that yields raw GHL opportunity dicts one at a time.
+        start_cursor_id: str | None = None,
+        start_cursor_after: int | None = None,
+    ) -> AsyncGenerator[tuple[list[dict], str | None, int | None], None]:
+        """Yield (page_items, next_cursor_id, next_cursor_after) per GHL page.
 
-        Args:
-            updated_after: If set, only fetch opportunities updated after this timestamp.
-                           If None, fetches all opportunities (full sync).
-            pipeline_id:   Override the default pipeline ID. Uses the configured
-                           ghl_pipeline_id from settings when not provided.
+        The yielded cursor is the position AFTER this page — the sync engine
+        persists it as a checkpoint once the page is fully processed, and a
+        resumed run passes it back via start_cursor_id/start_cursor_after to
+        continue from the next page instead of starting over.
+
+        GHL provides its own cursor values in meta — do NOT compute from the
+        last record (the meta cursor may differ due to GHL's internal sort;
+        using the wrong values causes cursor stall).
         """
         params: dict = {
             "location_id": self._location_id,
@@ -355,11 +360,8 @@ class GHLClient:
             # GHL expects milliseconds epoch
             params["startAfter"] = int(updated_after.timestamp() * 1000)
 
-        # GHL provides its own cursor values in meta — do NOT compute from last record.
-        # The meta cursor may differ from the last record's id/updatedAt due to
-        # GHL's internal sort logic. Using the wrong values causes cursor stall.
-        cursor_id: str | None = None
-        cursor_after: int | None = None
+        cursor_id: str | None = start_cursor_id
+        cursor_after: int | None = start_cursor_after
         page = 0
 
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -383,22 +385,36 @@ class GHLClient:
                 if not opportunities:
                     break
 
-                for opp in opportunities:
-                    yield opp
-
                 meta = data.get("meta", {})
-                total = meta.get("total", 0)
-                fetched_so_far = (page - 1) * settings.ghl_page_size + len(opportunities)
-                logger.info("GHL sync: fetched %d / %d opportunities", fetched_so_far, total)
-
                 cursor_id = meta.get("startAfterId")
                 cursor_after = meta.get("startAfter")
+                logger.info(
+                    "GHL sync: fetched page %d (%d opps, total≈%s)",
+                    page, len(opportunities), meta.get("total"),
+                )
 
-                if not cursor_id or fetched_so_far >= total:
+                yield opportunities, cursor_id, cursor_after
+
+                # Last-page detection: no cursor, or a partial page. (Do NOT use
+                # fetched_so_far >= total — resumed runs start mid-stream, so the
+                # local page count no longer maps onto GHL's total.)
+                if not cursor_id or len(opportunities) < settings.ghl_page_size:
                     break
 
                 # Rate limit protection
                 await asyncio.sleep(self._page_delay_s)
+
+    async def stream_opportunities(
+        self,
+        updated_after: datetime | None = None,
+        pipeline_id: str | None = None,
+    ) -> AsyncGenerator[dict, None]:
+        """Back-compat wrapper: yields raw GHL opportunity dicts one at a time."""
+        async for page_items, _cid, _ca in self.stream_opportunity_pages(
+            updated_after=updated_after, pipeline_id=pipeline_id
+        ):
+            for opp in page_items:
+                yield opp
 
     async def update_opportunity_custom_fields(
         self,

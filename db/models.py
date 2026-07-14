@@ -194,10 +194,14 @@ class SyncRun(Base):
     sync_type: Mapped[str] = mapped_column(String, nullable=False)  # 'incremental' | 'full'
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    status: Mapped[str] = mapped_column(String, nullable=False)  # 'running' | 'completed' | 'failed'
+    status: Mapped[str] = mapped_column(String, nullable=False)  # 'running' | 'completed' | 'failed' | 'cancelled'
     opportunities_synced: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     errors_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     error_details: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Resumable-sync state, saved after every processed page: GHL pagination
+    # cursor, seen ids, counters. A boot finding a fresh 'running' row with a
+    # checkpoint continues the run instead of letting it die (deploy restarts).
+    checkpoint: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 

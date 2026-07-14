@@ -231,6 +231,13 @@ async function loadSyncHistory() {
     document.getElementById('stat-avg-duration').textContent = avgDuration ? fmtDuration(Math.round(avgDuration)) : '–';
     document.getElementById('stat-total-synced').textContent = totalSynced24h.toLocaleString();
 
+    // Reference run per type (most recent completed) — drives the running-row ETA.
+    // Rows arrive sorted newest-first, so the first completed hit per type wins.
+    const lastCompletedByType = {};
+    data.forEach(r => {
+      if (r.status === 'completed' && !lastCompletedByType[r.sync_type]) lastCompletedByType[r.sync_type] = r;
+    });
+
     // ── Table rows ──
     const rows = data.map((run, i) => {
       const typeBadge = `<span class="badge-type ${run.sync_type}">${run.sync_type}</span>`;
@@ -260,11 +267,32 @@ async function loadSyncHistory() {
         `;
       }
 
+      // Running rows: live elapsed time + ETA. Progress (opportunities_synced)
+      // updates every page now, so prefer a rate-based estimate scaled against
+      // the most recent completed run of the same type; before enough progress
+      // exists, fall back to that run's duration.
+      let durationCell = fmtDuration(run.duration_seconds);
+      if (run.status === 'running' && run.started_at) {
+        const elapsedS = Math.max(1, Math.round((Date.now() - new Date(run.started_at)) / 1000));
+        const ref = lastCompletedByType[run.sync_type];
+        let remainingS = null;
+        if (ref && run.opportunities_synced > 20 && ref.opportunities_synced > 0) {
+          const rate = run.opportunities_synced / elapsedS;  // opps per second
+          remainingS = Math.max(0, (ref.opportunities_synced - run.opportunities_synced) / rate);
+        } else if (ref && ref.duration_seconds) {
+          remainingS = Math.max(0, ref.duration_seconds - elapsedS);
+        }
+        const etaStr = remainingS !== null
+          ? ` · ~${fmtDuration(Math.round(remainingS))} left (ETA ${new Date(Date.now() + remainingS * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`
+          : '';
+        durationCell = `${fmtDuration(elapsedS)}${etaStr}`;
+      }
+
       return `<tr>
         <td>${fmtDate(run.started_at)}</td>
         <td>${typeBadge}</td>
         <td>${statusBadge}</td>
-        <td class="num">${fmtDuration(run.duration_seconds)}</td>
+        <td class="num">${durationCell}</td>
         <td class="num">${(run.opportunities_synced || 0).toLocaleString()}</td>
         <td class="num">${errorsCell > 0 ? `<span style="color:var(--red);font-weight:600;">${errorsCell}</span>${errorDetailHtml}` : '0'}</td>
       </tr>`;

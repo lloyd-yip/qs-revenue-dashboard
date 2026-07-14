@@ -17,6 +17,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
+from db.advisory_lock import SYNC_GUARD_LOCK_KEY
 from db.models import Appointment, Opportunity, SourceNormalization, SyncRun
 from db.session import AsyncSessionLocal
 from sync.contact_cache import ContactCache
@@ -489,57 +490,201 @@ async def _raise_if_cancelled(sync_run_id) -> None:
         raise _SyncCancelled()
 
 
-async def run_sync(sync_type: str = "incremental") -> dict:
+async def _save_checkpoint(sync_run_id, checkpoint: dict, synced: int, errors: int) -> None:
+    """Persist the resume point + live progress after a fully-processed page.
+
+    A deploy restart kills the in-flight sync; the boot hook finds the 'running'
+    row with this checkpoint and continues from the stored cursor instead of
+    starting over. opportunities_synced doubles as a live progress counter for
+    the Sync History page (drives the ETA). Best-effort — a failed save only
+    costs re-processing the pages since the last successful one (idempotent).
+    """
+    try:
+        async with AsyncSessionLocal() as s:
+            await s.execute(
+                text("""
+                    UPDATE sync_runs
+                    SET checkpoint = CAST(:cp AS jsonb),
+                        opportunities_synced = :synced,
+                        errors_count = :errors
+                    WHERE id = :id AND status = 'running'
+                """),
+                {"cp": json.dumps(checkpoint), "synced": synced,
+                 "errors": errors, "id": str(sync_run_id)},
+            )
+            await s.commit()
+    except Exception as exc:
+        logger.warning("Checkpoint save failed for run %s: %s", sync_run_id, exc)
+
+
+# In-flight sync tasks, tracked so a graceful shutdown (SIGTERM on a deploy/restart)
+# can cancel them — the process then exits promptly instead of lingering as a zombie
+# whose old scheduler keeps firing syncs. See api.main lifespan shutdown.
+_active_sync_tasks: set = set()
+
+
+async def cancel_active_syncs(timeout: float = 10.0) -> int:
+    """Cancel every in-flight sync task and wait (briefly) for them to unwind.
+
+    Returns the number cancelled. A cancelled run keeps its 'running' row and its
+    last-saved checkpoint, so the next process resumes it from there on boot.
+    """
+    tasks = [t for t in _active_sync_tasks if not t.done()]
+    for t in tasks:
+        t.cancel()
+    if tasks:
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(*tasks, return_exceptions=True), timeout=timeout
+            )
+        except (asyncio.TimeoutError, TimeoutError):
+            logger.warning("cancel_active_syncs: %d task(s) still unwinding after %ss", len(tasks), timeout)
+    return len(tasks)
+
+
+async def run_sync(sync_type: str = "incremental", resume_run_id: str | None = None) -> dict:
+    """Public entry point — registers the running task (so a graceful shutdown can
+    cancel it) then delegates to the implementation below."""
+    task = asyncio.current_task()
+    if task is not None:
+        _active_sync_tasks.add(task)
+    try:
+        return await _run_sync_impl(sync_type, resume_run_id)
+    finally:
+        if task is not None:
+            _active_sync_tasks.discard(task)
+
+
+async def _run_sync_impl(sync_type: str = "incremental", resume_run_id: str | None = None) -> dict:
     """Run a full or incremental sync. Returns a summary dict.
 
     sync_type: 'full' | 'incremental'
+    resume_run_id: continue an existing 'running' run from its checkpoint —
+        deploy restarts kill in-flight syncs; the boot hook passes the orphaned
+        run's id so it picks up at the last processed page instead of starting
+        over (the run row, its started_at, and its counters are kept).
     """
     started_at = datetime.now(timezone.utc)
+    resume_checkpoint: dict | None = None
     logger.info("Starting %s sync at %s", sync_type, started_at.isoformat())
 
     async with AsyncSessionLocal() as session:
-        # Concurrency guard: never start while another sync is running. Multiple
-        # schedulers can exist at once (zombie deployment containers, deploy-boot
-        # races) and manual triggers can collide with scheduled runs — overlapping
-        # syncs pile up 'running' rows and burn the GHL daily quota (2026-07-14:
-        # 200k/day exhausted). Rows older than the stale threshold are ignored
-        # (the reaper handles those).
-        blocker = (await session.execute(
-            text("""
-                SELECT id FROM sync_runs
-                WHERE status = 'running'
-                  AND started_at > now() - make_interval(mins => :stale_mins)
-                LIMIT 1
-            """),
-            {"stale_mins": settings.sync_stale_reap_minutes},
-        )).scalar_one_or_none()
-        if blocker:
-            logger.warning(
-                "Skipping %s sync — run %s is already running (concurrency guard)",
-                sync_type, blocker,
-            )
-            return {
-                "sync_type": sync_type,
-                "status": "skipped",
-                "reason": f"another sync ({blocker}) is already running",
-            }
+        # Serialise the check-then-act below across processes/connections. The
+        # concurrency guard and the resume claim are otherwise a race: two schedulers
+        # (a lingering deploy/zombie container, a second replica, or a second HOST
+        # entirely) could both pass the check and both start a sync, doubling the GHL
+        # quota burn — the bug this fixes. A transaction-level advisory lock is atomic
+        # and pooler-safe (held only within this txn, released on commit/rollback).
+        # This is the REAL correctness guarantee; the scheduler leader-lock is only a
+        # best-effort optimisation on top.
+        await session.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": SYNC_GUARD_LOCK_KEY})
 
-        # Create sync_run record
-        sync_run = SyncRun(
-            sync_type=sync_type,
-            started_at=started_at,
-            status="running",
-        )
-        session.add(sync_run)
-        await session.commit()
-        await session.refresh(sync_run)
-        sync_run_id = sync_run.id
+        if resume_run_id:
+            # ── Resume path: adopt the orphaned run row instead of creating one ──
+            row = (await session.execute(
+                text("""
+                    SELECT sync_type, status, started_at, checkpoint
+                    FROM sync_runs WHERE id = CAST(:id AS uuid)
+                """),
+                {"id": resume_run_id},
+            )).one_or_none()
+            if not row or row.status != "running" or not row.checkpoint:
+                logger.warning("Resume requested for %s but the run is not resumable — skipping", resume_run_id)
+                return {"sync_type": sync_type, "status": "skipped", "reason": "run not resumable"}
+            # Don't resume if a DIFFERENT sync is already running (a fresh scheduled run
+            # already started) — that would double up.
+            other = (await session.execute(
+                text("""
+                    SELECT id FROM sync_runs
+                    WHERE status = 'running'
+                      AND id != CAST(:id AS uuid)
+                      AND started_at > now() - make_interval(mins => :stale_mins)
+                    LIMIT 1
+                """),
+                {"id": resume_run_id, "stale_mins": settings.sync_stale_reap_minutes},
+            )).scalar_one_or_none()
+            if other:
+                logger.warning("Resume for %s skipped — another sync %s is already running", resume_run_id, other)
+                await session.rollback()
+                return {"sync_type": sync_type, "status": "skipped", "reason": f"another sync ({other}) is already running"}
+            # Claim the run so two boot-hooks (e.g. two 'leader' processes) can't resume
+            # the SAME row concurrently. Serialised by the advisory lock above — the
+            # first resumer flips the flag and wins; a second sees it and skips.
+            claimed = (await session.execute(
+                text("""
+                    UPDATE sync_runs
+                    SET checkpoint = jsonb_set(checkpoint, '{resume_claimed}', 'true')
+                    WHERE id = CAST(:id AS uuid)
+                      AND status = 'running'
+                      AND COALESCE(checkpoint->>'resume_claimed', 'false') != 'true'
+                    RETURNING id
+                """),
+                {"id": resume_run_id},
+            )).scalar_one_or_none()
+            await session.commit()  # releases the advisory lock
+            if claimed is None:
+                logger.warning("Resume for %s skipped — already claimed by another process", resume_run_id)
+                return {"sync_type": sync_type, "status": "skipped", "reason": "resume already claimed"}
+            sync_type = row.sync_type
+            started_at = row.started_at
+            resume_checkpoint = row.checkpoint if isinstance(row.checkpoint, dict) else json.loads(row.checkpoint)
+            sync_run_id = resume_run_id
+            logger.info(
+                "Resuming %s sync %s from checkpoint (pipeline_idx=%s, %s synced so far)",
+                sync_type, resume_run_id,
+                resume_checkpoint.get("pipeline_idx"), resume_checkpoint.get("synced"),
+            )
+        else:
+            # Concurrency guard: never start while another sync is running. Multiple
+            # schedulers can exist at once (zombie deployment containers, deploy-boot
+            # races, a second host) and manual triggers can collide with scheduled
+            # runs — overlapping syncs pile up 'running' rows and burn the GHL daily
+            # quota (2026-07-14: 200k/day exhausted). Rows older than the stale
+            # threshold are ignored (the reaper handles those). Now race-free: the
+            # advisory lock above serialises this SELECT + the INSERT below.
+            blocker = (await session.execute(
+                text("""
+                    SELECT id FROM sync_runs
+                    WHERE status = 'running'
+                      AND started_at > now() - make_interval(mins => :stale_mins)
+                    LIMIT 1
+                """),
+                {"stale_mins": settings.sync_stale_reap_minutes},
+            )).scalar_one_or_none()
+            if blocker:
+                logger.warning(
+                    "Skipping %s sync — run %s is already running (concurrency guard)",
+                    sync_type, blocker,
+                )
+                await session.rollback()  # releases the advisory lock
+                return {
+                    "sync_type": sync_type,
+                    "status": "skipped",
+                    "reason": f"another sync ({blocker}) is already running",
+                }
+
+            # Create sync_run record (commit releases the advisory lock)
+            sync_run = SyncRun(
+                sync_type=sync_type,
+                started_at=started_at,
+                status="running",
+            )
+            session.add(sync_run)
+            await session.commit()
+            await session.refresh(sync_run)
+            sync_run_id = sync_run.id
 
         normalization_map = await _load_normalization_map(session)
 
         # Determine incremental cutoff
         updated_after: datetime | None = None
-        if sync_type == "incremental":
+        if resume_checkpoint:
+            # Reuse the original run's watermark so the resumed stream covers
+            # exactly the same window.
+            ua = resume_checkpoint.get("updated_after")
+            if ua:
+                updated_after = datetime.fromisoformat(ua)
+        elif sync_type == "incremental":
             last_sync = await _get_last_successful_sync(session)
             if last_sync:
                 # 1-hour buffer to catch clock skew and late GHL updates
@@ -551,8 +696,9 @@ async def run_sync(sync_type: str = "incremental") -> dict:
 
     # Counters + status live OUTSIDE the try so the final status write (in the finally
     # block below) can always read them — even if the sync body raises or times out.
-    synced_count: int = 0
-    error_count: int = 0
+    # A resumed run inherits its counters from the checkpoint.
+    synced_count: int = int(resume_checkpoint.get("synced", 0)) if resume_checkpoint else 0
+    error_count: int = int(resume_checkpoint.get("errors", 0)) if resume_checkpoint else 0
     error_details: list = []
     status: str = "failed"          # overwritten to 'completed' only on a clean finish
     fatal_error: BaseException | None = None
@@ -585,8 +731,9 @@ async def run_sync(sync_type: str = "incremental") -> dict:
         # session per chunk. Builds touch only the GHL API + pure functions (no DB), so they
         # are safe to run in parallel; a single writer keeps the DB side safe; a fresh session
         # per chunk keeps connections short enough that the pooler never closes one mid-run.
+        # Chunk = one GHL page (100 opps): the checkpoint cursor is only valid at
+        # page boundaries, so processing page-wise keeps resume exact.
         CONCURRENCY = 6      # concurrent per-contact fetches (kept under GHL's rate ceiling)
-        CHUNK_SIZE = 60      # opportunities built per chunk before the sequential write pass
         sem = asyncio.Semaphore(CONCURRENCY)
 
         async def _build_guarded(raw_opp, pid, is_upsell):
@@ -634,28 +781,53 @@ async def run_sync(sync_type: str = "incremental") -> dict:
                     logger.error("Chunk commit failed: %s", exc)
             return n_synced, n_err
 
-        for pipeline_cfg in pipeline_configs:
+        # A resumed run continues its interrupted pipeline from the stored cursor;
+        # pipelines BEFORE it completed in the original run (incl. reconcile).
+        resume_idx = int(resume_checkpoint.get("pipeline_idx", 0)) if resume_checkpoint else 0
+        for p_idx, pipeline_cfg in enumerate(pipeline_configs):
             pid       = pipeline_cfg["pipeline_id"]
             is_upsell = pipeline_cfg["is_upsell"]
-            logger.info("Syncing pipeline %s (is_upsell=%s, concurrency=%d)", pid, is_upsell, CONCURRENCY)
+            if p_idx < resume_idx:
+                logger.info("Pipeline %s completed before the resume point — skipping", pid)
+                continue
 
+            start_cid: str | None = None
+            start_ca: int | None = None
             seen_ids: set[str] = set()
-            pending: list[dict] = []
-            async for raw_opp in ghl_client.stream_opportunities(updated_after=updated_after, pipeline_id=pid):
-                oid = raw_opp.get("id")
-                if oid:
-                    seen_ids.add(oid)
-                pending.append(raw_opp)
-                if len(pending) >= CHUNK_SIZE:
-                    s, e = await _process_chunk(pending, pid, is_upsell)
-                    synced_count += s
-                    error_count += e
-                    pending = []
-                    logger.info("Synced %d opportunities so far", synced_count)
-            if pending:
-                s, e = await _process_chunk(pending, pid, is_upsell)
+            if resume_checkpoint and p_idx == resume_idx:
+                start_cid = resume_checkpoint.get("cursor_id")
+                start_ca  = resume_checkpoint.get("cursor_after")
+                seen_ids  = set(resume_checkpoint.get("seen_ids") or [])
+            logger.info(
+                "Syncing pipeline %s (is_upsell=%s, concurrency=%d%s)",
+                pid, is_upsell, CONCURRENCY,
+                ", resumed mid-stream" if start_cid else "",
+            )
+
+            async for page_items, next_cid, next_ca in ghl_client.stream_opportunity_pages(
+                updated_after=updated_after, pipeline_id=pid,
+                start_cursor_id=start_cid, start_cursor_after=start_ca,
+            ):
+                for raw_opp in page_items:
+                    oid = raw_opp.get("id")
+                    if oid:
+                        seen_ids.add(oid)
+                s, e = await _process_chunk(page_items, pid, is_upsell)
                 synced_count += s
                 error_count += e
+                # Persist the resume point AFTER the page is fully processed —
+                # a deploy restart continues from here instead of starting over.
+                # seen_ids ride along so a resumed FULL sync can still reconcile.
+                await _save_checkpoint(sync_run_id, {
+                    "pipeline_idx": p_idx,
+                    "cursor_id": next_cid,
+                    "cursor_after": next_ca,
+                    "seen_ids": sorted(seen_ids),
+                    "synced": synced_count,
+                    "errors": error_count,
+                    "updated_after": updated_after.isoformat() if updated_after else None,
+                }, synced_count, error_count)
+                logger.info("Synced %d opportunities so far", synced_count)
             logger.info("Pipeline %s done — %d total synced so far", pid, synced_count)
 
             # Auto-reconcile orphans: on a FULL sync we have the complete live set, so any DB
@@ -703,7 +875,8 @@ async def run_sync(sync_type: str = "incremental") -> dict:
                         completed_at = :completed_at,
                         opportunities_synced = :synced,
                         errors_count = :errors,
-                        error_details = CAST(:details AS jsonb)
+                        error_details = CAST(:details AS jsonb),
+                        checkpoint = NULL
                     WHERE id = :id AND status = 'running'
                 """),
                 {
