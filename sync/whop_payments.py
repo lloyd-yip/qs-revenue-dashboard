@@ -30,6 +30,14 @@ SIBLING_WINDOW_DAYS = 60
 # - ignore sibling payments at/below this amount (community subs, small one-offs
 #   are not deal payments — same floor idea as the Stripe pass)
 MIN_SIBLING_PAYMENT = 100.0
+# Unattached (membership-less) payments: Whop records some renewal/direct charges
+# with membership=None, linked only to the user (verified 2026-07-14 via
+# /api/sync/whop-inspect — e.g. a "$6,000 / 3-months" renewal landing as a direct
+# charge). They are attributed to the customer's deal when paid, above the floor,
+# and created within this window around the deal close date (renewals arrive
+# throughout the plan's life).
+UNATTACHED_WINDOW_BEFORE_DAYS = 60
+UNATTACHED_WINDOW_AFTER_DAYS = 240
 
 
 def _whop_headers() -> dict:
@@ -189,37 +197,125 @@ def sibling_memberships(
     return siblings
 
 
-async def fetch_customer_payments(
-    client: httpx.AsyncClient,
-    matched_membership_id: str,
-    siblings: list[dict],
-) -> tuple[list[dict], list[str]]:
-    """Payments for the matched membership + qualifying paid sibling payments.
+async def fetch_all_payments(client: httpx.AsyncClient) -> list[dict]:
+    """Fetch ALL company payments (paginated sweep of /payments, no filter).
 
-    Sibling payments are folded only when paid and above MIN_SIBLING_PAYMENT
-    (filters community subs / small one-offs). Returns (payments, folded_ids)
-    where folded_ids lists sibling membership ids that contributed payments.
+    One sweep per run replaces per-membership fetches AND surfaces payments
+    with membership=None (direct charges / renewals), which membership-scoped
+    queries can never return.
     """
-    payments = await _fetch_membership_payments(client, matched_membership_id)
-    folded: list[str] = []
+    payments: list[dict] = []
+    page = 1
+    while page <= 200:  # hard backstop
+        resp = await client.get(
+            f"{WHOP_API_BASE}/payments",
+            headers=_whop_headers(),
+            params={"per_page": 50, "page": page},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        items = data.get("data", [])
+        payments.extend(items)
+        pagination = data.get("pagination", {})
+        current_page = pagination.get("current_page", page)
+        total_pages = pagination.get("total_page", 1)
+        if not items or current_page >= total_pages:
+            break
+        page = current_page + 1
+    logger.info(f"Whop payments sweep: {len(payments)} payments across {page} page(s)")
+    return payments
+
+
+def _obj_id(v) -> str | None:
+    """Whop nests related objects as either a string id or an embedded dict."""
+    if isinstance(v, dict):
+        return v.get("id")
+    return v if isinstance(v, str) else None
+
+
+def membership_user_id(m: dict | None) -> str | None:
+    return _obj_id((m or {}).get("user"))
+
+
+def build_payment_indexes(payments: list[dict]) -> tuple[dict, dict]:
+    """Index a payments sweep → (by_membership_id, unattached_by_user_id)."""
+    by_membership: dict[str, list[dict]] = {}
+    unattached_by_user: dict[str, list[dict]] = {}
+    for p in payments:
+        mid = _obj_id(p.get("membership"))
+        if mid:
+            by_membership.setdefault(mid, []).append(p)
+            continue
+        uid = _obj_id(p.get("user")) or p.get("user_id")
+        if uid:
+            unattached_by_user.setdefault(uid, []).append(p)
+    return by_membership, unattached_by_user
+
+
+def _payment_date(p: dict):
+    raw = p.get("created_at") or p.get("paid_at")
+    if not raw:
+        return None
+    try:
+        if isinstance(raw, (int, float)):
+            return datetime.fromtimestamp(raw, tz=timezone.utc).date()
+        return datetime.fromisoformat(str(raw).replace("Z", "+00:00")).date()
+    except (ValueError, AttributeError, OSError):
+        return None
+
+
+def _is_deal_payment(p: dict) -> bool:
+    return (
+        p.get("status") in ("paid", "complete", "completed")
+        and float(p.get("final_amount") or p.get("total") or p.get("subtotal") or 0) > MIN_SIBLING_PAYMENT
+    )
+
+
+def collect_customer_payments(
+    matched_m: dict,
+    siblings: list[dict],
+    by_membership: dict[str, list[dict]],
+    unattached_by_user: dict[str, list[dict]],
+    close_date,
+) -> tuple[list[dict], list[str]]:
+    """All payments belonging to one deal's customer, from the run's sweep indexes.
+
+    = matched membership's payments
+    + qualifying paid payments from sibling memberships (see sibling_memberships)
+    + UNATTACHED payments (membership=None) of the customer's user(s), when paid,
+      above the floor, and within [-UNATTACHED_WINDOW_BEFORE_DAYS,
+      +UNATTACHED_WINDOW_AFTER_DAYS] of the deal close date.
+
+    Returns (payments, fold_notes) — fold_notes describe what was folded, for logs.
+    """
+    payments = list(by_membership.get(matched_m.get("id") or "", []))
+    notes: list[str] = []
+
     for sib in siblings:
         sib_id = sib.get("id")
         if not sib_id:
             continue
-        sib_payments = await _fetch_membership_payments(client, sib_id)
-        deal_payments = [
-            p for p in sib_payments
-            if p.get("status") in ("paid", "complete", "completed")
-            and float(p.get("final_amount") or p.get("total") or p.get("subtotal") or 0) > MIN_SIBLING_PAYMENT
-        ]
+        deal_payments = [p for p in by_membership.get(sib_id, []) if _is_deal_payment(p)]
         if deal_payments:
             payments.extend(deal_payments)
-            folded.append(sib_id)
-            logger.info(
-                f"  folded {len(deal_payments)} payment(s) from sibling membership "
-                f"{sib_id} (same customer, unclaimed)"
-            )
-    return payments, folded
+            notes.append(f"sibling {sib_id}: {len(deal_payments)} payment(s)")
+
+    user_ids = {membership_user_id(matched_m)} | {membership_user_id(s) for s in siblings}
+    user_ids.discard(None)
+    for uid in user_ids:
+        for p in unattached_by_user.get(uid, []):
+            if not _is_deal_payment(p):
+                continue
+            if close_date is not None:
+                pdate = _payment_date(p)
+                if pdate is None:
+                    continue
+                delta = (pdate - close_date).days
+                if delta < -UNATTACHED_WINDOW_BEFORE_DAYS or delta > UNATTACHED_WINDOW_AFTER_DAYS:
+                    continue
+            payments.append(p)
+            notes.append(f"unattached payment {p.get('id')} (user {uid})")
+    return payments, notes
 
 
 def membership_is_recurring(m: dict | None) -> bool:

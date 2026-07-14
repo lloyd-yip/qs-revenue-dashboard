@@ -39,7 +39,7 @@ from sqlalchemy import select
 
 from config import settings
 from db.models import DealWhopMatch
-from db.queries.deal_matches import get_won_deals, upsert_deal_match
+from db.queries.deal_matches import get_won_deals, purge_orphan_matches, upsert_deal_match
 from db.session import AsyncSessionLocal
 from sync.ghl_client import GHLClient
 from sync.whop_payments import (  # noqa: F401 — re-exported for compat
@@ -49,7 +49,9 @@ from sync.whop_payments import (  # noqa: F401 — re-exported for compat
     _fetch_membership_payments,
     _fetch_whop_memberships,
     build_membership_email_index,
-    fetch_customer_payments,
+    build_payment_indexes,
+    collect_customer_payments,
+    fetch_all_payments,
     membership_is_recurring,
     sibling_memberships,
 )
@@ -556,6 +558,15 @@ async def run_matching() -> dict:
         if not won_deals:
             return stats
 
+        # Purge match rows whose deal no longer exists as a won opportunity
+        # (merged/deleted in GHL and removed by the full-sync reconcile) —
+        # otherwise their membership claims block the surviving deal forever.
+        purged = await purge_orphan_matches(
+            session, {d.ghl_opportunity_id for d in won_deals}
+        )
+        if purged:
+            logger.warning(f"Purged {purged} orphaned match row(s) (deals gone from GHL)")
+
         # ── Step 2: Fetch GHL contact emails (one API call per unique contact)
         ghl_client = GHLClient()
         contact_cache: dict[str, dict] = {}
@@ -585,6 +596,12 @@ async def run_matching() -> dict:
             logger.info(f"Fetched {len(memberships)} Whop memberships")
             memberships_by_email = build_membership_email_index(memberships)
 
+            # One company-wide payments sweep — replaces per-membership fetches
+            # and surfaces membership-less direct charges (renewals) that
+            # membership-scoped queries can never see.
+            all_payments = await fetch_all_payments(whop_client)
+            by_membership, unattached_by_user = build_payment_indexes(all_payments)
+
             # Membership-claim maps — which membership belongs to which deal, and
             # which customers have multiple deals. Drives sibling-payment folding
             # (a customer settling ONE deal across two memberships) while
@@ -609,6 +626,7 @@ async def run_matching() -> dict:
                     result = await _match_one_deal(
                         session, deal, contact_cache, memberships, whop_client,
                         memberships_by_email, claimed_by_membership, deals_by_email,
+                        by_membership, unattached_by_user,
                     )
                     stats[result] = stats.get(result, 0) + 1
                 except Exception as exc:
@@ -634,11 +652,15 @@ async def _match_one_deal(
     memberships_by_email: dict[str, list[dict]] | None = None,
     claimed_by_membership: dict[str, str] | None = None,
     deals_by_email: dict[str, set] | None = None,
+    by_membership: dict[str, list[dict]] | None = None,
+    unattached_by_user: dict[str, list[dict]] | None = None,
 ) -> str:
     """Match a single deal and upsert result. Returns stats key."""
     memberships_by_email = memberships_by_email or {}
     claimed_by_membership = claimed_by_membership or {}
     deals_by_email = deals_by_email or {}
+    by_membership = by_membership or {}
+    unattached_by_user = unattached_by_user or {}
     from db.queries.deal_matches import get_existing_match  # local to avoid circular
 
     # Idempotency gate — never overwrite a confirmed match's identity,
@@ -651,9 +673,11 @@ async def _match_one_deal(
         ):
             from db.queries.deal_matches import enrich_deal_match_payments
             try:
-                payments = await _fetch_membership_payments(
-                    whop_client, existing.whop_membership_id
-                )
+                payments = by_membership.get(existing.whop_membership_id)
+                if payments is None:
+                    payments = await _fetch_membership_payments(
+                        whop_client, existing.whop_membership_id
+                    )
                 if payments:
                     metrics = _compute_payment_metrics(
                         payments, float(deal.monetary_value or 0),
@@ -875,13 +899,13 @@ async def _match_one_deal(
                     f"  customer {w_email} has other matched deal(s) — "
                     f"not folding sibling memberships"
                 )
-            payments, folded_ids = await fetch_customer_payments(
-                whop_client, best_m["id"], siblings
+            payments, fold_notes = collect_customer_payments(
+                best_m, siblings, by_membership, unattached_by_user, close_date
             )
-            if folded_ids:
+            if fold_notes:
                 logger.info(
-                    f"Deal {deal.ghl_opportunity_id}: folded sibling membership(s) "
-                    f"{folded_ids} into payment metrics"
+                    f"Deal {deal.ghl_opportunity_id}: folded into payment metrics — "
+                    + "; ".join(fold_notes)
                 )
             # split_pay_required_payments = authoritative plan length (set at membership
             # creation for QS internal financing plans). Passed so total_installments and

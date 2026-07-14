@@ -31,7 +31,9 @@ from sync.whop_payments import (
     _compute_payment_metrics,
     _fetch_whop_memberships,
     build_membership_email_index,
-    fetch_customer_payments,
+    build_payment_indexes,
+    collect_customer_payments,
+    fetch_all_payments,
     membership_is_recurring,
     sibling_memberships,
 )
@@ -110,6 +112,10 @@ async def refresh_current_month_payment_metrics() -> dict:
             memberships = await _fetch_whop_memberships(whop_client)
             memberships_by_email = build_membership_email_index(memberships)
             membership_by_id = {m.get("id"): m for m in memberships if m.get("id")}
+            # One company-wide payments sweep — also surfaces membership-less
+            # direct charges (renewals), invisible to membership-scoped fetches.
+            all_payments = await fetch_all_payments(whop_client)
+            by_membership, unattached_by_user = build_payment_indexes(all_payments)
 
             for snap in snapshots:
                 try:
@@ -128,13 +134,17 @@ async def refresh_current_month_payment_metrics() -> dict:
                             matched_m, memberships_by_email, claimed_other,
                             snap["ghl_close_date"],
                         )
-                    payments, folded_ids = await fetch_customer_payments(
-                        whop_client, snap["whop_membership_id"], siblings
+                    payments, fold_notes = collect_customer_payments(
+                        matched_m or {"id": snap["whop_membership_id"]},
+                        siblings if not other_deal_ids else [],
+                        by_membership,
+                        unattached_by_user if not other_deal_ids else {},
+                        snap["ghl_close_date"],
                     )
-                    if folded_ids:
+                    if fold_notes:
                         logger.info(
-                            f"[whop-refresh] {snap['ghl_opportunity_id']}: folded "
-                            f"sibling membership(s) {folded_ids}"
+                            f"[whop-refresh] {snap['ghl_opportunity_id']}: folded — "
+                            + "; ".join(fold_notes)
                         )
                     metrics = _compute_payment_metrics(
                         payments,

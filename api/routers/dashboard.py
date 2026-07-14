@@ -10,7 +10,7 @@ Protected endpoints (/api/metrics/*, /api/sync/*) remain unchanged.
 from datetime import date, datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -800,15 +800,16 @@ async def deal_summary(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/deals/run-match")
-async def run_deal_match(db: AsyncSession = Depends(get_db)):
-    """Trigger GHL↔Whop matching engine. Runs synchronously (may take 2-4 min).
+async def run_deal_match(background_tasks: BackgroundTasks):
+    """Trigger GHL↔Whop matching engine IN THE BACKGROUND.
 
-    Requires WHOP_API_KEY set in Railway env vars. Idempotent — safe to run
+    The full run takes several minutes (GHL contact resolution + Whop membership
+    and payments sweeps) — far beyond the HTTP proxy timeout, so it runs as a
+    background task and this returns immediately. Idempotent — safe to run
     multiple times. Confirmed matches (is_confirmed=True) are never overwritten.
 
-    Verify: POST /api/dashboard/deals/run-match → {"ok": true, "stats": {...}}
-    stats.matched_high should be > 0 if deals exist and WHOP_API_KEY is correct.
-    Silent failure: stats.errors > 0 → check Railway logs for the traceback.
+    Progress/result: check Railway logs ("=== Matching complete: {...} ===")
+    or GET /deals/summary afterwards.
     """
     import logging
     from config import settings
@@ -822,12 +823,16 @@ async def run_deal_match(db: AsyncSession = Depends(get_db)):
         }
 
     from sync.match_deals_whop import run_matching
-    try:
-        stats = await run_matching()
-        return {"ok": True, "stats": stats}
-    except Exception as exc:
-        logger.error(f"Deal matching failed: {exc}", exc_info=True)
-        return {"ok": False, "error": str(exc), "stats": {}}
+
+    async def _run_matching_background():
+        try:
+            stats = await run_matching()
+            logger.info(f"Background deal matching complete: {stats}")
+        except Exception as exc:
+            logger.error(f"Background deal matching failed: {exc}", exc_info=True)
+
+    background_tasks.add_task(_run_matching_background)
+    return {"ok": True, "started": True, "note": "Matching runs in background (2-5 min). Check /deals/summary or Railway logs for completion."}
 
 
 # ── Wise / Xero bank transfer endpoints ──────────────────────────────────────

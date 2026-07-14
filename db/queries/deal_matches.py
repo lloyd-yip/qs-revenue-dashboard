@@ -37,6 +37,27 @@ async def get_existing_match(
     return row
 
 
+async def purge_orphan_matches(session: AsyncSession, won_opportunity_ids: set[str]) -> int:
+    """Delete match rows whose opportunity is no longer a closed-won deal.
+
+    Deals merged or deleted in GHL are removed from `opportunities` by the
+    full-sync reconcile, but their match rows would otherwise linger — keeping
+    their membership claims (blocking the surviving deal from folding those
+    payments) and still counting in the Deals-page live view. Returns rows removed.
+    """
+    from sqlalchemy import delete
+
+    if not won_opportunity_ids:
+        return 0
+    result = await session.execute(
+        delete(DealWhopMatch).where(
+            DealWhopMatch.ghl_opportunity_id.notin_(won_opportunity_ids)
+        )
+    )
+    await session.commit()
+    return result.rowcount or 0
+
+
 async def demote_duplicate_match(session: AsyncSession, ghl_opportunity_id: str) -> None:
     """Strip the Whop match (identity + payment metrics) off a row whose membership
     was re-claimed by a better-scoring deal.
