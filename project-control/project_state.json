@@ -256,9 +256,10 @@
       "phase": "Phase 1"
     },
     {
-      "decision": "Sync runs hourly (incremental) with daily Fireflies appointment resolver at 7pm EST",
-      "reasoning": "Hourly incremental keeps data at most ~1.5h stale. Fireflies resolver auto-flips appointment statuses after business hours when all transcripts are ready. Weekly full sync on Sundays catches anything missed.",
-      "phase": "Phase 1"
+      "decision": "Incremental sync every 6 hours (01:10/07:10/13:10/19:10 UTC cron), not hourly — SUPERSEDES the hourly cadence (2026-07-14). Daily Fireflies appointment resolver at 7pm EST and Sunday full sync unchanged.",
+      "reasoning": "Each incremental makes per-opportunity GHL calls (~35 min, thousands of requests); 24 runs/day exhausted the 200k/day GHL quota on 2026-07-14, blocking manual full syncs (fatal 429s) and starving all other GHL usage. 4 runs/day keeps data at most ~6.5h stale — acceptable — with ample quota headroom. Fixed clock times replace the boot-relative interval so deploys don't re-phase the cadence. GHL client 429 backoff also hardened (8 attempts, exponential to 2 min). Follow-up candidate: make the incremental itself cheaper (per-opp appointment/notes lookups are the request burner).",
+      "phase": "Phase 1 - Live & Iterating",
+      "date": "2026-07-14"
     },
     {
       "decision": "Show/no-show detection via union of appointment status + pipeline stage signals",
