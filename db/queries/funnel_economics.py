@@ -18,6 +18,7 @@ from db.queries.common import (
     has_1st_call,
     prorated_expense_amount,
     showed_1st_call_expr,
+    whop_projected_total_expr,
     ALL_TEAM_SENTINEL,
 )
 from sync.ghl_client import DEAL_WON_STAGE_ID
@@ -213,19 +214,21 @@ async def get_auto_funnel_economics(
             func.sum(case((qual_show, 1), else_=0)).label("qual_shows"),
             func.sum(case((closed_won, 1), else_=0)).label("closed"),
             # avg from deal_whop_matches — only over closed-won rows with matched payment data.
-            # avg_cash_collected = total paid to date (installments stack); % upfront keeps upfront_cash.
-            func.avg(case((closed_won, DealWhopMatch.total_contract_value))).label("avg_contract_value"),
+            # Contract basis = payment-verified projected total (Whop plan math), not the
+            # rep-entered GHL value; avg_cash_collected = total paid to date (installments
+            # stack); % upfront = first payment ÷ projected total.
+            func.avg(case((closed_won, whop_projected_total_expr()))).label("avg_contract_value"),
             func.avg(case((closed_won, DealWhopMatch.total_paid))).label("avg_cash_collected"),
             func.avg(
                 case(
                     (
                         and_(
                             closed_won,
-                            DealWhopMatch.total_contract_value > 0,
+                            whop_projected_total_expr() > 0,
                             DealWhopMatch.upfront_cash.isnot(None),
                             DealWhopMatch.upfront_cash > 0,
                         ),
-                        DealWhopMatch.upfront_cash / DealWhopMatch.total_contract_value * 100,
+                        DealWhopMatch.upfront_cash / whop_projected_total_expr() * 100,
                     )
                 )
             ).label("avg_pct_cash_upfront"),
@@ -258,17 +261,17 @@ async def get_auto_funnel_economics(
     close_agg = await session.execute(
         select(
             func.count().label("closed"),
-            func.avg(DealWhopMatch.total_contract_value).label("avg_cv"),
+            func.avg(whop_projected_total_expr()).label("avg_cv"),
             func.avg(DealWhopMatch.total_paid).label("avg_cc"),
             func.avg(
                 case(
                     (
                         and_(
-                            DealWhopMatch.total_contract_value > 0,
+                            whop_projected_total_expr() > 0,
                             DealWhopMatch.upfront_cash.isnot(None),
                             DealWhopMatch.upfront_cash > 0,
                         ),
-                        DealWhopMatch.upfront_cash / DealWhopMatch.total_contract_value * 100,
+                        DealWhopMatch.upfront_cash / whop_projected_total_expr() * 100,
                     )
                 )
             ).label("avg_pct"),

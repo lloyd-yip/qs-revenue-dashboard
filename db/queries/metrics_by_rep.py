@@ -425,10 +425,11 @@ async def get_by_rep(
             "lq_barely": row.lq_barely,
             "lq_bad": row.lq_bad,
             "lq_missing": row.lq_missing,
-            # New: averages per close
-            "avg_contract_value": safe_div(contract_val, units) if contract_val > 0 else None,
+            # New: averages per close — based on the payment-verified projected
+            # total, not the rep-entered GHL contract value
+            "avg_contract_value": safe_div(whop_projected, units) if whop_projected > 0 else None,
             "avg_cash_collected": safe_div(cash_val, units) if cash_val > 0 else None,
-            "avg_cash_pct_upfront": round(upfront_val / contract_val * 100, 1) if contract_val > 0 and upfront_val > 0 else None,
+            "avg_cash_pct_upfront": round(upfront_val / whop_projected * 100, 1) if whop_projected > 0 and upfront_val > 0 else None,
             # New: cost & RORI (rep comp derived from rep_comp_settings)
             "rep_comp": rep_comp,
             "base_salary_monthly": base_salary_monthly,
@@ -439,7 +440,9 @@ async def get_by_rep(
             "total_invested": total_invested,
             "cost_per_close": safe_div(total_invested, units),
             "cash_rori": safe_div(cash_val, total_invested) if cash_val > 0 else None,
-            "contract_rori": safe_div(contract_val, total_invested) if contract_val > 0 else None,
+            # Contract RORI on the payment-verified projected total, not the
+            # rep-entered GHL value — GHL overstates 40-80% on recent deals
+            "contract_rori": safe_div(whop_projected, total_invested) if whop_projected > 0 else None,
         })
 
     return rep_list

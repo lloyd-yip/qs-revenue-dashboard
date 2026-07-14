@@ -1000,12 +1000,12 @@ const METRIC_TIPS = {
   'Rep Comp':               'Manually entered total compensation (base + bonus) for this rep in the period.\nSource: Period Financial Inputs panel on Funnel Economics tab',
   'Mktg Alloc':             "This rep's share of total marketing spend, proportional to their share of team shows.\nFormula: (Total Mktg Spend ÷ Team Total Shows) × Rep's Shows",
   'Total Invested':         "All-in cost attributed to this rep for this cohort: prorated base salary + commission on cash collected + allocated share of marketing spend.\nFormula: Base (window) + Commission% × Cash Collected + Mktg Alloc — comp model set in the Sales Reps tab",
-  'Contract RORI':          'Contract value returned per $1 invested in this rep (comp + marketing allocation).\nFormula: Contract Value ÷ (Rep Comp + Mktg Alloc)',
+  'Contract RORI':          'Payment-verified projected contract value returned per $1 invested in this rep (comp + marketing allocation).\nFormula: Projected Total ÷ (Rep Comp + Mktg Alloc)',
   'Cash RORI':              'Cash collected per $1 invested in this rep (comp + marketing allocation).\nFormula: Cash Collected ÷ (Rep Comp + Mktg Alloc)',
   // Funnel Economics — Revenue Metrics tiles
-  'Avg Contract Value':          'Average contract value per closed-won deal in the period.\nFormula: Sum Contract Value ÷ Units Closed',
+  'Avg Contract Value':          'Average payment-verified projected contract per closed-won deal in the period (Whop plan math, not the rep-entered GHL value).\nFormula: AVG(Projected Total per closed deal)',
   'Avg Cash Collected':          'Average cash collected TO DATE per closed-won deal — all installments, stacks as payments land (reconciled Whop/Stripe/Wise).\nFormula: AVG(total paid on matched won deals)',
-  'Avg % Cash Upfront':          'Average % of the (rep-entered) contract value collected as the FIRST payment.\nFormula: AVG(Upfront Cash ÷ Contract Value)',
+  'Avg % Cash Upfront':          'Average % of the payment-verified projected contract collected as the FIRST payment.\nFormula: AVG(Upfront Cash ÷ Projected Total)',
   // Compliance
   'Not Logged':                  'Appointments that passed without the rep logging a result (Showed / No Show / Cancelled).\nFormula: COUNT(appointment passed AND status still Confirmed or blank)',
   'Call Outcome Not Logged':     'Calls where the rep never logged the result within 12 hours of the appointment.\nFormula: COUNT(call passed + 12h grace AND status = Confirmed or blank)',
@@ -1474,13 +1474,13 @@ function renderRepBreakdown(reps) {
         <th class="num" style="color:var(--green);" title="GHL-entered deal size (monetary value) summed over this cohort's won deals. Rep-entered, not payment-verified.">Contract Value</th>
         <th class="num" style="color:var(--green);" title="Payment-verified projected full contract, from Whop plan math: Splitit/ClarityPay settle 100% upfront (paid = full contract); internal plans project avg installment × plan length.">Projected Total</th>
         <th class="num" style="color:var(--green);" title="Cash collected to date on this cohort's won deals — all installments, stacks as payments land (reconciled Whop/Stripe/Wise)">Cash Collected</th>
-        <th class="num" style="color:var(--green);" title="Contract Value ÷ Units Closed">Avg Contract</th>
+        <th class="num" style="color:var(--green);" title="Projected Total ÷ Units Closed — payment-verified, not the rep-entered GHL value">Avg Contract</th>
         <th class="num" style="color:var(--green);" title="Cash Collected ÷ Units Closed">Avg Cash</th>
-        <th class="num" style="color:var(--green);" title="Upfront Cash ÷ Contract Value — how much of the (rep-entered) contract landed as the first payment">% Upfront</th>
+        <th class="num" style="color:var(--green);" title="Upfront Cash ÷ Projected Total — how much of the payment-verified contract landed as the first payment (WAP/Whop)">% Upfront</th>
         <th class="num" title="Prorated base salary + commission on cash collected + allocated lead cost (marketing spend proportional to calls booked). Comp model set in the Sales Reps tab.">Total Invested</th>
         <th class="num" title="Total Invested ÷ Units Closed">Cost/Close</th>
         <th class="num" style="color:var(--green);" title="Cash Collected ÷ Total Invested">Cash RORI</th>
-        <th class="num" style="color:var(--green);" title="Contract Value ÷ Total Invested">Contract RORI</th>
+        <th class="num" style="color:var(--green);" title="Projected Total ÷ Total Invested — payment-verified contract per $1 invested">Contract RORI</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
