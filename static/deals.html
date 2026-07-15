@@ -391,15 +391,17 @@
           <th onclick="sortBy('first_payment_date')">Close Date <span class="sort-arrow">↕</span></th>
           <th onclick="sortBy('match_confidence')">Match <span class="sort-arrow">↕</span></th>
           <th>Whop Email</th>
-          <th onclick="sortBy('upfront_cash')" style="text-align:right">Upfront Cash <span class="sort-arrow">↕</span></th>
-          <th onclick="sortBy('total_paid')" style="text-align:right">Total Paid <span class="sort-arrow">↕</span></th>
-          <th onclick="sortBy('total_contract_value')" style="text-align:right">Contract Value <span class="sort-arrow">↕</span></th>
+          <th onclick="sortBy('upfront_cash')" style="text-align:right" title="First payment received (WAP/Whop)">Upfront Cash <span class="sort-arrow">↕</span></th>
+          <th onclick="sortBy('total_paid')" style="text-align:right" title="Cash collected to date across all installments (reconciled from Whop payments)">Cash Collected <span class="sort-arrow">↕</span></th>
+          <th onclick="sortBy('whop_projected')" style="text-align:right;color:var(--green)" title="Payment-verified projected FULL contract, from Whop plan math: Splitit/ClarityPay settle 100% upfront (paid = full contract); internal plans project avg installment × plan length. No rep input.">Projected Total <span class="sort-arrow">↕</span></th>
+          <th onclick="sortBy('net_cash_collected')" style="text-align:right" title="Cash collected net of the 15% provider fee on financed (Splitit/ClarityPay) deals; equals Cash Collected otherwise">Net Cash <span class="sort-arrow">↕</span></th>
+          <th onclick="sortBy('total_contract_value')" style="text-align:right" title="Rep-entered deal value from GHL (monetary_value)">Contract Value (GHL) <span class="sort-arrow">↕</span></th>
           <th onclick="sortBy('remaining_ar')" style="text-align:right">Remaining AR <span class="sort-arrow">↕</span></th>
-          <th style="text-align:center">Plan</th>
+          <th style="text-align:center" title="Payment type & installment progress">Payment / Plan</th>
         </tr>
       </thead>
       <tbody id="tableBody">
-        <tr class="empty-row"><td colspan="10"><span class="spinner"></span>Loading…</td></tr>
+        <tr class="empty-row"><td colspan="12"><span class="spinner"></span>Loading…</td></tr>
       </tbody>
     </table>
   </div>
@@ -615,7 +617,7 @@ function renderTable(rows) {
 
   const tbody = el('tableBody');
   if (!sorted.length) {
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="10">
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="12">
       No deals found. Run the matcher first or adjust filters.
     </td></tr>`;
     return;
@@ -656,13 +658,19 @@ function renderTable(rows) {
     //   Pay in Full → no badge; deal was paid in full with no remaining AR
     let planHtml;
     if (row.is_splitit) {
-      planHtml = `<span class="badge-splitit">SPLITIT</span>`;
+      planHtml = `<span class="badge-splitit" title="Splitit financed — customer pays the provider; QS received 100% upfront (before 15% fee)">SPLITIT</span>`;
+    } else if (row.is_claritypay) {
+      planHtml = `<span class="badge-splitit" title="ClarityPay financed — customer pays the provider; QS received 100% upfront (before 15% fee)">CLARITYPAY</span>`;
     } else if (row.total_installments && row.total_installments >= 2) {
-      planHtml = `<span class="badge-fin">${row.total_installments}-pay</span>`;
+      const k = row.payment_count || 0;
+      planHtml = `<span class="badge-fin">${row.total_installments}-pay</span> <span style="color:var(--muted);font-size:11px">${k}/${row.total_installments} paid</span>`;
     } else if (row.remaining_ar && row.remaining_ar > 0) {
       planHtml = `<span class="badge-fin">Installment</span>`;
     } else {
       planHtml = `<span style="color:var(--muted);font-size:12px">Pay in Full</span>`;
+    }
+    if (row.plan_months_flag) {
+      planHtml += ` <span class="badge-fin" title="Internal (non-financed) plan with more than 3 installments — verify plan length on Whop" style="background:#f59e0b22;color:var(--yellow);border-color:#f59e0b44">⚠</span>`;
     }
 
     return `<tr>
@@ -672,7 +680,9 @@ function renderTable(rows) {
       <td><span class="pill ${pillClass}">${conf}</span></td>
       <td class="dim" style="font-size:12px">${whopEmail}</td>
       <td class="num">${fmtUSD(row.upfront_cash)}</td>
-      <td class="num ${row.total_paid ? 'pos' : 'dim'}">${fmtUSD(row.total_paid)}</td>
+      <td class="num ${row.total_paid ? 'pos' : 'dim'}" title="${esc(cashTooltip(row))}">${fmtUSD(row.total_paid)}</td>
+      <td class="num" style="color:var(--green)" title="${esc(projectedTooltip(row))}">${fmtUSD(row.whop_projected)}</td>
+      <td class="num">${fmtUSD(row.net_cash_collected)}</td>
       <td class="num">${fmtUSD(row.total_contract_value || row.ghl_monetary_value)}</td>
       <td class="${arClass}">${ar != null ? fmtUSD(ar) : '—'}</td>
       <td style="text-align:center">${planHtml}</td>
@@ -716,6 +726,49 @@ function fmtUSD(v) {
   if (v == null || v === 0) return '—';
   return '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
+// money() always renders a value (even 0) — used inside tooltip sentences.
+function money(v) {
+  if (v == null) return '$0';
+  return '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+
+// ── Deal-closed tooltips (mirrors dashboard.html / debug.html) ──────────────
+// Cash Collected hover: installment-plan collection status for one deal.
+function cashTooltip(r) {
+  if (r.total_paid == null) return 'No reconciled payment data (deal not matched)';
+  if (r.is_splitit || r.is_claritypay) {
+    return `${r.is_splitit ? 'Splitit' : 'ClarityPay'} financed — customer pays installments to the provider; QS received 100% upfront in a single settlement of ${money(r.total_paid)} (before the 15% provider fee)`;
+  }
+  const n = r.total_installments, k = r.payment_count || 0;
+  if (!n || n <= 1) return `Paid in full — single payment of ${money(r.total_paid)}`;
+  const instSize = k > 0 ? r.total_paid / k : null;
+  const left = Math.max(n - k, 0);
+  let tip = `Installment plan: ${k} of ${n} paid · ${money(r.total_paid)} collected so far`;
+  if (instSize !== null) tip += ` · ~${money(instSize)} per installment`;
+  tip += ` · ${left} left`;
+  if (instSize !== null && left > 0) tip += ` (~${money(instSize * left)} remaining)`;
+  return tip;
+}
+// Projected Total hover: where the payment-verified projection comes from.
+function projectedTooltip(r) {
+  if (r.whop_projected == null) return 'No reconciled payment data (deal not matched)';
+  if (r.is_splitit || r.is_claritypay) {
+    return 'Financed (Splitit/ClarityPay) — settled 100% upfront, so Projected Total = total settled';
+  }
+  const n = r.total_installments, k = r.payment_count || 0;
+  if (n && k && n > k) {
+    return `${k} of ${n} installments collected — Projected Total = avg installment × ${n}. Plan length from Whop (split-pay count).`;
+  }
+  if (k >= 1 && (!n || n <= k)) {
+    let tip = `⚠ Plan cycle/length not set on Whop — Projected Total = collected to date (${money(r.total_paid)}).`;
+    if (r.total_contract_value && r.total_paid && r.total_contract_value > r.total_paid) {
+      const hint = Math.ceil(r.total_contract_value / (r.total_paid / k));
+      tip += ` GHL Deal Size (${money(r.total_contract_value)}) suggests ~${hint} payments — updates as installments land.`;
+    }
+    return tip;
+  }
+  return 'Projected Total = collected to date';
+}
 function fmtDate(s) {
   if (!s) return '—';
   const d = new Date(s + 'T12:00:00');
@@ -723,7 +776,7 @@ function fmtDate(s) {
 }
 
 function setTableMsg(msg) {
-  el('tableBody').innerHTML = `<tr class="empty-row"><td colspan="10">${msg}</td></tr>`;
+  el('tableBody').innerHTML = `<tr class="empty-row"><td colspan="12">${msg}</td></tr>`;
 }
 
 let toastTimer;

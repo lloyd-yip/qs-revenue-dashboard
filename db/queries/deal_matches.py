@@ -304,6 +304,19 @@ async def get_deal_matches(
 
     rows = (await session.execute(query)).scalars().all()
 
+    def _projected(r) -> Optional[float]:
+        """Python mirror of common.whop_projected_total_expr() — payment-verified
+        projected full contract for one matched deal (keeps the Deals page in step
+        with the Projected Total shown on the dashboard/debug pages)."""
+        if not r.total_paid:
+            return None
+        paid = float(r.total_paid)
+        if r.is_splitit or r.is_claritypay:
+            return paid  # financed → settles 100% upfront
+        if r.total_installments and r.total_installments > 0 and r.payment_count and r.payment_count > 0:
+            return paid / r.payment_count * r.total_installments
+        return paid  # pay-in-full or plan length unknown
+
     return [
         {
             "ghl_opportunity_id": r.ghl_opportunity_id,
@@ -331,6 +344,11 @@ async def get_deal_matches(
             "is_financing": r.is_financing,
             "payment_count": r.payment_count,
             "is_splitit": r.is_splitit,
+            "is_claritypay": r.is_claritypay,
+            "provider_fee_pct": float(r.provider_fee_pct) if r.provider_fee_pct else None,
+            "net_cash_collected": float(r.net_cash_collected) if r.net_cash_collected else None,
+            "plan_months_flag": r.plan_months_flag,
+            "whop_projected": _projected(r),
             "first_payment_date": str(r.first_payment_date) if r.first_payment_date else None,
             "total_installments": r.total_installments,
             "matched_at": r.matched_at.isoformat() if r.matched_at else None,
