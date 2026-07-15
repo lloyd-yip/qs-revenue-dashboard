@@ -5,7 +5,7 @@ import asyncio
 import json
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Security, status
@@ -101,6 +101,47 @@ async def _start_leader() -> None:
     _scheduler.start()
     logger.info("Scheduler started (leader) — 6-hourly incremental sync, daily appointment resolver, weekly full sync")
 
+    # Catch up after leadership gaps: a deploy can skip a cron mark entirely
+    # (no process was leader when it fired — observed 2026-07-15: 01:10 and
+    # 07:10 UTC both missed). If the data is stale past the 6h cadence, sync
+    # now instead of waiting up to 6 more hours; the atomic guard + DB trigger
+    # make this safe against overlaps.
+    if not resumable:
+        try:
+            async with AsyncSessionLocal() as session:
+                last = (await session.execute(text(
+                    "SELECT max(completed_at) FROM sync_runs WHERE status = 'completed'"
+                ))).scalar_one_or_none()
+            if last is not None and datetime.now(timezone.utc) - last > timedelta(hours=6, minutes=30):
+                logger.info("Startup: last completed sync %s is stale — kicking catch-up incremental", last)
+                asyncio.create_task(run_sync("incremental"))
+        except Exception as exc:
+            logger.error("Startup: stale-sync catch-up check failed — %s", exc)
+
+
+async def _leadership_retry_loop(app: FastAPI) -> None:
+    """Keep trying to become leader until it happens (or shutdown cancels us).
+
+    Zero-downtime deploys overlap old+new containers: the new one boots while
+    the old still holds the leader lock, a boot-time-only check concludes
+    'not leader', and once the old container exits NOBODY runs the scheduler
+    (observed 2026-07-15: the 01:10 + 07:10 UTC syncs silently never fired).
+    Retrying converts that fail-closed gap into leadership within ~a minute
+    of the old leader releasing the lock.
+    """
+    while app.state.leader_conn is None:
+        await asyncio.sleep(60)
+        try:
+            conn = await try_acquire_scheduler_leadership()
+        except Exception as exc:
+            logger.error("Leadership retry failed — %s", exc)
+            continue
+        if conn is not None:
+            app.state.leader_conn = conn
+            logger.info("Scheduler leadership acquired on retry — starting scheduler")
+            await _start_leader()
+            return
+
     # First-ever startup: no syncs yet → kick off the initial full sync.
     try:
         async with AsyncSessionLocal() as session:
@@ -131,10 +172,15 @@ async def lifespan(app: FastAPI):
         logger.error("Startup: scheduler-leadership check failed — %s", exc)
         app.state.leader_conn = None
 
+    app.state.leader_retry_task = None
     if app.state.leader_conn is not None:
         await _start_leader()
     else:
-        logger.warning("Startup: another process holds scheduler leadership — this process serves HTTP only (no scheduler)")
+        logger.warning(
+            "Startup: another process holds scheduler leadership — serving HTTP only; "
+            "retrying for leadership every 60s"
+        )
+        app.state.leader_retry_task = asyncio.create_task(_leadership_retry_loop(app))
 
     yield
 
@@ -142,6 +188,8 @@ async def lifespan(app: FastAPI):
     # Stop scheduling, then cancel any in-flight sync so THIS process exits promptly
     # instead of lingering as a zombie that keeps firing its scheduler. A cancelled run
     # keeps its 'running' row + checkpoint; the next leader resumes it on boot.
+    if app.state.leader_retry_task is not None:
+        app.state.leader_retry_task.cancel()
     if _scheduler:
         try:
             _scheduler.shutdown(wait=False)
