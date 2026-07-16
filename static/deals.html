@@ -277,6 +277,7 @@
     .wl-bucket.open .wl-chev { transform:rotate(90deg); }
     .wl-name { font-weight:600; font-size:15px; }
     .wl-count { font-size:11px; color:var(--muted); background:var(--surface2); padding:2px 8px; border-radius:5px; }
+    .wl-help { font-size:11px; color:var(--blue); background:rgba(59,130,246,0.12); border:1px solid rgba(59,130,246,0.3); padding:2px 8px; border-radius:5px; cursor:help; }
     .wl-total { font-weight:700; font-size:16px; }
     .wl-body { display:none; border-top:1px solid var(--border); }
     .wl-bucket.open .wl-body { display:block; }
@@ -556,10 +557,13 @@ function wlRepBucket(rep, i){
   const id='wlb'+i;
   const pendingBadge = rep.pending_count > 0
     ? '<span class="wl-count" style="color:var(--orange)">+'+rep.pending_count+' review</span>' : '';
+  const helpChip = (rep.rep_name === 'Unassigned')
+    ? '<span class="wl-help" data-tip="These deals have no Opportunity Owner set in GHL, so they cannot be attributed to a rep.\n\nTo assign: open the opportunity in GoHighLevel (click the deal name) → set the Opportunity Owner (the assignedTo field) → save. It re-attributes automatically on the next sync (or immediately after Run Match).">ⓘ How to assign</span>'
+    : '';
   return '<div class="wl-bucket'+(i===0?' open':'')+'" id="'+id+'">'
     +'<div class="wl-bh" onclick="document.getElementById(\''+id+'\').classList.toggle(\'open\')">'
     +'<div class="wl-bh-left"><span class="wl-chev">▶</span><span class="wl-name">'+rep.rep_name+'</span>'
-    +'<span class="wl-count">'+rep.deal_count+' deal'+(rep.deal_count!==1?'s':'')+'</span>'+pendingBadge+'</div>'
+    +'<span class="wl-count">'+rep.deal_count+' deal'+(rep.deal_count!==1?'s':'')+'</span>'+pendingBadge+helpChip+'</div>'
     +'<span class="wl-total">'+fmtUSD(rep.net_cash_collected)+'</span></div>'
     +'<div class="wl-body">'+rows+'</div></div>';
 }
