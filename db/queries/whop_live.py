@@ -184,11 +184,13 @@ async def get_whop_live_summary_for_month(
                     DealWhopMatch.first_payment_date <= month_end,
                     DealWhopMatch.match_confidence.in_(LIVE_CONFIDENCE_TIERS),
                 ),
-                # Won this month with no Whop payment → needs review (wire/other)
+                # Won this month with no Whop payment → needs review (wire/other).
+                # Excludes deals a reviewer has explicitly ignored (hidden).
                 and_(
                     DealWhopMatch.first_payment_date.is_(None),
                     DealWhopMatch.ghl_close_date >= month_start,
                     DealWhopMatch.ghl_close_date <= month_end,
+                    DealWhopMatch.is_ignored.isnot(True),
                 ),
             )
         )

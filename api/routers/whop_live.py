@@ -115,23 +115,30 @@ async def whop_live_months(db: AsyncSession = Depends(get_db)) -> list[str]:
     return await get_available_deal_months(db)
 
 
-class ConfirmDealInput(BaseModel):
+class ReviewDealInput(BaseModel):
     ghl_opportunity_id: str
-    confirmed: bool = True
+    action: str  # 'confirm' | 'ignore' | 'reset'
 
 
-@router.post("/pnl/whop-live/confirm-deal")
-async def confirm_live_deal(body: ConfirmDealInput, db: AsyncSession = Depends(get_db)) -> dict:
-    """Confirm (or un-confirm) a needs-review, no-Whop deal so it counts in the Live totals.
+@router.post("/pnl/whop-live/review-deal")
+async def review_live_deal(body: ReviewDealInput, db: AsyncSession = Depends(get_db)) -> dict:
+    """Resolve a needs-review, no-Whop deal in the Live lens (wire transfer / other).
 
-    These are deals won in-month that settled outside Whop (e.g. wire transfer). They show
-    highlighted in the Live lens until a human confirms the cash actually landed. Confirming
-    sets is_confirmed=True; the matcher already leaves confirmed rows untouched.
+    Actions:
+      • confirm — the cash landed outside Whop → count it (is_confirmed=True).
+      • ignore  — not a real/settling deal → hide it from the lens (is_ignored=True).
+      • reset   — back to pending review (clears both flags).
+
+    The matcher already leaves is_confirmed rows untouched; ignored rows are simply
+    filtered out of the Live query.
     """
     from datetime import datetime, timezone
 
     from db.models import DealWhopMatch
     from sqlalchemy import select as sa_select
+
+    if body.action not in ("confirm", "ignore", "reset"):
+        raise HTTPException(status_code=422, detail=f"Invalid action: {body.action}")
 
     row = (await db.execute(
         sa_select(DealWhopMatch).where(DealWhopMatch.ghl_opportunity_id == body.ghl_opportunity_id)
@@ -139,15 +146,29 @@ async def confirm_live_deal(body: ConfirmDealInput, db: AsyncSession = Depends(g
     if not row:
         raise HTTPException(status_code=404, detail=f"Deal {body.ghl_opportunity_id} not found")
 
-    row.is_confirmed = body.confirmed
-    if body.confirmed:
+    if body.action == "confirm":
+        row.is_confirmed = True
+        row.is_ignored = False
         row.confirmed_by = "manual-wire-confirm"
         row.confirmed_at = datetime.now(timezone.utc)
-    else:
+    elif body.action == "ignore":
+        row.is_ignored = True
+        row.is_confirmed = False
         row.confirmed_by = None
         row.confirmed_at = None
+    else:  # reset
+        row.is_confirmed = False
+        row.is_ignored = False
+        row.confirmed_by = None
+        row.confirmed_at = None
+
     await db.commit()
-    return {"ok": True, "ghl_opportunity_id": body.ghl_opportunity_id, "is_confirmed": body.confirmed}
+    return {
+        "ok": True,
+        "ghl_opportunity_id": body.ghl_opportunity_id,
+        "is_confirmed": row.is_confirmed,
+        "is_ignored": row.is_ignored,
+    }
 
 
 @router.post("/pnl/whop-refresh")

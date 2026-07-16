@@ -265,6 +265,9 @@ class DealWhopMatch(Base):
     is_confirmed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
     confirmed_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # is_ignored — reviewer dismissed a no-Whop needs-review deal from the Live lens
+    # (hidden, never counted). Orthogonal to is_confirmed (which makes it count).
+    is_ignored: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Payment metrics (populated from Whop payments API for HIGH/MEDIUM matches)
     upfront_cash: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)

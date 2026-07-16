@@ -33,7 +33,7 @@
     }
 
     /* ── Page layout ───────────────────────────────────────────────────── */
-    .page { max-width: 1600px; margin: 0 auto; padding: 28px 24px 48px; }
+    .page { max-width: 90%; margin: 0 auto; padding: 28px 24px 48px; }
     .page-header {
       display: flex;
       align-items: flex-start;
@@ -154,7 +154,7 @@
       white-space: nowrap;
     }
     td.deal-name {
-      max-width: 240px;
+      max-width: 320px;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -313,6 +313,9 @@
     .wl-confirm-btn:hover { background:rgba(249,115,22,0.12); }
     .wl-confirm-btn.undo { border-color:var(--border); color:var(--muted); }
     .wl-confirm-btn.undo:hover { background:var(--surface2); }
+    .wl-confirm-btn.ignore { border-color:var(--border); color:var(--muted); }
+    .wl-confirm-btn.ignore:hover { background:var(--surface2); border-color:var(--red); color:var(--red); }
+    .wl-review-actions { display:flex; gap:8px; align-items:center; }
     .wl-pending-tv { color:var(--orange); }
 
     /* ── Custom instant tooltip (no native-title delay, larger + cleaner) ──── */
@@ -521,13 +524,16 @@ function wlRepBucket(rep, i){
 
     let right;
     if (d.needs_review && !d.is_confirmed) {
-      // Pending: show contract, hold cash until confirmed.
+      // Pending: show contract, hold cash until confirmed. Offer confirm OR ignore.
       right = wlStat(d.gross_contract_value, 'Contract (GHL)', 'dim')
-        + '<button class="wl-confirm-btn" onclick="wlConfirmDeal(\''+d.ghl_opportunity_id+'\', true, event)">Confirm to count</button>';
+        + '<div class="wl-review-actions">'
+        + '<button class="wl-confirm-btn" onclick="wlReviewDeal(\''+d.ghl_opportunity_id+'\', \'confirm\', event)">Confirm to count</button>'
+        + '<button class="wl-confirm-btn ignore" data-tip="Hide this deal from the review list — not counted. You can bring it back by re-running Match." onclick="wlReviewDeal(\''+d.ghl_opportunity_id+'\', \'ignore\', event)">Ignore</button>'
+        + '</div>';
     } else if (d.needs_review && d.is_confirmed) {
       right = wlStat(d.gross_contract_value, 'Contract (GHL)', 'dim')
         + wlStat(d.net_cash_collected, 'Cash (manual)', 'green')
-        + '<button class="wl-confirm-btn undo" onclick="wlConfirmDeal(\''+d.ghl_opportunity_id+'\', false, event)">Undo</button>';
+        + '<button class="wl-confirm-btn undo" onclick="wlReviewDeal(\''+d.ghl_opportunity_id+'\', \'reset\', event)">Undo</button>';
     } else {
       right = wlStat(d.gross_contract_value, 'Contract (GHL)', 'dim')
         + wlStat(d.total_paid, 'Cash', '', cashTooltip(d))
@@ -567,17 +573,23 @@ function wlRender(data){
   reps.forEach((r,i)=>{ h += wlRepBucket(r,i); });
   body.innerHTML = h;
 }
-async function wlConfirmDeal(oppId, confirmed, ev){
+async function wlReviewDeal(oppId, action, ev){
   if (ev) ev.stopPropagation();
+  const MSG = {
+    confirm: ['✅ Deal confirmed — now counted in the totals.', 'success'],
+    ignore:  ['Deal ignored — hidden from the review list.', 'info'],
+    reset:   ['Moved back to review — no longer counted.', 'info'],
+  };
   try {
-    const r = await fetch(`${API}/pnl/whop-live/confirm-deal`, {
+    const r = await fetch(`${API}/pnl/whop-live/review-deal`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ghl_opportunity_id: oppId, confirmed }),
+      body: JSON.stringify({ ghl_opportunity_id: oppId, action }),
     });
     const j = await r.json();
     if (!r.ok || j.ok === false) throw new Error(j.detail || j.error || ('HTTP ' + r.status));
-    showToast(confirmed ? '✅ Deal confirmed — now counted in the totals.' : 'Moved back to review — no longer counted.', confirmed ? 'success' : 'info');
+    const [msg, type] = MSG[action] || ['Updated.', 'info'];
+    showToast(msg, type);
     await loadWhopLive();
   } catch (e) { showToast('❌ ' + e.message, 'error'); }
 }
@@ -764,7 +776,7 @@ function renderTable(rows) {
     const conf = row.match_confidence || 'unmatched';
     const pillClass = `pill-${conf}`;
     const whopEmail = row.whop_email
-      ? `<span title="${row.whop_email}">${truncate(row.whop_email, 28)}</span>`
+      ? `<span title="${row.whop_email}">${truncate(row.whop_email, 44)}</span>`
       : `<span style="color:var(--muted)">—</span>`;
     const ar = row.remaining_ar;
     const arClass = ar && ar > 0 ? 'num pos' : 'num dim';
@@ -811,7 +823,7 @@ function renderTable(rows) {
     }
 
     return `<tr>
-      <td class="deal-name" title="${esc(row.ghl_opportunity_name || '')}">${esc(truncate(row.ghl_opportunity_name || '—', 36))}</td>
+      <td class="deal-name" title="${esc(row.ghl_opportunity_name || '')}">${esc(truncate(row.ghl_opportunity_name || '—', 48))}</td>
       <td class="dim">${esc(row.ghl_owner_name || '—')}</td>
       <td class="dim">${closeDateHtml}</td>
       <td><span class="pill ${pillClass}">${conf}</span></td>
