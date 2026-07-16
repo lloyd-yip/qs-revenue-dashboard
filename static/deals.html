@@ -499,6 +499,8 @@ async function loadWhopLive(){
     wlRender(await r.json());
   } catch(e){ body.innerHTML = '<div class="wl-empty">Could not load live Whop data ('+e.message+')</div>'; }
 }
+const CONTRACT_TIP = 'Deal value entered by the rep in GoHighLevel (monetary_value). Rep-entered, before any fees — blank when the rep did not fill it in.';
+const NET_CASH_TIP = 'Cash QS actually keeps, after the 15% Splitit/ClarityPay (Whop) provider fee. Equals Cash for non-financed deals (no fee).';
 function wlBadges(d){
   if (d.needs_review) {
     return d.is_confirmed
@@ -539,14 +541,14 @@ function wlRepBucket(rep, i){
         + '<button class="wl-confirm-btn ignore" data-tip="Hide this deal from the review list — not counted. You can bring it back by re-running Match." onclick="wlReviewDeal(\''+d.ghl_opportunity_id+'\', \'ignore\', event)">Ignore</button>'
         + '</div>';
     } else if (d.needs_review && d.is_confirmed) {
-      right = wlStat(d.gross_contract_value, 'Contract (GHL)', 'dim')
-        + wlStat(d.net_cash_collected, 'Cash (manual)', 'green')
+      right = wlStat(d.gross_contract_value, 'Contract (GHL)', 'dim', CONTRACT_TIP)
+        + wlStat(d.net_cash_collected, 'Net Cash (manual)', 'green', 'Manually-confirmed cash for a deal settled outside Whop (e.g. wire). No provider fee applied.')
         + '<button class="wl-confirm-btn undo" onclick="wlReviewDeal(\''+d.ghl_opportunity_id+'\', \'reset\', event)">Undo</button>';
     } else {
-      right = wlStat(d.gross_contract_value, 'Contract (GHL)', 'dim')
+      right = wlStat(d.gross_contract_value, 'Contract (GHL)', 'dim', CONTRACT_TIP)
+        + wlStat(d.whop_projected, 'Projected Total', 'green', projectedTooltip(d))
         + wlStat(d.total_paid, 'Cash', '', cashTooltip(d))
-        + wlStat(d.whop_projected, 'Projected', 'green', projectedTooltip(d))
-        + wlStat(d.net_cash_collected, 'Net Cash', '');
+        + wlStat(d.net_cash_collected, 'Net Cash (after fees)', '', NET_CASH_TIP);
     }
     const rowCls = 'wl-row' + (d.needs_review && !d.is_confirmed ? ' review' : '');
     return '<div class="'+rowCls+'"><div class="wl-rleft"><div class="wl-rname">'+nameHtml+' '+wlBadges(d)
@@ -577,8 +579,10 @@ function wlRender(data){
         +'<span class="wl-tl">Needs Review</span><span class="wl-tv wl-pending-tv">'+t.pending_count+' · '+fmtUSD(t.pending_contract_value||0)+'</span></div>'
     : '';
   let h = '<div class="wl-totals">'
-    +'<div class="wl-ti"><span class="wl-tl">Net Cash Collected</span><span class="wl-tv">'+fmtUSD(t.net_cash_collected||0)+'</span></div>'
-    +'<div class="wl-ti"><span class="wl-tl">Gross Contract</span><span class="wl-tv">'+fmtUSD(t.gross_contract_value||0)+'</span></div>'
+    +'<div class="wl-ti" data-tip="Actual cash QS kept this month, net of the 15% Splitit/ClarityPay provider fee. Formula: sum of (cash paid × (1 − fee)).">'
+      +'<span class="wl-tl">Net Cash Collected</span><span class="wl-tv">'+fmtUSD(t.net_cash_collected||0)+'</span></div>'
+    +'<div class="wl-ti" data-tip="Payment-verified projected FULL contract across these deals — Whop plan math (financed = paid; internal plans = avg installment × plan length). No rep input, so unlike Contract (GHL) it is never blank.">'
+      +'<span class="wl-tl">Projected Contract</span><span class="wl-tv">'+fmtUSD(t.projected_total||0)+'</span></div>'
     +'<div class="wl-ti"><span class="wl-tl">Deals</span><span class="wl-tv">'+(t.deal_count||0)+'</span></div>'
     +'<div class="wl-ti"><span class="wl-tl">Flagged</span><span class="wl-tv">'+(t.flagged_count||0)+'</span></div>'
     +pendingChip+'</div>';

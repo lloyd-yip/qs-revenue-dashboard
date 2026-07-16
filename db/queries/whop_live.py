@@ -206,6 +206,7 @@ async def get_whop_live_summary_for_month(
             "rep_name": rep,
             "deal_count": 0,
             "gross_contract_value": 0.0,
+            "projected_total": 0.0,
             "net_cash_collected": 0.0,
             "flagged_count": 0,
             "pending_count": 0,
@@ -217,6 +218,7 @@ async def get_whop_live_summary_for_month(
         if counts:
             bucket["deal_count"] += 1
             bucket["gross_contract_value"] += item["gross_contract_value"] or 0.0
+            bucket["projected_total"] += item["whop_projected"] or 0.0
             bucket["net_cash_collected"] += item["net_cash_collected"] or 0.0
             if r.plan_months_flag:
                 bucket["flagged_count"] += 1
@@ -235,11 +237,13 @@ async def get_whop_live_summary_for_month(
         pending = sorted([d for d in b["deals"] if d["needs_review"]], key=lambda d: d["ghl_close_date"] or "", reverse=True)
         b["deals"] = settled + pending
         b["gross_contract_value"] = round(b["gross_contract_value"], 2)
+        b["projected_total"] = round(b["projected_total"], 2)
         b["net_cash_collected"] = round(b["net_cash_collected"], 2)
         b["pending_contract_value"] = round(b["pending_contract_value"], 2)
 
     totals = {
         "gross_contract_value": round(sum(b["gross_contract_value"] for b in reps), 2),
+        "projected_total": round(sum(b["projected_total"] for b in reps), 2),
         "net_cash_collected": round(sum(b["net_cash_collected"] for b in reps), 2),
         "deal_count": sum(b["deal_count"] for b in reps),
         "flagged_count": sum(b["flagged_count"] for b in reps),

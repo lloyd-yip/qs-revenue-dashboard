@@ -61,6 +61,7 @@ class WhopLiveRepRow(BaseModel):
     rep_name: str
     deal_count: int
     gross_contract_value: float
+    projected_total: float = 0.0
     net_cash_collected: float
     flagged_count: int
     pending_count: int = 0
@@ -94,6 +95,7 @@ async def pnl_whop_live(
             rep_name=r["rep_name"],
             deal_count=r["deal_count"],
             gross_contract_value=r["gross_contract_value"],
+            projected_total=r.get("projected_total", 0.0),
             net_cash_collected=r["net_cash_collected"],
             flagged_count=r["flagged_count"],
             pending_count=r.get("pending_count", 0),
