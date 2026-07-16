@@ -38,6 +38,7 @@ class WhopLiveDealItem(BaseModel):
     ghl_close_date: str | None
     first_payment_date: str | None
     whop_email: str | None = None
+    ghl_contact_email: str | None = None
     gross_contract_value: float | None
     upfront_cash: float | None = None
     total_paid: float | None

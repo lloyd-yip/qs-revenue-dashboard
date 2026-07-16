@@ -1046,6 +1046,10 @@ const METRIC_TIPS = {
 
 const _ttDiv = document.getElementById('metric-tooltip');
 function _showTip(e) {
+  // Superseded by the shared instant tooltip (/static/tooltip.js), which renders
+  // every data-tip/title element uniformly. injectTooltips() still stamps data-tip
+  // attributes; the shared script displays them. This old renderer is a no-op now.
+  return;
   const tip = e.currentTarget.getAttribute('data-tip');
   if (!tip) return;
   _ttDiv.textContent = tip;
@@ -2880,6 +2884,7 @@ async function saveRepCompModal() {
   }
 }
 </script>
+<script src="/static/tooltip.js"></script>
 <script src="/static/nav.js"></script>
 </body>
 </html>

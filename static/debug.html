@@ -1056,30 +1056,9 @@
     }
 
     // ─── Calendar Tooltip ─────────────────────────────────────────────────────────
-    let tipTimer = null;
-    const tipEl = document.getElementById('cal-tooltip');
-
-    document.addEventListener('mouseover', e => {
-      const span = e.target.closest('.cal-tip');
-      if (!span) return;
-      const text = span.getAttribute('data-tip');
-      if (!text || text === '–') return;
-      clearTimeout(tipTimer);
-      tipTimer = setTimeout(() => {
-        const rect = span.getBoundingClientRect();
-        tipEl.textContent = text;
-        tipEl.style.left = rect.left + 'px';
-        tipEl.style.top = (rect.bottom + 4) + 'px';
-        tipEl.classList.add('show');
-      }, 400);
-    });
-
-    document.addEventListener('mouseout', e => {
-      const span = e.target.closest('.cal-tip');
-      if (!span) return;
-      clearTimeout(tipTimer);
-      tipEl.classList.remove('show');
-    });
+    // The old delayed (400ms) calendar tooltip is superseded by the shared instant
+    // tooltip (/static/tooltip.js), which renders .cal-tip's data-tip and the
+    // .money-hint title= tooltips uniformly with no delay. Left disabled here.
 
     function sortTable(col) {
       if (justResized) return;
@@ -1223,6 +1202,7 @@
 
     init();
   </script>
+  <script src="/static/tooltip.js"></script>
   <script src="/static/nav.js"></script>
 </body>
 

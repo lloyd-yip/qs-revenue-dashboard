@@ -141,6 +141,7 @@ def _deal_to_live_item(r: DealWhopMatch) -> dict:
         "ghl_close_date": str(r.ghl_close_date) if r.ghl_close_date else None,
         "first_payment_date": str(r.first_payment_date) if r.first_payment_date else None,
         "whop_email": r.whop_email,
+        "ghl_contact_email": r.ghl_contact_email,
         "gross_contract_value": float(gross) if gross is not None else None,
         "upfront_cash": float(r.upfront_cash) if r.upfront_cash is not None else None,
         "total_paid": float(cash) if cash is not None else None,

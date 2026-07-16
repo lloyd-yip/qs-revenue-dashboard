@@ -283,6 +283,9 @@
     .wl-row { display:flex; align-items:center; justify-content:space-between; padding:12px 18px 12px 40px; border-bottom:1px solid rgba(42,45,62,0.5); gap:12px; }
     .wl-row:last-child { border-bottom:none; }
     .wl-rname { font-size:14px; display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
+    .wl-opplink { color:var(--text); text-decoration:none; border-bottom:1px dashed transparent; cursor:pointer; }
+    .wl-opplink:hover { color:var(--accent); border-bottom-color:var(--accent); }
+    .wl-email { font-size:12px; color:var(--muted); margin-top:2px; }
     .wl-meta { font-size:12px; color:var(--muted); margin-top:3px; }
     .wl-amt-wrap { text-align:right; flex-shrink:0; }
     .wl-amt { font-weight:600; font-size:15px; }
@@ -460,6 +463,7 @@
 <script>
 const API = '/api/dashboard';
 const BEARER = '{{ api_token }}';
+const GHL_OPP_BASE = 'https://app.gohighlevel.com/v2/location/G7ZOWCq78JrzUjlLMCxt/opportunities/list';
 
 let allRows = [];
 let sortKey = 'first_payment_date';
@@ -515,12 +519,15 @@ function wlStat(v, label, cls, tip){
 function wlRepBucket(rep, i){
   const rows = rep.deals.map(d => {
     d.total_contract_value = d.gross_contract_value; // alias for shared tooltip helpers
+    const email = d.whop_email || d.ghl_contact_email || '';
     const metaBits = [];
     if (d.first_payment_date) metaBits.push('First pay '+d.first_payment_date);
     else if (d.ghl_close_date) metaBits.push('Won '+d.ghl_close_date);
     if (d.upfront_cash != null) metaBits.push('Upfront '+fmtUSD(d.upfront_cash));
-    if (d.whop_email) metaBits.push(d.whop_email);
     const meta = metaBits.join(' · ');
+    const nameHtml = d.ghl_opportunity_id
+      ? '<a class="wl-opplink" href="'+GHL_OPP_BASE+'/'+d.ghl_opportunity_id+'?tab=Opportunity+Details" target="_blank" rel="noopener" data-tip="Open this opportunity in GoHighLevel">'+esc(d.ghl_opportunity_name||d.ghl_opportunity_id)+'</a>'
+      : esc(d.ghl_opportunity_name||'—');
 
     let right;
     if (d.needs_review && !d.is_confirmed) {
@@ -541,8 +548,9 @@ function wlRepBucket(rep, i){
         + wlStat(d.net_cash_collected, 'Net Cash', '');
     }
     const rowCls = 'wl-row' + (d.needs_review && !d.is_confirmed ? ' review' : '');
-    return '<div class="'+rowCls+'"><div class="wl-rleft"><div class="wl-rname">'+(d.ghl_opportunity_name||d.ghl_opportunity_id)+' '+wlBadges(d)
-      +'</div>'+(meta?'<div class="wl-meta">'+meta+'</div>':'')+'</div>'
+    return '<div class="'+rowCls+'"><div class="wl-rleft"><div class="wl-rname">'+nameHtml+' '+wlBadges(d)
+      +'</div>'+(email?'<div class="wl-email">'+esc(email)+'</div>':'')
+      +(meta?'<div class="wl-meta">'+meta+'</div>':'')+'</div>'
       +'<div class="wl-stats">'+right+'</div></div>';
   }).join('');
   const id='wlb'+i;
