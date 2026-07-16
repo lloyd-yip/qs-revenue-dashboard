@@ -37,15 +37,22 @@ class WhopLiveDealItem(BaseModel):
     ghl_opportunity_name: str | None
     ghl_close_date: str | None
     first_payment_date: str | None
+    whop_email: str | None = None
     gross_contract_value: float | None
+    upfront_cash: float | None = None
     total_paid: float | None
+    whop_projected: float | None = None
     net_cash_collected: float | None
+    remaining_ar: float | None = None
     provider_fee_pct: float | None
+    payment_count: int | None = None
     is_splitit: bool | None
     is_claritypay: bool | None
     plan_months_flag: bool | None
     match_confidence: str
     total_installments: int | None
+    needs_review: bool = False
+    is_confirmed: bool = False
 
 
 class WhopLiveRepRow(BaseModel):
@@ -55,6 +62,8 @@ class WhopLiveRepRow(BaseModel):
     gross_contract_value: float
     net_cash_collected: float
     flagged_count: int
+    pending_count: int = 0
+    pending_contract_value: float = 0.0
     deals: list[WhopLiveDealItem]
 
 
@@ -86,6 +95,8 @@ async def pnl_whop_live(
             gross_contract_value=r["gross_contract_value"],
             net_cash_collected=r["net_cash_collected"],
             flagged_count=r["flagged_count"],
+            pending_count=r.get("pending_count", 0),
+            pending_contract_value=r.get("pending_contract_value", 0.0),
             deals=[WhopLiveDealItem(**d) for d in r["deals"]],
         )
         for r in data["reps"]
@@ -102,6 +113,41 @@ async def pnl_whop_live(
 async def whop_live_months(db: AsyncSession = Depends(get_db)) -> list[str]:
     """Return the deal-months ('YYYY-MM') that drive the Live lens month picker — current month included."""
     return await get_available_deal_months(db)
+
+
+class ConfirmDealInput(BaseModel):
+    ghl_opportunity_id: str
+    confirmed: bool = True
+
+
+@router.post("/pnl/whop-live/confirm-deal")
+async def confirm_live_deal(body: ConfirmDealInput, db: AsyncSession = Depends(get_db)) -> dict:
+    """Confirm (or un-confirm) a needs-review, no-Whop deal so it counts in the Live totals.
+
+    These are deals won in-month that settled outside Whop (e.g. wire transfer). They show
+    highlighted in the Live lens until a human confirms the cash actually landed. Confirming
+    sets is_confirmed=True; the matcher already leaves confirmed rows untouched.
+    """
+    from datetime import datetime, timezone
+
+    from db.models import DealWhopMatch
+    from sqlalchemy import select as sa_select
+
+    row = (await db.execute(
+        sa_select(DealWhopMatch).where(DealWhopMatch.ghl_opportunity_id == body.ghl_opportunity_id)
+    )).scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Deal {body.ghl_opportunity_id} not found")
+
+    row.is_confirmed = body.confirmed
+    if body.confirmed:
+        row.confirmed_by = "manual-wire-confirm"
+        row.confirmed_at = datetime.now(timezone.utc)
+    else:
+        row.confirmed_by = None
+        row.confirmed_at = None
+    await db.commit()
+    return {"ok": True, "ghl_opportunity_id": body.ghl_opportunity_id, "is_confirmed": body.confirmed}
 
 
 @router.post("/pnl/whop-refresh")

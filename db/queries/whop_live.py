@@ -12,7 +12,7 @@ All three operate on deal_whop_matches. None touch identity or is_confirmed colu
 
 from datetime import date, datetime, timezone
 
-from sqlalchemy import func, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import DealWhopMatch
@@ -104,11 +104,37 @@ def _projected_total(r: DealWhopMatch) -> float | None:
     return paid  # pay-in-full or plan length unknown
 
 
+def _non_whop_cash(r: DealWhopMatch) -> float:
+    """Best-available cash figure for a won deal that settled OUTSIDE Whop (e.g. wire).
+    Prefer the GHL cash_collected field, then any recorded total_paid, then the
+    contract value (a wire transfer is typically paid in full)."""
+    if r.ghl_cash_collected:
+        return float(r.ghl_cash_collected)
+    if r.total_paid:
+        return float(r.total_paid)
+    g = r.total_contract_value if r.total_contract_value is not None else r.ghl_monetary_value
+    return float(g) if g is not None else 0.0
+
+
 def _deal_to_live_item(r: DealWhopMatch) -> dict:
-    """Shape one DealWhopMatch row into a live-revenue deal item dict."""
+    """Shape one DealWhopMatch row into a live-revenue deal item dict.
+
+    needs_review = the deal was won this month but has NO Whop payment (wire/other).
+    Such deals are shown highlighted and only counted in the rep/portfolio totals
+    once a human confirms them (is_confirmed); until then they sit in a pending bucket.
+    """
     gross = r.total_contract_value if r.total_contract_value is not None else r.ghl_monetary_value
-    # Pre-refresh fallback: if net hasn't been computed yet, show gross paid (no fee applied).
-    net = r.net_cash_collected if r.net_cash_collected is not None else r.total_paid
+    needs_review = r.first_payment_date is None
+    if needs_review:
+        # No Whop payment: cash comes from GHL / manual entry, no provider fee.
+        cash = _non_whop_cash(r) if r.is_confirmed else None
+        net = cash
+        projected = cash
+    else:
+        # Pre-refresh fallback: if net hasn't been computed yet, show gross paid (no fee).
+        net = r.net_cash_collected if r.net_cash_collected is not None else r.total_paid
+        cash = r.total_paid
+        projected = _projected_total(r)
     return {
         "ghl_opportunity_id": r.ghl_opportunity_id,
         "ghl_opportunity_name": r.ghl_opportunity_name,
@@ -117,8 +143,8 @@ def _deal_to_live_item(r: DealWhopMatch) -> dict:
         "whop_email": r.whop_email,
         "gross_contract_value": float(gross) if gross is not None else None,
         "upfront_cash": float(r.upfront_cash) if r.upfront_cash is not None else None,
-        "total_paid": float(r.total_paid) if r.total_paid is not None else None,
-        "whop_projected": _projected_total(r),
+        "total_paid": float(cash) if cash is not None else None,
+        "whop_projected": float(projected) if projected is not None else None,
         "net_cash_collected": float(net) if net is not None else None,
         "remaining_ar": float(r.remaining_ar) if r.remaining_ar is not None else None,
         "provider_fee_pct": float(r.provider_fee_pct) if r.provider_fee_pct is not None else None,
@@ -128,6 +154,8 @@ def _deal_to_live_item(r: DealWhopMatch) -> dict:
         "plan_months_flag": r.plan_months_flag,
         "match_confidence": r.match_confidence,
         "total_installments": r.total_installments,
+        "needs_review": needs_review,
+        "is_confirmed": bool(r.is_confirmed),
     }
 
 
@@ -138,16 +166,32 @@ async def get_whop_live_summary_for_month(
 ) -> dict:
     """Aggregate per-rep live Whop revenue for a calendar month.
 
-    Includes high/medium matches whose first payment landed in the month. Deals with no
-    rep owner are grouped under "Unassigned". Returns reps (sorted by net cash desc),
-    portfolio totals, and the most recent refresh timestamp.
+    Two groups land in the month:
+      • Whop-settled — high/medium matches whose FIRST PAYMENT landed in the month.
+      • Needs-review — deals WON in the month (by GHL/won-status close date) with NO
+        Whop payment yet (e.g. wire transfer). Shown highlighted; only added to the
+        counted totals once confirmed (is_confirmed), otherwise held in a pending bucket.
+
+    Deals with no rep owner are grouped under "Unassigned". Returns reps (sorted by net
+    cash desc), portfolio totals, and the most recent refresh timestamp.
     """
     rows = (await session.execute(
-        select(DealWhopMatch)
-        .where(DealWhopMatch.first_payment_date >= month_start)
-        .where(DealWhopMatch.first_payment_date <= month_end)
-        .where(DealWhopMatch.match_confidence.in_(LIVE_CONFIDENCE_TIERS))
-        .order_by(DealWhopMatch.first_payment_date.desc())
+        select(DealWhopMatch).where(
+            or_(
+                # Whop-settled this month
+                and_(
+                    DealWhopMatch.first_payment_date >= month_start,
+                    DealWhopMatch.first_payment_date <= month_end,
+                    DealWhopMatch.match_confidence.in_(LIVE_CONFIDENCE_TIERS),
+                ),
+                # Won this month with no Whop payment → needs review (wire/other)
+                and_(
+                    DealWhopMatch.first_payment_date.is_(None),
+                    DealWhopMatch.ghl_close_date >= month_start,
+                    DealWhopMatch.ghl_close_date <= month_end,
+                ),
+            )
+        )
     )).scalars().all()
 
     rep_buckets: dict[str, dict] = {}
@@ -161,29 +205,43 @@ async def get_whop_live_summary_for_month(
             "gross_contract_value": 0.0,
             "net_cash_collected": 0.0,
             "flagged_count": 0,
+            "pending_count": 0,
+            "pending_contract_value": 0.0,
             "deals": [],
         })
         item = _deal_to_live_item(r)
-        bucket["deal_count"] += 1
-        bucket["gross_contract_value"] += item["gross_contract_value"] or 0.0
-        bucket["net_cash_collected"] += item["net_cash_collected"] or 0.0
-        if r.plan_months_flag:
-            bucket["flagged_count"] += 1
+        counts = (not item["needs_review"]) or item["is_confirmed"]
+        if counts:
+            bucket["deal_count"] += 1
+            bucket["gross_contract_value"] += item["gross_contract_value"] or 0.0
+            bucket["net_cash_collected"] += item["net_cash_collected"] or 0.0
+            if r.plan_months_flag:
+                bucket["flagged_count"] += 1
+        else:  # unconfirmed needs-review → pending, not counted
+            bucket["pending_count"] += 1
+            bucket["pending_contract_value"] += item["gross_contract_value"] or 0.0
         bucket["deals"].append(item)
 
         if r.metrics_updated_at and (last_refreshed is None or r.metrics_updated_at > last_refreshed):
             last_refreshed = r.metrics_updated_at
 
+    # Within a rep: Whop-settled first (newest first), then needs-review pending.
     reps = sorted(rep_buckets.values(), key=lambda b: b["net_cash_collected"], reverse=True)
     for b in reps:
+        settled = sorted([d for d in b["deals"] if not d["needs_review"]], key=lambda d: d["first_payment_date"] or "", reverse=True)
+        pending = sorted([d for d in b["deals"] if d["needs_review"]], key=lambda d: d["ghl_close_date"] or "", reverse=True)
+        b["deals"] = settled + pending
         b["gross_contract_value"] = round(b["gross_contract_value"], 2)
         b["net_cash_collected"] = round(b["net_cash_collected"], 2)
+        b["pending_contract_value"] = round(b["pending_contract_value"], 2)
 
     totals = {
         "gross_contract_value": round(sum(b["gross_contract_value"] for b in reps), 2),
         "net_cash_collected": round(sum(b["net_cash_collected"] for b in reps), 2),
         "deal_count": sum(b["deal_count"] for b in reps),
         "flagged_count": sum(b["flagged_count"] for b in reps),
+        "pending_count": sum(b["pending_count"] for b in reps),
+        "pending_contract_value": round(sum(b["pending_contract_value"] for b in reps), 2),
     }
 
     return {

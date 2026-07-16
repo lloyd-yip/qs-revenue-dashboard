@@ -304,6 +304,16 @@
     .wl-sl { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; white-space:nowrap; }
     .wl-badge.pay { color:var(--blue); background:rgba(59,130,246,0.12); text-transform:none; }
     .wl-badge.plan { color:var(--muted); background:var(--surface2); text-transform:none; }
+    .wl-badge.review { color:var(--orange); background:rgba(249,115,22,0.14); text-transform:none; }
+    .wl-badge.counted { color:var(--green); background:rgba(34,197,94,0.14); text-transform:none; }
+
+    /* Needs-review (no Whop payment) rows: amber left accent */
+    .wl-row.review { border-left:3px solid var(--orange); background:rgba(249,115,22,0.05); padding-left:37px; }
+    .wl-confirm-btn { font-size:11px; font-weight:600; padding:4px 10px; border-radius:6px; border:1px solid var(--orange); background:transparent; color:var(--orange); cursor:pointer; white-space:nowrap; }
+    .wl-confirm-btn:hover { background:rgba(249,115,22,0.12); }
+    .wl-confirm-btn.undo { border-color:var(--border); color:var(--muted); }
+    .wl-confirm-btn.undo:hover { background:var(--surface2); }
+    .wl-pending-tv { color:var(--orange); }
 
     /* ── Custom instant tooltip (no native-title delay, larger + cleaner) ──── */
     [data-tip] { cursor:help; }
@@ -482,6 +492,11 @@ async function loadWhopLive(){
   } catch(e){ body.innerHTML = '<div class="wl-empty">Could not load live Whop data ('+e.message+')</div>'; }
 }
 function wlBadges(d){
+  if (d.needs_review) {
+    return d.is_confirmed
+      ? '<span class="wl-badge counted">✓ Counted (manual)</span>'
+      : '<span class="wl-badge review" data-tip="Won this month but no Whop payment found (e.g. wire transfer). Not counted in the totals until you confirm the cash landed.">⚠ No Whop payment · review</span>';
+  }
   let b = '<span class="wl-badge '+(d.match_confidence==='high'?'high':'medium')+'">'+d.match_confidence+'</span>';
   if (d.is_splitit) b += ' <span class="wl-badge fee">Splitit −15%</span>';
   else if (d.is_claritypay) b += ' <span class="wl-badge fee">ClarityPay −15%</span>';
@@ -499,23 +514,38 @@ function wlRepBucket(rep, i){
     d.total_contract_value = d.gross_contract_value; // alias for shared tooltip helpers
     const metaBits = [];
     if (d.first_payment_date) metaBits.push('First pay '+d.first_payment_date);
+    else if (d.ghl_close_date) metaBits.push('Won '+d.ghl_close_date);
     if (d.upfront_cash != null) metaBits.push('Upfront '+fmtUSD(d.upfront_cash));
     if (d.whop_email) metaBits.push(d.whop_email);
     const meta = metaBits.join(' · ');
-    const stats =
-      wlStat(d.gross_contract_value, 'Contract (GHL)', 'dim') +
-      wlStat(d.total_paid, 'Cash', '', cashTooltip(d)) +
-      wlStat(d.whop_projected, 'Projected', 'green', projectedTooltip(d)) +
-      wlStat(d.net_cash_collected, 'Net Cash', '');
-    return '<div class="wl-row"><div class="wl-rleft"><div class="wl-rname">'+(d.ghl_opportunity_name||d.ghl_opportunity_id)+' '+wlBadges(d)
+
+    let right;
+    if (d.needs_review && !d.is_confirmed) {
+      // Pending: show contract, hold cash until confirmed.
+      right = wlStat(d.gross_contract_value, 'Contract (GHL)', 'dim')
+        + '<button class="wl-confirm-btn" onclick="wlConfirmDeal(\''+d.ghl_opportunity_id+'\', true, event)">Confirm to count</button>';
+    } else if (d.needs_review && d.is_confirmed) {
+      right = wlStat(d.gross_contract_value, 'Contract (GHL)', 'dim')
+        + wlStat(d.net_cash_collected, 'Cash (manual)', 'green')
+        + '<button class="wl-confirm-btn undo" onclick="wlConfirmDeal(\''+d.ghl_opportunity_id+'\', false, event)">Undo</button>';
+    } else {
+      right = wlStat(d.gross_contract_value, 'Contract (GHL)', 'dim')
+        + wlStat(d.total_paid, 'Cash', '', cashTooltip(d))
+        + wlStat(d.whop_projected, 'Projected', 'green', projectedTooltip(d))
+        + wlStat(d.net_cash_collected, 'Net Cash', '');
+    }
+    const rowCls = 'wl-row' + (d.needs_review && !d.is_confirmed ? ' review' : '');
+    return '<div class="'+rowCls+'"><div class="wl-rleft"><div class="wl-rname">'+(d.ghl_opportunity_name||d.ghl_opportunity_id)+' '+wlBadges(d)
       +'</div>'+(meta?'<div class="wl-meta">'+meta+'</div>':'')+'</div>'
-      +'<div class="wl-stats">'+stats+'</div></div>';
+      +'<div class="wl-stats">'+right+'</div></div>';
   }).join('');
   const id='wlb'+i;
+  const pendingBadge = rep.pending_count > 0
+    ? '<span class="wl-count" style="color:var(--orange)">+'+rep.pending_count+' review</span>' : '';
   return '<div class="wl-bucket'+(i===0?' open':'')+'" id="'+id+'">'
     +'<div class="wl-bh" onclick="document.getElementById(\''+id+'\').classList.toggle(\'open\')">'
     +'<div class="wl-bh-left"><span class="wl-chev">▶</span><span class="wl-name">'+rep.rep_name+'</span>'
-    +'<span class="wl-count">'+rep.deal_count+' deal'+(rep.deal_count!==1?'s':'')+'</span></div>'
+    +'<span class="wl-count">'+rep.deal_count+' deal'+(rep.deal_count!==1?'s':'')+'</span>'+pendingBadge+'</div>'
     +'<span class="wl-total">'+fmtUSD(rep.net_cash_collected)+'</span></div>'
     +'<div class="wl-body">'+rows+'</div></div>';
 }
@@ -524,13 +554,32 @@ function wlRender(data){
   const asOf = data.last_refreshed ? 'As of '+new Date(data.last_refreshed).toLocaleString()+' · ' : '';
   el('wlRefreshed').textContent = asOf+'Whop-settled deals only · refreshed nightly';
   if (!reps.length){ body.innerHTML = '<div class="wl-empty">No Whop-settled deals closed this month yet — they\'ll appear here as they close.</div>'; return; }
+  const pendingChip = (t.pending_count||0) > 0
+    ? '<div class="wl-ti" data-tip="Deals won this month with no Whop payment (e.g. wire transfer). Confirm each to add it to the counted totals.">'
+        +'<span class="wl-tl">Needs Review</span><span class="wl-tv wl-pending-tv">'+t.pending_count+' · '+fmtUSD(t.pending_contract_value||0)+'</span></div>'
+    : '';
   let h = '<div class="wl-totals">'
     +'<div class="wl-ti"><span class="wl-tl">Net Cash Collected</span><span class="wl-tv">'+fmtUSD(t.net_cash_collected||0)+'</span></div>'
     +'<div class="wl-ti"><span class="wl-tl">Gross Contract</span><span class="wl-tv">'+fmtUSD(t.gross_contract_value||0)+'</span></div>'
     +'<div class="wl-ti"><span class="wl-tl">Deals</span><span class="wl-tv">'+(t.deal_count||0)+'</span></div>'
-    +'<div class="wl-ti"><span class="wl-tl">Flagged</span><span class="wl-tv">'+(t.flagged_count||0)+'</span></div></div>';
+    +'<div class="wl-ti"><span class="wl-tl">Flagged</span><span class="wl-tv">'+(t.flagged_count||0)+'</span></div>'
+    +pendingChip+'</div>';
   reps.forEach((r,i)=>{ h += wlRepBucket(r,i); });
   body.innerHTML = h;
+}
+async function wlConfirmDeal(oppId, confirmed, ev){
+  if (ev) ev.stopPropagation();
+  try {
+    const r = await fetch(`${API}/pnl/whop-live/confirm-deal`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ghl_opportunity_id: oppId, confirmed }),
+    });
+    const j = await r.json();
+    if (!r.ok || j.ok === false) throw new Error(j.detail || j.error || ('HTTP ' + r.status));
+    showToast(confirmed ? '✅ Deal confirmed — now counted in the totals.' : 'Moved back to review — no longer counted.', confirmed ? 'success' : 'info');
+    await loadWhopLive();
+  } catch (e) { showToast('❌ ' + e.message, 'error'); }
 }
 function wlSetLens(which){
   el('wl-tab-live').classList.toggle('active', which==='live');
@@ -793,6 +842,9 @@ function sortRows(rows) {
   return rows.sort((a, b) => {
     let av = a[sortKey], bv = b[sortKey];
     if (sortKey === 'match_confidence') { av = CONF_ORDER[av] ?? 0; bv = CONF_ORDER[bv] ?? 0; }
+    // Close Date sorts on the same fallback the column displays: first Whop payment,
+    // else the GHL/won-status close date (so unmatched rows order correctly).
+    if (sortKey === 'first_payment_date') { av = a.first_payment_date || a.ghl_close_date; bv = b.first_payment_date || b.ghl_close_date; }
     if (av == null) av = sortDir > 0 ? Infinity : -Infinity;
     if (bv == null) bv = sortDir > 0 ? Infinity : -Infinity;
     if (typeof av === 'string') av = av.toLowerCase();
