@@ -293,6 +293,39 @@
     .wl-badge.fee { color:var(--yellow); background:rgba(245,158,11,0.12); text-transform:none; }
     .wl-empty { text-align:center; color:var(--muted); padding:40px 20px; font-size:14px; }
     .wl-hidden { display:none; }
+
+    /* ── Live-row per-deal stats ───────────────────────────────────────────── */
+    .wl-rleft { min-width:0; flex:1; }
+    .wl-stats { display:flex; gap:22px; flex-shrink:0; align-items:flex-start; }
+    .wl-stat { display:flex; flex-direction:column; align-items:flex-end; gap:2px; min-width:64px; }
+    .wl-sv { font-weight:600; font-size:14px; font-variant-numeric:tabular-nums; }
+    .wl-sv.green { color:var(--green); }
+    .wl-sv.dim { color:var(--muted); font-weight:500; }
+    .wl-sl { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; white-space:nowrap; }
+    .wl-badge.pay { color:var(--blue); background:rgba(59,130,246,0.12); text-transform:none; }
+    .wl-badge.plan { color:var(--muted); background:var(--surface2); text-transform:none; }
+
+    /* ── Custom instant tooltip (no native-title delay, larger + cleaner) ──── */
+    [data-tip] { cursor:help; }
+    #tip {
+      position:fixed;
+      z-index:9999;
+      max-width:340px;
+      background:var(--surface2);
+      color:var(--text);
+      border:1px solid var(--border);
+      border-radius:8px;
+      padding:10px 13px;
+      font-size:13px;
+      line-height:1.55;
+      white-space:pre-line;
+      box-shadow:0 8px 28px rgba(0,0,0,0.45);
+      pointer-events:none;
+      opacity:0;
+      transform:translateY(3px);
+      transition:opacity .08s ease, transform .08s ease;
+    }
+    #tip.show { opacity:1; transform:translateY(0); }
   </style>
 </head>
 <body>
@@ -391,11 +424,11 @@
           <th onclick="sortBy('first_payment_date')">Close Date <span class="sort-arrow">↕</span></th>
           <th onclick="sortBy('match_confidence')">Match <span class="sort-arrow">↕</span></th>
           <th>Whop Email</th>
-          <th onclick="sortBy('upfront_cash')" style="text-align:right" title="First payment received (WAP/Whop)">Upfront Cash <span class="sort-arrow">↕</span></th>
-          <th onclick="sortBy('total_paid')" style="text-align:right" title="Cash collected to date across all installments (reconciled from Whop payments)">Cash Collected <span class="sort-arrow">↕</span></th>
-          <th onclick="sortBy('whop_projected')" style="text-align:right;color:var(--green)" title="Payment-verified projected FULL contract, from Whop plan math: Splitit/ClarityPay settle 100% upfront (paid = full contract); internal plans project avg installment × plan length. No rep input.">Projected Total <span class="sort-arrow">↕</span></th>
-          <th onclick="sortBy('net_cash_collected')" style="text-align:right" title="Cash collected net of the 15% provider fee on financed (Splitit/ClarityPay) deals; equals Cash Collected otherwise">Net Cash <span class="sort-arrow">↕</span></th>
-          <th onclick="sortBy('total_contract_value')" style="text-align:right" title="Rep-entered deal value from GHL (monetary_value)">Contract Value (GHL) <span class="sort-arrow">↕</span></th>
+          <th onclick="sortBy('upfront_cash')" style="text-align:right" data-tip="First payment received (WAP/Whop)">Upfront Cash <span class="sort-arrow">↕</span></th>
+          <th onclick="sortBy('total_paid')" style="text-align:right" data-tip="Cash collected to date across all installments (reconciled from Whop payments)">Cash Collected <span class="sort-arrow">↕</span></th>
+          <th onclick="sortBy('whop_projected')" style="text-align:right;color:var(--green)" data-tip="Payment-verified projected FULL contract, from Whop plan math: Splitit/ClarityPay settle 100% upfront (paid = full contract); internal plans project avg installment × plan length. No rep input.">Projected Total <span class="sort-arrow">↕</span></th>
+          <th onclick="sortBy('net_cash_collected')" style="text-align:right" data-tip="Cash collected net of the 15% provider fee on financed (Splitit/ClarityPay) deals; equals Cash Collected otherwise">Net Cash <span class="sort-arrow">↕</span></th>
+          <th onclick="sortBy('total_contract_value')" style="text-align:right" data-tip="Rep-entered deal value from GHL (monetary_value)">Contract Value (GHL) <span class="sort-arrow">↕</span></th>
           <th onclick="sortBy('remaining_ar')" style="text-align:right">Remaining AR <span class="sort-arrow">↕</span></th>
           <th style="text-align:center" title="Payment type & installment progress">Payment / Plan</th>
         </tr>
@@ -409,6 +442,7 @@
 </div>
 
 <div id="toast"></div>
+<div id="tip"></div>
 
 <script>
 const API = '/api/dashboard';
@@ -450,18 +484,32 @@ async function loadWhopLive(){
 function wlBadges(d){
   let b = '<span class="wl-badge '+(d.match_confidence==='high'?'high':'medium')+'">'+d.match_confidence+'</span>';
   if (d.is_splitit) b += ' <span class="wl-badge fee">Splitit −15%</span>';
-  if (d.is_claritypay) b += ' <span class="wl-badge fee">ClarityPay −15%</span>';
+  else if (d.is_claritypay) b += ' <span class="wl-badge fee">ClarityPay −15%</span>';
+  else if (d.total_installments && d.total_installments >= 2) b += ' <span class="wl-badge pay">'+(d.payment_count||0)+'/'+d.total_installments+' paid</span>';
+  else b += ' <span class="wl-badge plan">Pay in full</span>';
   if (d.plan_months_flag) b += ' <span class="wl-badge fee">⚠ '+(d.total_installments||'')+'-pmt plan</span>';
   return b;
 }
+function wlStat(v, label, cls, tip){
+  const t = tip ? ' data-tip="'+esc(tip)+'"' : '';
+  return '<div class="wl-stat"><span class="wl-sv'+(cls?' '+cls:'')+'"'+t+'>'+fmtUSD(v)+'</span><span class="wl-sl">'+label+'</span></div>';
+}
 function wlRepBucket(rep, i){
   const rows = rep.deals.map(d => {
-    const gross = d.gross_contract_value!=null ? 'Contract '+fmtUSD(d.gross_contract_value) : '';
-    const fpd = d.first_payment_date ? ' · '+d.first_payment_date : '';
-    const net = d.net_cash_collected!=null ? fmtUSD(d.net_cash_collected) : '—';
-    return '<div class="wl-row"><div><div class="wl-rname">'+(d.ghl_opportunity_name||d.ghl_opportunity_id)+' '+wlBadges(d)
-      +'</div><div class="wl-meta">'+gross+fpd+'</div></div>'
-      +'<div class="wl-amt-wrap"><div class="wl-amt">'+net+'</div><div class="wl-amt-label">cash collected</div></div></div>';
+    d.total_contract_value = d.gross_contract_value; // alias for shared tooltip helpers
+    const metaBits = [];
+    if (d.first_payment_date) metaBits.push('First pay '+d.first_payment_date);
+    if (d.upfront_cash != null) metaBits.push('Upfront '+fmtUSD(d.upfront_cash));
+    if (d.whop_email) metaBits.push(d.whop_email);
+    const meta = metaBits.join(' · ');
+    const stats =
+      wlStat(d.gross_contract_value, 'Contract (GHL)', 'dim') +
+      wlStat(d.total_paid, 'Cash', '', cashTooltip(d)) +
+      wlStat(d.whop_projected, 'Projected', 'green', projectedTooltip(d)) +
+      wlStat(d.net_cash_collected, 'Net Cash', '');
+    return '<div class="wl-row"><div class="wl-rleft"><div class="wl-rname">'+(d.ghl_opportunity_name||d.ghl_opportunity_id)+' '+wlBadges(d)
+      +'</div>'+(meta?'<div class="wl-meta">'+meta+'</div>':'')+'</div>'
+      +'<div class="wl-stats">'+stats+'</div></div>';
   }).join('');
   const id='wlb'+i;
   return '<div class="wl-bucket'+(i===0?' open':'')+'" id="'+id+'">'
@@ -658,9 +706,9 @@ function renderTable(rows) {
     //   Pay in Full → no badge; deal was paid in full with no remaining AR
     let planHtml;
     if (row.is_splitit) {
-      planHtml = `<span class="badge-splitit" title="Splitit financed — customer pays the provider; QS received 100% upfront (before 15% fee)">SPLITIT</span>`;
+      planHtml = `<span class="badge-splitit" data-tip="Splitit financed — customer pays the provider; QS received 100% upfront (before 15% fee)">SPLITIT</span>`;
     } else if (row.is_claritypay) {
-      planHtml = `<span class="badge-splitit" title="ClarityPay financed — customer pays the provider; QS received 100% upfront (before 15% fee)">CLARITYPAY</span>`;
+      planHtml = `<span class="badge-splitit" data-tip="ClarityPay financed — customer pays the provider; QS received 100% upfront (before 15% fee)">CLARITYPAY</span>`;
     } else if (row.total_installments && row.total_installments >= 2) {
       const k = row.payment_count || 0;
       planHtml = `<span class="badge-fin">${row.total_installments}-pay</span> <span style="color:var(--muted);font-size:11px">${k}/${row.total_installments} paid</span>`;
@@ -670,7 +718,7 @@ function renderTable(rows) {
       planHtml = `<span style="color:var(--muted);font-size:12px">Pay in Full</span>`;
     }
     if (row.plan_months_flag) {
-      planHtml += ` <span class="badge-fin" title="Internal (non-financed) plan with more than 3 installments — verify plan length on Whop" style="background:#f59e0b22;color:var(--yellow);border-color:#f59e0b44">⚠</span>`;
+      planHtml += ` <span class="badge-fin" data-tip="Internal (non-financed) plan with more than 3 installments — verify plan length on Whop" style="background:#f59e0b22;color:var(--yellow);border-color:#f59e0b44">⚠</span>`;
     }
 
     return `<tr>
@@ -680,8 +728,8 @@ function renderTable(rows) {
       <td><span class="pill ${pillClass}">${conf}</span></td>
       <td class="dim" style="font-size:12px">${whopEmail}</td>
       <td class="num">${fmtUSD(row.upfront_cash)}</td>
-      <td class="num ${row.total_paid ? 'pos' : 'dim'}" title="${esc(cashTooltip(row))}">${fmtUSD(row.total_paid)}</td>
-      <td class="num" style="color:var(--green)" title="${esc(projectedTooltip(row))}">${fmtUSD(row.whop_projected)}</td>
+      <td class="num ${row.total_paid ? 'pos' : 'dim'}" data-tip="${esc(cashTooltip(row))}">${fmtUSD(row.total_paid)}</td>
+      <td class="num" style="color:var(--green)" data-tip="${esc(projectedTooltip(row))}">${fmtUSD(row.whop_projected)}</td>
       <td class="num">${fmtUSD(row.net_cash_collected)}</td>
       <td class="num">${fmtUSD(row.total_contract_value || row.ghl_monetary_value)}</td>
       <td class="${arClass}">${ar != null ? fmtUSD(ar) : '—'}</td>
@@ -778,6 +826,36 @@ function fmtDate(s) {
 function setTableMsg(msg) {
   el('tableBody').innerHTML = `<tr class="empty-row"><td colspan="12">${msg}</td></tr>`;
 }
+
+// ── Custom instant tooltip ────────────────────────────────────────────────
+// Delegated: any element with a non-empty data-tip shows a styled tooltip
+// immediately on hover (no native title delay) and follows the cursor.
+(function initTip(){
+  const tip = el('tip');
+  let active = null;
+  function place(e){
+    const pad = 14, tw = tip.offsetWidth, th = tip.offsetHeight;
+    let x = e.clientX + pad, y = e.clientY + pad;
+    if (x + tw > window.innerWidth - 8)  x = e.clientX - tw - pad;
+    if (y + th > window.innerHeight - 8) y = e.clientY - th - pad;
+    tip.style.left = Math.max(8, x) + 'px';
+    tip.style.top  = Math.max(8, y) + 'px';
+  }
+  document.addEventListener('mouseover', e => {
+    const t = e.target.closest('[data-tip]');
+    if (!t || !t.getAttribute('data-tip')) return;
+    active = t;
+    tip.textContent = t.getAttribute('data-tip');
+    tip.classList.add('show');
+    place(e);
+  });
+  document.addEventListener('mousemove', e => { if (active) place(e); });
+  document.addEventListener('mouseout', e => {
+    if (active && (e.target === active || active.contains(e.target)) && !active.contains(e.relatedTarget)) {
+      active = null; tip.classList.remove('show');
+    }
+  });
+})();
 
 let toastTimer;
 function showToast(msg, type = 'info') {

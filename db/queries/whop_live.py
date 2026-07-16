@@ -91,6 +91,19 @@ async def update_live_payment_metrics(
     return result.rowcount > 0
 
 
+def _projected_total(r: DealWhopMatch) -> float | None:
+    """Payment-verified projected full contract — mirror of
+    common.whop_projected_total_expr() / deal_matches._projected()."""
+    if r.total_paid is None:
+        return None
+    paid = float(r.total_paid)
+    if r.is_splitit or r.is_claritypay:
+        return paid  # financed → settles 100% upfront
+    if r.total_installments and r.total_installments > 0 and r.payment_count and r.payment_count > 0:
+        return paid / r.payment_count * r.total_installments
+    return paid  # pay-in-full or plan length unknown
+
+
 def _deal_to_live_item(r: DealWhopMatch) -> dict:
     """Shape one DealWhopMatch row into a live-revenue deal item dict."""
     gross = r.total_contract_value if r.total_contract_value is not None else r.ghl_monetary_value
@@ -101,10 +114,15 @@ def _deal_to_live_item(r: DealWhopMatch) -> dict:
         "ghl_opportunity_name": r.ghl_opportunity_name,
         "ghl_close_date": str(r.ghl_close_date) if r.ghl_close_date else None,
         "first_payment_date": str(r.first_payment_date) if r.first_payment_date else None,
+        "whop_email": r.whop_email,
         "gross_contract_value": float(gross) if gross is not None else None,
+        "upfront_cash": float(r.upfront_cash) if r.upfront_cash is not None else None,
         "total_paid": float(r.total_paid) if r.total_paid is not None else None,
+        "whop_projected": _projected_total(r),
         "net_cash_collected": float(net) if net is not None else None,
+        "remaining_ar": float(r.remaining_ar) if r.remaining_ar is not None else None,
         "provider_fee_pct": float(r.provider_fee_pct) if r.provider_fee_pct is not None else None,
+        "payment_count": r.payment_count,
         "is_splitit": r.is_splitit,
         "is_claritypay": r.is_claritypay,
         "plan_months_flag": r.plan_months_flag,
