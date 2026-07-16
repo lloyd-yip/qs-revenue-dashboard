@@ -575,10 +575,16 @@ async function loadDeals() {
 
 async function runMatch() {
   const btn = el('runBtn');
+  function resetBtn() { btn.disabled = false; btn.classList.remove('running'); btn.textContent = '▶ Run Match'; }
+
   btn.disabled = true;
   btn.classList.add('running');
-  btn.textContent = '⏳ Running… (may take 2-4 min)';
-  showToast('Matching engine started. This runs GHL + Whop API calls — please wait.', 'info');
+  btn.textContent = '⏳ Running… (2-5 min)';
+
+  // Remember the last completed run so we can detect when THIS run finishes
+  // (the endpoint kicks the matcher off in the background and returns immediately).
+  let baselineRun = null;
+  try { const r0 = await fetch(`${API}/deals/summary`); const j0 = await r0.json(); baselineRun = j0.last_match_run || null; } catch (e) {}
 
   try {
     const r = await fetch(`${API}/deals/run-match`, {
@@ -586,7 +592,10 @@ async function runMatch() {
       headers: { 'Content-Type': 'application/json' },
     });
     const j = await r.json();
-    if (j.ok) {
+    if (!r.ok || j.ok === false) throw new Error(j.error || j.detail || ('HTTP ' + r.status));
+
+    // Legacy synchronous path: stats returned inline → show + refresh now.
+    if (j.stats) {
       const s = j.stats;
       showToast(
         `✅ Done! High: ${s.matched_high || 0} · Medium: ${s.matched_medium || 0} · ` +
@@ -594,16 +603,47 @@ async function runMatch() {
         'success'
       );
       await Promise.all([loadSummary(), loadDeals()]);
-    } else {
-      showToast(`❌ Error: ${j.error}`, 'error');
+      resetBtn();
+      return;
     }
   } catch (e) {
     showToast(`❌ Request failed: ${e.message}`, 'error');
-  } finally {
-    btn.disabled = false;
-    btn.classList.remove('running');
-    btn.textContent = '▶ Run Match';
+    resetBtn();
+    return;
   }
+
+  // Background path: matcher is running. last_match_run = max(matched_at), which
+  // advances as each row is written — so "past baseline" alone would fire early.
+  // Poll, live-refresh the table as rows land, and only declare done once the
+  // timestamp has advanced AND then held steady for a full interval (no new writes).
+  showToast('Matching started — running GHL + Whop API calls in the background (2-5 min). Results refresh automatically.', 'info');
+  const INTERVAL = 20000, deadline = Date.now() + 6 * 60 * 1000;
+  let advancedTs = null;
+  const poll = async () => {
+    if (Date.now() > deadline) {
+      showToast('Match is still running — refreshing now; check back shortly for final numbers.', 'info');
+      await Promise.all([loadSummary(), loadDeals()]);
+      resetBtn();
+      return;
+    }
+    let cur = null;
+    try {
+      const r = await fetch(`${API}/deals/summary`);
+      const j = await r.json();
+      cur = j.last_match_run || null;
+    } catch (e) {}
+    await Promise.all([loadSummary(), loadDeals()]); // live progress
+    if (cur && cur !== baselineRun) {
+      if (advancedTs && cur === advancedTs) {   // no new writes since last poll → settled
+        showToast('✅ Matching complete — deals refreshed.', 'success');
+        resetBtn();
+        return;
+      }
+      advancedTs = cur;                          // still progressing
+    }
+    setTimeout(poll, INTERVAL);
+  };
+  setTimeout(poll, INTERVAL);
 }
 
 // ── Filters ─────────────────────────────────────────────────────────────────
