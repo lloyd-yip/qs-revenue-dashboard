@@ -37,7 +37,7 @@ import httpx
 
 from sqlalchemy import select
 
-from config import settings
+from config import EXCLUDED_WHOP_PRODUCT_IDS, settings
 from db.models import DealWhopMatch
 from db.queries.deal_matches import get_won_deals, purge_orphan_matches, upsert_deal_match
 from db.session import AsyncSessionLocal
@@ -86,6 +86,18 @@ HIGH_TICKET_PRODUCT_IDS = {
     "prod_OicLQ3n7l2pPQ",
     "prod_MOqVyn0Tj36mR",
 }
+
+
+def _membership_product_id(m: dict) -> str | None:
+    """Whop v2 membership.product is a string ID (or a dict in older shapes)."""
+    p = m.get("product")
+    return p if isinstance(p, str) else (p or {}).get("id")
+
+
+def _is_excluded_membership(m: dict) -> bool:
+    """True when a membership is on a separate, non-coaching offer (e.g. Calendar
+    Automation) that must be excluded from all QS revenue metrics."""
+    return _membership_product_id(m) in EXCLUDED_WHOP_PRODUCT_IDS
 
 
 # ── Scoring helpers ──────────────────────────────────────────────────────────
@@ -770,6 +782,8 @@ async def _match_one_deal(
 
     if ghl_email:
         for m in memberships:
+            if _is_excluded_membership(m):
+                continue  # separate offer (e.g. Calendar Automation) — never a QS match
             w_email, _ = _extract_whop_identity(m)
             if w_email and w_email == ghl_email.lower().strip():
                 score, method = score_match(ghl_email, ghl_name, w_email, _)
@@ -789,6 +803,8 @@ async def _match_one_deal(
 
         candidates: list[tuple[dict, int]] = []  # (membership, days_diff)
         for m in memberships:
+            if _is_excluded_membership(m):
+                continue  # separate offer (e.g. Calendar Automation) — never a QS match
             created_raw = m.get("created_at")
             if not created_raw:
                 continue
@@ -884,6 +900,24 @@ async def _match_one_deal(
                 for _opps in deals_by_email.values():
                     _opps.discard(prior_opp)
 
+    # A deal whose ONLY Whop presence is a separate-offer product (e.g. Calendar
+    # Automation) is excluded from every metric. Excluded candidates were already
+    # filtered out above, so best_m is never such a product; we flag the deal when
+    # the customer's email-matched memberships are exclusively excluded products.
+    _norm_email = (ghl_email or "").lower().strip()
+    _cust_memberships = (
+        [m for m in memberships if _extract_whop_identity(m)[0] == _norm_email]
+        if _norm_email else []
+    )
+    _had_excluded = any(_is_excluded_membership(m) for m in _cust_memberships)
+    _had_valid = any(not _is_excluded_membership(m) for m in _cust_memberships)
+    is_excluded = bool(best_m is None and _had_excluded and not _had_valid)
+    if is_excluded:
+        logger.info(
+            f"Deal {deal.ghl_opportunity_id} ({_norm_email}): excluded — only "
+            f"separate-offer (e.g. Calendar Automation) memberships; dropped from metrics"
+        )
+
     # ── Build the record ──────────────────────────────────────────────────
     record: dict = {
         "ghl_opportunity_id": deal.ghl_opportunity_id,
@@ -898,6 +932,7 @@ async def _match_one_deal(
         "match_confidence": confidence,
         "match_score": round(best_score, 3),
         "match_method": best_method,
+        "is_excluded": is_excluded,
     }
 
     if best_m:
@@ -947,6 +982,8 @@ async def _match_one_deal(
                 siblings = sibling_memberships(
                     best_m, memberships_by_email, claimed_other, close_date
                 )
+                # Never fold cash from a separate-offer membership (Calendar Automation).
+                siblings = [s for s in siblings if not _is_excluded_membership(s)]
             elif other_deal_ids:
                 logger.info(
                     f"  customer {w_email} has other matched deal(s) — "

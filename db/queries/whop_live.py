@@ -177,7 +177,10 @@ async def get_whop_live_summary_for_month(
     cash desc), portfolio totals, and the most recent refresh timestamp.
     """
     rows = (await session.execute(
-        select(DealWhopMatch).where(
+        select(DealWhopMatch)
+        # Separate-offer deals (e.g. Calendar Automation) are excluded from all metrics.
+        .where(DealWhopMatch.is_excluded.isnot(True))
+        .where(
             or_(
                 # Whop-settled this month
                 and_(

@@ -72,6 +72,16 @@ settings = Settings()
 SALES_PIPELINE_ID  = "zbI8YxmB9qhk1h4cInnq"
 UPSELL_PIPELINE_ID = "NjidsHukHHUpYtTcQefX"
 
+# ── Excluded Whop products ──────────────────────────────────────────────────────
+# Whop products that are NOT QS coaching revenue — sold as separate offers and must
+# be excluded from every dashboard metric/calculation. Deals whose only Whop presence
+# is one of these products are flagged is_excluded=True by the matcher and dropped
+# from all views. Add product IDs here as new separate offers launch.
+#   prod_bgKXIW0Wly5R1 — Calendar Automation (separate subscription offer)
+EXCLUDED_WHOP_PRODUCT_IDS: frozenset[str] = frozenset({
+    "prod_bgKXIW0Wly5R1",
+})
+
 # Upsell stage IDs — Client Delivery Revenue Pipeline
 UPSELL_STAGE_OUTREACH_SENT  = "e08df229-3462-4b6c-aa5a-7a16d6b18773"
 UPSELL_STAGE_CALL_SCHEDULED = "859efac7-0f23-4d7e-8b53-032e95b69c58"

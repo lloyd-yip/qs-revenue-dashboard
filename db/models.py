@@ -268,6 +268,10 @@ class DealWhopMatch(Base):
     # is_ignored — reviewer dismissed a no-Whop needs-review deal from the Live lens
     # (hidden, never counted). Orthogonal to is_confirmed (which makes it count).
     is_ignored: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # is_excluded — the deal's Whop product is a separate non-coaching offer
+    # (config.EXCLUDED_WHOP_PRODUCT_IDS, e.g. Calendar Automation). Set by the
+    # matcher; excluded from every dashboard metric. Distinct from is_ignored.
+    is_excluded: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Payment metrics (populated from Whop payments API for HIGH/MEDIUM matches)
     upfront_cash: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)

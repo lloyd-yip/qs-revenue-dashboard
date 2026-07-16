@@ -137,6 +137,7 @@ async def upsert_deal_match(session: AsyncSession, data: dict) -> None:
             match_confidence=data.get("match_confidence", "unmatched"),
             match_score=data.get("match_score", 0.0),
             match_method=data.get("match_method", "none"),
+            is_excluded=data.get("is_excluded", False),
             upfront_cash=data.get("upfront_cash"),
             total_paid=data.get("total_paid"),
             total_contract_value=data.get("total_contract_value"),
@@ -175,6 +176,7 @@ async def upsert_deal_match(session: AsyncSession, data: dict) -> None:
                 "match_confidence": data.get("match_confidence", "unmatched"),
                 "match_score": data.get("match_score", 0.0),
                 "match_method": data.get("match_method", "none"),
+                "is_excluded": data.get("is_excluded", False),
                 "upfront_cash": data.get("upfront_cash"),
                 "total_paid": data.get("total_paid"),
                 "total_contract_value": data.get("total_contract_value"),
@@ -289,7 +291,10 @@ async def get_deal_matches(
     # Sort by first_payment_date (authoritative Whop date) when available,
     # fall back to ghl_close_date for unmatched deals.
     from sqlalchemy import func as sa_func
-    query = select(DealWhopMatch).order_by(
+    # Separate-offer deals (e.g. Calendar Automation) are excluded from all views.
+    query = select(DealWhopMatch).where(
+        DealWhopMatch.is_excluded.isnot(True)
+    ).order_by(
         sa_func.coalesce(DealWhopMatch.first_payment_date, DealWhopMatch.ghl_close_date).desc().nullslast()
     )
 
@@ -359,7 +364,9 @@ async def get_deal_matches(
 
 async def get_deal_match_summary(session: AsyncSession) -> dict:
     """Aggregate stats for the deals page header cards."""
-    rows = (await session.execute(select(DealWhopMatch))).scalars().all()
+    rows = (await session.execute(
+        select(DealWhopMatch).where(DealWhopMatch.is_excluded.isnot(True))
+    )).scalars().all()
 
     total = len(rows)
     by_confidence: dict[str, int] = {"high": 0, "medium": 0, "low": 0, "unmatched": 0}
