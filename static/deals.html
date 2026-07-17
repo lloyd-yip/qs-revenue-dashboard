@@ -423,8 +423,10 @@
       <select id="wlTo" onchange="wlClampAndLoad('to')"></select>
       <button class="wl-arrow" onclick="wlStep(1)">›</button>
       <span class="col-presets">
-        <button class="col-preset" onclick="wlPreset(0)">This month</button>
+        <button class="col-preset" onclick="wlPreset(6)">Last 6 mo</button>
         <button class="col-preset" onclick="wlPreset(3)">Last 3 mo</button>
+        <button class="col-preset" onclick="wlPreset(1)">Last month</button>
+        <button class="col-preset" onclick="wlPreset(0)">This month</button>
       </span>
       <span class="wl-refreshed" id="wlRefreshed">Whop-settled deals only · refreshed nightly</span>
     </div>
@@ -441,6 +443,9 @@
       <select id="colTo" onchange="colClampAndLoad('to')"></select>
       <button class="wl-arrow" onclick="colStep(1)">›</button>
       <span class="col-presets">
+        <button class="col-preset" onclick="colPresetBack(6)">Last 6 mo</button>
+        <button class="col-preset" onclick="colPresetBack(3)">Last 3 mo</button>
+        <button class="col-preset" onclick="colPresetBack(1)">Last month</button>
         <button class="col-preset" onclick="colPreset(0)">This month</button>
         <button class="col-preset" onclick="colPreset(3)">Next 3 mo</button>
         <button class="col-preset" onclick="colPreset(6)">Next 6 mo</button>
@@ -700,6 +705,28 @@ function wlRepBucket(rep, i, open){
     +'<span class="wl-total">'+fmtUSD(rep.net_cash_collected)+'</span></div>'
     +'<div class="wl-body">'+rows+'</div></div>';
 }
+// Per-month summary strip for New Deals — only when a multi-month range is selected.
+// Buckets counted deals by first-payment month (client-side from the returned data).
+function wlMonthSummary(reps){
+  const from = el('wlFrom') && el('wlFrom').value, to = el('wlTo') && el('wlTo').value;
+  if (!from || !to || from === to) return '';
+  const months = colMonthsBetween(from, to);
+  const b = {}; months.forEach(m => b[m] = { net:0, proj:0, n:0 });
+  reps.forEach(rep => rep.deals.forEach(d => {
+    if (d.needs_review && !d.is_confirmed) return;      // counted deals only
+    const mk = (d.first_payment_date || '').slice(0, 7);
+    if (b[mk]) { b[mk].net += d.net_cash_collected || 0; b[mk].proj += d.whop_projected || 0; b[mk].n++; }
+  }));
+  let h = '<div class="col-strip-wrap"><div class="col-strip">';
+  months.forEach(m => {
+    h += '<div class="col-mcard"><div class="col-mlabel">'+colMonthLabel(m)+'</div>'
+      + '<div class="col-mrow"><span>Net Cash</span><span class="pos">'+fmtUSD(b[m].net)+'</span></div>'
+      + '<div class="col-mrow"><span>Projected</span><span>'+fmtUSD(b[m].proj)+'</span></div>'
+      + '<div class="col-mrow col-mtotal"><span>New Deals</span><span>'+b[m].n+'</span></div>'
+      + '</div>';
+  });
+  return h + '</div></div>';
+}
 function wlRender(data){
   const body = el('wlBody'); const reps = data.reps||[]; const t = data.totals||{};
   const asOf = data.last_refreshed ? 'As of '+new Date(data.last_refreshed).toLocaleString()+' · ' : '';
@@ -717,6 +744,8 @@ function wlRender(data){
     +'<div class="wl-ti"><span class="wl-tl">Deals</span><span class="wl-tv">'+(t.deal_count||0)+'</span></div>'
     +'<div class="wl-ti"><span class="wl-tl">Flagged</span><span class="wl-tv">'+(t.flagged_count||0)+'</span></div>'
     +pendingChip+'</div>';
+  // Per-month summary strip (multi-month ranges only).
+  h += wlMonthSummary(reps);
   // Rep buckets — counted deals only; auto-open the first non-empty one.
   let opened = false;
   reps.forEach((r,i)=>{
@@ -790,6 +819,13 @@ function colPreset(span){
   el('colTo').value = colShift(cur, span);
   loadCollections();
 }
+function colPresetBack(back){
+  const cur = colYm(new Date());
+  el('colTo').value = cur;
+  el('colFrom').value = colShift(cur, -back);
+  loadCollections();
+}
+function colMonthsBetween(from, to){ const out=[]; let m=from; while(colCmp(m,to)<=0){ out.push(m); m=colShift(m,1); } return out; }
 async function loadCollections(){
   const s = el('colFrom').value, e = el('colTo').value;
   const body = el('colBody'); body.innerHTML = '<div class="wl-empty">Loading…</div>';
