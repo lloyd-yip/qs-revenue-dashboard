@@ -704,6 +704,11 @@ function wlStat(v, label, cls, tip){
   const t = tip ? ' data-tip="'+esc(tip)+'"' : '';
   return '<div class="wl-stat"><span class="wl-sv'+(cls?' '+cls:'')+'"'+t+'>'+fmtUSD(v)+'</span><span class="wl-sl">'+label+'</span></div>';
 }
+// Same as wlStat but renders a pre-formatted string (e.g. a date) instead of USD.
+function wlStatTxt(txt, label, cls, tip){
+  const t = tip ? ' data-tip="'+esc(tip)+'"' : '';
+  return '<div class="wl-stat"><span class="wl-sv'+(cls?' '+cls:'')+'"'+t+'>'+(txt||'—')+'</span><span class="wl-sl">'+label+'</span></div>';
+}
 const ASSIGN_HELP_TIP = 'These deals have no Opportunity Owner set in GHL, so they cannot be attributed to a rep.\n\nTo assign: open the opportunity in GoHighLevel (click the deal name) → set the Opportunity Owner (the assignedTo field) → save. It re-attributes automatically on the next sync (or immediately after Run Match).';
 
 function wlNameHtml(d){
@@ -716,25 +721,24 @@ function wlNameHtml(d){
 function wlCountedRow(d){
   d.total_contract_value = d.gross_contract_value; // alias for shared tooltip helpers
   const email = d.whop_email || d.ghl_contact_email || '';
-  const metaBits = [];
-  if (d.first_payment_date) metaBits.push('First pay '+d.first_payment_date);
-  else if (d.ghl_close_date) metaBits.push('Won '+d.ghl_close_date);
-  if (d.upfront_cash != null) metaBits.push('Upfront '+fmtUSD(d.upfront_cash));
-  const meta = metaBits.join(' · ');
+  const firstPay = d.first_payment_date ? fmtDate(d.first_payment_date)
+    : (d.ghl_close_date ? 'Won '+fmtDate(d.ghl_close_date) : '—');
   let right;
   if (d.needs_review && d.is_confirmed) {
-    right = wlStat(d.gross_contract_value, 'Contract (GHL)', 'dim', CONTRACT_TIP)
+    right = wlStatTxt(firstPay, 'First Pay', 'dim')
+      + wlStat(d.gross_contract_value, 'Contract (GHL)', 'dim', CONTRACT_TIP)
       + wlStat(d.net_cash_collected, 'Net Cash (manual)', 'green', 'Manually-confirmed cash for a deal settled outside Whop (e.g. wire). No provider fee applied.')
       + '<button class="wl-confirm-btn undo" onclick="wlReviewDeal(\''+d.ghl_opportunity_id+'\', \'reset\', event)">Undo</button>';
   } else {
-    right = wlStat(d.gross_contract_value, 'Contract (GHL)', 'dim', CONTRACT_TIP)
+    right = wlStatTxt(firstPay, 'First Pay', 'dim', 'Date of the first Whop/WAP payment — when this became a new deal.')
+      + wlStat(d.upfront_cash, 'Upfront', 'dim', 'First payment collected (upfront cash).')
+      + wlStat(d.gross_contract_value, 'Contract (GHL)', 'dim', CONTRACT_TIP)
       + wlStat(d.whop_projected, 'Projected Total', 'green', projectedTooltip(d))
       + wlStat(d.total_paid, 'Cash', '', cashTooltip(d))
       + wlStat(d.net_cash_collected, 'Net Cash (after fees)', '', NET_CASH_TIP);
   }
   return '<div class="wl-row"><div class="wl-rleft"><div class="wl-rname">'+wlNameHtml(d)+' '+wlBadges(d)
-    +'</div>'+(email?'<div class="wl-email">'+esc(email)+'</div>':'')
-    +(meta?'<div class="wl-meta">'+meta+'</div>':'')+'</div>'
+    +'</div>'+(email?'<div class="wl-email">'+esc(email)+'</div>':'')+'</div>'
     +'<div class="wl-stats">'+right+'</div></div>';
 }
 
