@@ -71,7 +71,8 @@ async def get_collections_for_range(session: AsyncSession, start: date, end: dat
     )).scalars().all()
 
     months: dict[str, dict] = {
-        mk: {"month": mk, "collected": 0.0, "outstanding": 0.0, "deal_ids": set()}
+        mk: {"month": mk, "collected": 0.0, "outstanding": 0.0,
+             "new_deals": 0.0, "payment_plans": 0.0, "deal_ids": set()}
         for mk in _months_between(start, end)
     }
     plans: list[dict] = []
@@ -94,6 +95,7 @@ async def get_collections_for_range(session: AsyncSession, start: date, end: dat
         for s in in_window:
             b = months[s["month"]]
             b["outstanding" if not s["paid"] else "collected"] += s["amount"]
+            b["new_deals" if is_new_in_window else "payment_plans"] += s["amount"]
             b["deal_ids"].add(r.ghl_opportunity_id)
             window_deal_ids.add(r.ghl_opportunity_id)
             bucket_src["outstanding" if not s["paid"] else "collected"] += s["amount"]
@@ -135,6 +137,8 @@ async def get_collections_for_range(session: AsyncSession, start: date, end: dat
             "collected": collected,
             "outstanding": outstanding,
             "total": round(collected + outstanding, 2),
+            "new_deals": round(b["new_deals"], 2),
+            "payment_plans": round(b["payment_plans"], 2),
             "deal_count": len(b["deal_ids"]),
         })
 

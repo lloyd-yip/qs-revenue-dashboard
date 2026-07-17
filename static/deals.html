@@ -409,6 +409,10 @@
     .col-mrow span:first-child { color:var(--muted); }
     .col-mrow .pos { color:var(--green); font-variant-numeric:tabular-nums; }
     .col-mrow .warn { color:var(--yellow); font-variant-numeric:tabular-nums; }
+    .col-msplit { border-top:1px solid var(--border); margin-top:6px; padding-top:4px; }
+    .col-dot { display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:6px; }
+    .col-dot.nd { background:var(--green); }
+    .col-dot.pp { background:var(--blue); }
     .col-mtotal { border-top:1px solid var(--border); margin-top:6px; padding-top:7px; font-weight:700; }
     .col-mcount { font-size:11px; color:var(--muted); margin-top:8px; }
 
@@ -965,6 +969,10 @@ function colRender(data){
     h += '<div class="col-mcard"><div class="col-mlabel">'+colMonthLabel(m.month)+'</div>'
       + '<div class="col-mrow"><span>Collected</span><span class="pos">'+fmtUSD(m.collected)+'</span></div>'
       + '<div class="col-mrow"><span>Outstanding</span><span class="warn">'+fmtUSD(m.outstanding)+'</span></div>'
+      + '<div class="col-msplit">'
+        + '<div class="col-mrow" data-tip="Cash this month from deals whose first payment is in the selected window (net-new)."><span><span class="col-dot nd"></span>New Deals</span><span>'+fmtUSD(m.new_deals)+'</span></div>'
+        + '<div class="col-mrow" data-tip="Cash this month from installments of deals that first paid before the window (ongoing plans)."><span><span class="col-dot pp"></span>Payment Plans</span><span>'+fmtUSD(m.payment_plans)+'</span></div>'
+      + '</div>'
       + '<div class="col-mrow col-mtotal"><span>Total</span><span>'+fmtUSD(m.total)+'</span></div>'
       + '<div class="col-mcount">'+m.deal_count+' deal'+(m.deal_count!==1?'s':'')+'</div></div>';
   });
