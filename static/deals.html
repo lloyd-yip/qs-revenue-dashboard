@@ -363,7 +363,7 @@
     table.wl-deals-table { min-width:880px; }
     .wl-deals-table thead th { cursor:default; }
     .wl-deals-table td.wl-deal-cell { white-space:normal; max-width:320px; font-weight:500; }
-    .wl-deals-table tr.wl-totals-row td { font-weight:700; border-top:2px solid var(--border); background:var(--surface2); }
+    .wl-deals-table tr.wl-totals-row td { font-weight:700; border-bottom:2px solid var(--border); background:var(--surface2); }
     .wl-undo-link { font-size:11px; color:var(--muted); cursor:pointer; text-decoration:underline; margin-left:4px; }
     .wl-undo-link:hover { color:var(--text); }
 
@@ -775,7 +775,7 @@ function wlRepTable(rep){
       + '<th style="text-align:right;color:var(--green)" data-tip="Payment-verified full contract (Whop plan math).">Contracted Total</th>'
       + '<th style="text-align:right">Cash</th>'
       + '<th style="text-align:right" data-tip="Cash kept after the 15% Splitit/ClarityPay fee.">Net Cash (after fees)</th>'
-      + '</tr></thead><tbody>'+rows+totals+'</tbody></table></div></div>';
+      + '</tr></thead><tbody>'+totals+rows+'</tbody></table></div></div>';
 }
 
 // A needs-review deal row (no WAP/Whop payment) inside the Deals for Review section.
