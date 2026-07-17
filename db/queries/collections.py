@@ -77,17 +77,26 @@ async def get_collections_for_range(session: AsyncSession, start: date, end: dat
     plans: list[dict] = []
     refunded_total = 0.0
     window_deal_ids: set[str] = set()
+    # Revenue source split: cash from NEW deals (first payment in the window) vs
+    # ongoing PAYMENT PLANS (installments from deals that first paid before the window).
+    src = {
+        "new_deals": {"collected": 0.0, "outstanding": 0.0},
+        "payment_plans": {"collected": 0.0, "outstanding": 0.0},
+    }
 
     for r in rows:
         sched = _deal_schedule(r)
         if not sched:
             continue
         in_window = [s for s in sched if start_key <= s["month"] <= end_key]
+        is_new_in_window = bool(r.first_payment_date and start_key <= _mk(r.first_payment_date) <= end_key)
+        bucket_src = src["new_deals"] if is_new_in_window else src["payment_plans"]
         for s in in_window:
             b = months[s["month"]]
             b["outstanding" if not s["paid"] else "collected"] += s["amount"]
             b["deal_ids"].add(r.ghl_opportunity_id)
             window_deal_ids.add(r.ghl_opportunity_id)
+            bucket_src["outstanding" if not s["paid"] else "collected"] += s["amount"]
 
         refunded = float(r.total_refunded) if r.total_refunded else 0.0
         if in_window and refunded:
@@ -133,6 +142,10 @@ async def get_collections_for_range(session: AsyncSession, start: date, end: dat
     outstanding_sum = round(sum(m["outstanding"] for m in month_list), 2)
     plans.sort(key=lambda p: p["outstanding"], reverse=True)
 
+    def _src(k):
+        c, o = round(src[k]["collected"], 2), round(src[k]["outstanding"], 2)
+        return {"collected": c, "outstanding": o, "total": round(c + o, 2)}
+
     return {
         "range": {"start": start_key, "end": end_key},
         "months": month_list,
@@ -144,6 +157,8 @@ async def get_collections_for_range(session: AsyncSession, start: date, end: dat
             "net_collected": round(collected_sum - refunded_total, 2),
             "deal_count": len(window_deal_ids),
             "plan_count": len(plans),
+            "new_deals": _src("new_deals"),
+            "payment_plans_revenue": _src("payment_plans"),
         },
         "payment_plans": plans,
     }

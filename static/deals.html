@@ -357,7 +357,7 @@
     /* ── Collections lens ────────────────────────────────────────────────── */
     .col-periodbar { display:flex; align-items:center; gap:10px; margin-bottom:18px; flex-wrap:wrap; }
     .col-plabel { font-size:12px; color:var(--muted); }
-    #colFrom, #colTo { background:var(--surface2); border:1px solid var(--border); color:var(--text); padding:6px 12px; border-radius:7px; font-size:14px; font-weight:600; font-family:inherit; cursor:pointer; }
+    #colFrom, #colTo, #wlFrom, #wlTo { background:var(--surface2); border:1px solid var(--border); color:var(--text); padding:6px 12px; border-radius:7px; font-size:14px; font-weight:600; font-family:inherit; cursor:pointer; }
     .col-presets { display:flex; gap:6px; }
     .col-preset { background:var(--surface2); border:1px solid var(--border); color:var(--muted); font-size:12px; padding:6px 11px; border-radius:7px; cursor:pointer; font-family:inherit; }
     .col-preset:hover { color:var(--text); border-color:var(--accent); }
@@ -370,6 +370,17 @@
     .col-card.warn { border-color:#f59e0b44; } .col-card.warn .col-card-val { color:var(--yellow); }
     .col-card.neg .col-card-val { color:var(--red); }
 
+    .col-source { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:8px 18px; margin-bottom:20px; }
+    .col-source-head { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; padding:8px 0 6px; border-bottom:1px solid var(--border); }
+    .col-source-row { display:flex; align-items:center; gap:10px; padding:11px 0; border-bottom:1px solid rgba(42,45,62,0.5); }
+    .col-source-row:last-child { border-bottom:none; }
+    .col-source-dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+    .col-source-dot.nd { background:var(--green); }
+    .col-source-dot.pp { background:var(--blue); }
+    .col-source-label { font-weight:600; font-size:14px; min-width:110px; }
+    .col-source-sub { font-size:12px; color:var(--muted); flex:1; }
+    .col-source-val { font-weight:700; font-size:16px; font-variant-numeric:tabular-nums; }
+    .col-source-note { font-size:11px; color:var(--muted); min-width:110px; text-align:right; }
     .col-strip-wrap { overflow-x:auto; margin-bottom:24px; padding-bottom:4px; }
     .col-strip { display:flex; gap:12px; min-width:min-content; }
     .col-mcard { flex:0 0 200px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:14px 16px; }
@@ -561,7 +572,7 @@ function wlInitMonths(){
   const opts = [];
   for (let i=-18; i<=6; i++){ opts.push(colYm(new Date(now.getFullYear(), now.getMonth()+i, 1))); }
   const cur = colYm(now);
-  const optHtml = () => opts.map(m=>`<option value="${m}"${m===cur?' selected':''}>${colMonthLabel(m)}${m===cur?' (current)':''}</option>`).join('');
+  const optHtml = () => opts.map(m=>`<option value="${m}"${m===cur?' selected':''}>${colMonthLabel(m)}</option>`).join('');
   el('wlFrom').innerHTML = optHtml();
   el('wlTo').innerHTML = optHtml();
 }
@@ -847,6 +858,22 @@ function colRender(data){
     + colCard('Total Expected', fmtUSD(t.total), '', 'Collected + Outstanding across the selected window.')
     + colCard('Refunded', fmtUSD(t.refunded), 'neg', 'Cash refunded to customers on these deals (from Whop payment refund status). Populates after the next Run Match.')
     + colCard('Net Collected', fmtUSD(t.net_collected), '', 'Collected − Refunded.')
+    + '</div>';
+
+  // Revenue source split: new deals vs ongoing payment plans.
+  const nd = t.new_deals || {}, pp = t.payment_plans_revenue || {};
+  h += '<div class="col-source">'
+    + '<div class="col-source-head">Where the cash comes from</div>'
+    + '<div class="col-source-row" data-tip="Cash from deals whose FIRST payment lands in the selected window (net-new clients this period).">'
+      + '<span class="col-source-dot nd"></span><span class="col-source-label">New Deals</span>'
+      + '<span class="col-source-sub">first payment in this window</span>'
+      + '<span class="col-source-val">'+fmtUSD(nd.total)+'</span>'
+      + '<span class="col-source-note">'+fmtUSD(nd.collected)+' collected</span></div>'
+    + '<div class="col-source-row" data-tip="Cash from deals that first paid BEFORE this window and are still paying installments (ongoing payment plans).">'
+      + '<span class="col-source-dot pp"></span><span class="col-source-label">Payment Plans</span>'
+      + '<span class="col-source-sub">installments from earlier deals</span>'
+      + '<span class="col-source-val">'+fmtUSD(pp.total)+'</span>'
+      + '<span class="col-source-note">'+fmtUSD(pp.collected)+' collected</span></div>'
     + '</div>';
 
   h += '<div class="col-strip-wrap"><div class="col-strip">';
