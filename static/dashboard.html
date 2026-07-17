@@ -383,7 +383,7 @@
       </select>
     </div>
     <div style="font-size:12px; color:var(--text2); padding:7px 12px; background:rgba(99,102,241,0.08); border:1px solid rgba(99,102,241,0.2); border-radius:6px;">
-      Uses the date range and rep filter above &nbsp;·&nbsp; Contract Value is rep-entered (GHL); Projected Total &amp; Cash Collected come from reconciled payments
+      Uses the date range and rep filter above &nbsp;·&nbsp; Contract Value is rep-entered (GHL); Contracted Total &amp; Cash Collected come from reconciled payments
     </div>
   </div>
   <div class="data-table-wrap">
@@ -640,7 +640,7 @@
           <th class="num" title="Average sales cycle: first showed call → first payment">Avg Cycle</th>
           <th class="num" style="color:var(--green);">Cash Collected</th>
           <th class="num" title="Sum of GHL-entered deal size (monetary value) on this cohort's won deals — same figure as the Sales Performance CONTRACT VALUE column. Rep-entered, not payment-verified.">Contract Value</th>
-          <th class="num" style="color:var(--green);" title="Payment-verified projected full contract, from Whop plan math: Splitit/ClarityPay settle 100% upfront (paid = full contract); internal plans project avg installment × plan length.">Projected Total</th>
+          <th class="num" style="color:var(--green);" title="Payment-verified projected full contract, from Whop plan math: Splitit/ClarityPay settle 100% upfront (paid = full contract); internal plans project avg installment × plan length.">Contracted Total</th>
           <th class="num" title="Cash Collected ÷ Units Closed">Avg Cash</th>
           <th class="num" title="Cash collected ÷ 1st-call shows — revenue produced per held call">Cash / Show</th>
           <th class="num" title="Monthly base salary prorated over the selected window">Base (window)</th>
@@ -1005,7 +1005,7 @@ const METRIC_TIPS = {
   // Deal value
   'Contract Value':         'Sum of GHL monetary value for closed-won deals in the period.\nFormula: SUM(monetary_value WHERE stage = Deal Won)',
   'Cash Collected':         'Cash collected TO DATE on this cohort\'s won deals, from reconciled Whop/Stripe/Wise payments — all installments, stacks up as payments land.\nFormula: SUM(total_paid on matched won deals)',
-  'Projected Total':        'Payment-verified projected FULL contract value, from Whop plan math — no rep input involved.\nFormula: financed (Splitit/ClarityPay) = total paid (settles 100% upfront); internal plans = avg installment × plan length (split_pay_required_payments)',
+  'Contracted Total':        'Payment-verified projected FULL contract value, from Whop plan math — no rep input involved.\nFormula: financed (Splitit/ClarityPay) = total paid (settles 100% upfront); internal plans = avg installment × plan length (split_pay_required_payments)',
   'Proj. Contract Value':   'Sum of rep-entered projected deal sizes. Directional estimate — not accounting-validated.\nFormula: SUM(projected_deal_size)',
   'Avg Cycle':              'Average days from the first call the client SHOWED for → the first payment, for this period’s cohort of won deals.\nFormula: AVG(first_payment_date − first_showed_call_date) in days. Falls back to close_date when a won deal has no matched Whop payment.',
   // Lead quality breakdown
@@ -1025,12 +1025,12 @@ const METRIC_TIPS = {
   'Rep Comp':               'Manually entered total compensation (base + bonus) for this rep in the period.\nSource: Period Financial Inputs panel on Funnel Economics tab',
   'Mktg Alloc':             "This rep's share of total marketing spend, proportional to their share of team shows.\nFormula: (Total Mktg Spend ÷ Team Total Shows) × Rep's Shows",
   'Total Invested':         "All-in cost attributed to this rep for this cohort: prorated base salary + commission on cash collected + allocated share of marketing spend.\nFormula: Base (window) + Commission% × Cash Collected + Mktg Alloc — comp model set in the Sales Reps tab",
-  'Contract RORI':          'Payment-verified projected contract value returned per $1 invested in this rep (comp + marketing allocation).\nFormula: Projected Total ÷ (Rep Comp + Mktg Alloc)',
+  'Contract RORI':          'Payment-verified projected contract value returned per $1 invested in this rep (comp + marketing allocation).\nFormula: Contracted Total ÷ (Rep Comp + Mktg Alloc)',
   'Cash RORI':              'Cash collected per $1 invested in this rep (comp + marketing allocation).\nFormula: Cash Collected ÷ (Rep Comp + Mktg Alloc)',
   // Funnel Economics — Revenue Metrics tiles
-  'Avg Contract Value':          'Average payment-verified projected contract per closed-won deal in the period (Whop plan math, not the rep-entered GHL value).\nFormula: AVG(Projected Total per closed deal)',
+  'Avg Contract Value':          'Average payment-verified projected contract per closed-won deal in the period (Whop plan math, not the rep-entered GHL value).\nFormula: AVG(Contracted Total per closed deal)',
   'Avg Cash Collected':          'Average cash collected TO DATE per closed-won deal — all installments, stacks as payments land (reconciled Whop/Stripe/Wise).\nFormula: AVG(total paid on matched won deals)',
-  'Avg % Cash Upfront':          'Average % of the payment-verified projected contract collected as the FIRST payment.\nFormula: AVG(Upfront Cash ÷ Projected Total)',
+  'Avg % Cash Upfront':          'Average % of the payment-verified projected contract collected as the FIRST payment.\nFormula: AVG(Upfront Cash ÷ Contracted Total)',
   // Compliance
   'Not Logged':                  'Appointments that passed without the rep logging a result (Showed / No Show / Cancelled).\nFormula: COUNT(appointment passed AND status still Confirmed or blank)',
   'Call Outcome Not Logged':     'Calls where the rep never logged the result within 12 hours of the appointment.\nFormula: COUNT(call passed + 12h grace AND status = Confirmed or blank)',
@@ -1545,15 +1545,15 @@ function renderRepBreakdown(reps) {
         <th class="num" style="color:var(--red);">Bad</th>
         <th class="num" style="color:var(--text2);" title="Showed but lead quality never graded by rep">Not Graded</th>
         <th class="num" style="color:var(--green);" title="GHL-entered deal size (monetary value) summed over this cohort's won deals. Rep-entered, not payment-verified.">Contract Value</th>
-        <th class="num" style="color:var(--green);" title="Payment-verified projected full contract, from Whop plan math: Splitit/ClarityPay settle 100% upfront (paid = full contract); internal plans project avg installment × plan length.">Projected Total</th>
+        <th class="num" style="color:var(--green);" title="Payment-verified projected full contract, from Whop plan math: Splitit/ClarityPay settle 100% upfront (paid = full contract); internal plans project avg installment × plan length.">Contracted Total</th>
         <th class="num" style="color:var(--green);" title="Cash collected to date on this cohort's won deals — all installments, stacks as payments land (reconciled Whop/Stripe/Wise)">Cash Collected</th>
-        <th class="num" style="color:var(--green);" title="Projected Total ÷ Units Closed — payment-verified, not the rep-entered GHL value">Avg Contract</th>
+        <th class="num" style="color:var(--green);" title="Contracted Total ÷ Units Closed — payment-verified, not the rep-entered GHL value">Avg Contract</th>
         <th class="num" style="color:var(--green);" title="Cash Collected ÷ Units Closed">Avg Cash</th>
-        <th class="num" style="color:var(--green);" title="Upfront Cash ÷ Projected Total — how much of the payment-verified contract landed as the first payment (WAP/Whop)">% Upfront</th>
+        <th class="num" style="color:var(--green);" title="Upfront Cash ÷ Contracted Total — how much of the payment-verified contract landed as the first payment (WAP/Whop)">% Upfront</th>
         <th class="num" title="Prorated base salary + commission on cash collected + allocated lead cost (marketing spend proportional to calls booked). Comp model set in the Sales Reps tab.">Total Invested</th>
         <th class="num" title="Total Invested ÷ Units Closed">Cost/Close</th>
         <th class="num" style="color:var(--green);" title="Cash Collected ÷ Total Invested">Cash RORI</th>
-        <th class="num" style="color:var(--green);" title="Projected Total ÷ Total Invested — payment-verified contract per $1 invested">Contract RORI</th>
+        <th class="num" style="color:var(--green);" title="Contracted Total ÷ Total Invested — payment-verified contract per $1 invested">Contract RORI</th>
       </tr></thead>
       <tbody>${rows}</tbody>
       <tfoot>${totalsRow}</tfoot>
@@ -1674,7 +1674,7 @@ function renderChannelTable(data, groupBy = 'channel') {
       <thead><tr>
         <th>${colLabel}</th><th class="num">Total Opps</th><th class="num">Shows</th><th class="num">Show Rate</th><th class="num">Units Closed</th>
         <th class="num" style="color:var(--green);" title="GHL-entered deal size (monetary value) on this channel's cohort won deals. Rep-entered, not payment-verified.">Contract Value</th>
-        <th class="num" style="color:var(--green);" title="Payment-verified projected full contract, from Whop plan math: financed deals settle upfront; internal plans project avg installment × plan length.">Projected Total</th>
+        <th class="num" style="color:var(--green);" title="Payment-verified projected full contract, from Whop plan math: financed deals settle upfront; internal plans project avg installment × plan length.">Contracted Total</th>
         <th class="num" style="color:var(--green);" title="Cash collected to date on this channel's cohort won deals — all installments, stacks as payments land (reconciled Whop/Stripe/Wise)">Cash Collected</th>
         <th class="num">Qual Rate</th><th class="num">DQ Rate</th>
         <th class="num" style="color:var(--green);">Great</th><th class="num" style="color:#84cc16;">Ok</th><th class="num" style="color:var(--yellow);">Barely Pass.</th><th class="num" style="color:var(--red);">Bad</th><th class="num" style="color:var(--yellow);">Missing Data</th>
@@ -1714,7 +1714,7 @@ async function showClosesModal(channel) {
         <thead><tr><th>Opportunity</th><th>Closer</th><th>Close Date</th>
           <th class="num" title="Rep-entered GHL projected deal size">Deal Value (GHL)</th>
           <th class="num" title="Cash collected to date — all installments (reconciled payments)">Cash Paid</th>
-          <th class="num" title="Payment-verified projected full contract (Whop plan math)">Projected Total</th>
+          <th class="num" title="Payment-verified projected full contract (Whop plan math)">Contracted Total</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
@@ -1829,7 +1829,7 @@ async function showAllClosesModal() {
         <thead><tr><th>Opportunity</th><th>Closer</th><th>Close Date</th>
           <th class="num" title="Rep-entered GHL projected deal size">Deal Value (GHL)</th>
           <th class="num" title="Cash collected to date — all installments (reconciled payments)">Cash Paid</th>
-          <th class="num" title="Payment-verified projected full contract (Whop plan math)">Projected Total</th>
+          <th class="num" title="Payment-verified projected full contract (Whop plan math)">Contracted Total</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
@@ -1905,7 +1905,7 @@ async function renderPipelineIntelligence() {
               <th class="num">Closed</th>
               <th class="num" title="Avg days from the first showed call to the first payment (won deals)">Avg Cycle</th>
               <th class="num" style="color:var(--green);" title="GHL-entered deal size (monetary value) on this segment's cohort won deals. Rep-entered, not payment-verified.">Contract Value</th>
-              <th class="num" style="color:var(--green);" title="Payment-verified projected full contract, from Whop plan math: financed deals settle upfront; internal plans project avg installment × plan length.">Projected Total</th>
+              <th class="num" style="color:var(--green);" title="Payment-verified projected full contract, from Whop plan math: financed deals settle upfront; internal plans project avg installment × plan length.">Contracted Total</th>
               <th class="num" style="color:var(--green);" title="Cash collected to date on this segment's cohort won deals — all installments, stacks as payments land (reconciled Whop/Stripe/Wise)">Cash Collected</th>
             </tr>
           </thead>

@@ -550,7 +550,7 @@
           <th>Whop Email</th>
           <th onclick="sortBy('upfront_cash')" style="text-align:right" data-tip="First payment received (WAP/Whop)">Upfront Cash <span class="sort-arrow">↕</span></th>
           <th onclick="sortBy('total_paid')" style="text-align:right" data-tip="Cash collected to date across all installments (reconciled from Whop payments)">Cash Collected <span class="sort-arrow">↕</span></th>
-          <th onclick="sortBy('whop_projected')" style="text-align:right;color:var(--green)" data-tip="Payment-verified projected FULL contract, from Whop plan math: Splitit/ClarityPay settle 100% upfront (paid = full contract); internal plans project avg installment × plan length. No rep input.">Projected Total <span class="sort-arrow">↕</span></th>
+          <th onclick="sortBy('whop_projected')" style="text-align:right;color:var(--green)" data-tip="Payment-verified projected FULL contract, from Whop plan math: Splitit/ClarityPay settle 100% upfront (paid = full contract); internal plans project avg installment × plan length. No rep input.">Contracted Total <span class="sort-arrow">↕</span></th>
           <th onclick="sortBy('net_cash_collected')" style="text-align:right" data-tip="Cash collected net of the 15% provider fee on financed (Splitit/ClarityPay) deals; equals Cash Collected otherwise">Net Cash <span class="sort-arrow">↕</span></th>
           <th onclick="sortBy('total_contract_value')" style="text-align:right" data-tip="Rep-entered deal value from GHL (monetary_value)">Contract Value (GHL) <span class="sort-arrow">↕</span></th>
           <th onclick="sortBy('remaining_ar')" style="text-align:right">Remaining AR <span class="sort-arrow">↕</span></th>
@@ -733,7 +733,7 @@ function wlCountedRow(d){
     right = wlStatTxt(firstPay, 'First Pay', 'dim', 'Date of the first Whop/WAP payment — when this became a new deal.')
       + wlStat(d.upfront_cash, 'Upfront', 'dim', 'First payment collected (upfront cash).')
       + wlStat(d.gross_contract_value, 'Contract (GHL)', 'dim', CONTRACT_TIP)
-      + wlStat(d.whop_projected, 'Projected Total', 'green', projectedTooltip(d))
+      + wlStat(d.whop_projected, 'Contracted Total', 'green', projectedTooltip(d))
       + wlStat(d.total_paid, 'Cash', '', cashTooltip(d))
       + wlStat(d.net_cash_collected, 'Net Cash (after fees)', '', NET_CASH_TIP);
   }
@@ -816,7 +816,7 @@ function wlMonthSummary(reps){
   months.forEach(m => {
     h += '<div class="col-mcard"><div class="col-mlabel">'+colMonthLabel(m)+'</div>'
       + '<div class="col-mrow"><span>Net Cash</span><span class="pos">'+fmtUSD(b[m].net)+'</span></div>'
-      + '<div class="col-mrow"><span>Projected</span><span>'+fmtUSD(b[m].proj)+'</span></div>'
+      + '<div class="col-mrow"><span>Contracted</span><span>'+fmtUSD(b[m].proj)+'</span></div>'
       + '<div class="col-mrow col-mtotal"><span>New Deals</span><span>'+b[m].n+'</span></div>'
       + '</div>';
   });
@@ -835,7 +835,7 @@ function wlRender(data){
     +'<div class="wl-ti" data-tip="Actual cash QS kept this month, net of the 15% Splitit/ClarityPay provider fee. Formula: sum of (cash paid × (1 − fee)).">'
       +'<span class="wl-tl">Net Cash Collected</span><span class="wl-tv">'+fmtUSD(t.net_cash_collected||0)+'</span></div>'
     +'<div class="wl-ti" data-tip="Payment-verified projected FULL contract across these deals — Whop plan math (financed = paid; internal plans = avg installment × plan length). No rep input, so unlike Contract (GHL) it is never blank.">'
-      +'<span class="wl-tl">Projected Contract</span><span class="wl-tv">'+fmtUSD(t.projected_total||0)+'</span></div>'
+      +'<span class="wl-tl">Contracted Total</span><span class="wl-tv">'+fmtUSD(t.projected_total||0)+'</span></div>'
     +'<div class="wl-ti"><span class="wl-tl">Deals</span><span class="wl-tv">'+(t.deal_count||0)+'</span></div>'
     +'<div class="wl-ti"><span class="wl-tl">Flagged</span><span class="wl-tv">'+(t.flagged_count||0)+'</span></div>'
     +pendingChip+'</div>';
@@ -975,7 +975,7 @@ function colRender(data){
     h += '<div class="table-wrap"><table class="col-plans"><thead><tr>'
       + '<th>Account</th><th>Owner</th><th>Plan</th><th style="text-align:right">Installment</th>'
       + '<th style="text-align:right">Collected</th><th style="text-align:right">Outstanding</th>'
-      + '<th style="text-align:right">Projected Total</th><th>Next</th><th style="text-align:right">Refunded</th>'
+      + '<th style="text-align:right">Contracted Total</th><th>Next</th><th style="text-align:right">Refunded</th>'
       + '</tr></thead><tbody>';
     plans.forEach(p => {
       const acct = p.deal_name || p.account || '—';
@@ -1301,25 +1301,25 @@ function cashTooltip(r) {
   if (instSize !== null && left > 0) tip += ` (~${money(instSize * left)} remaining)`;
   return tip;
 }
-// Projected Total hover: where the payment-verified projection comes from.
+// Contracted Total hover: where the payment-verified projection comes from.
 function projectedTooltip(r) {
   if (r.whop_projected == null) return 'No reconciled payment data (deal not matched)';
   if (r.is_splitit || r.is_claritypay) {
-    return 'Financed (Splitit/ClarityPay) — settled 100% upfront, so Projected Total = total settled';
+    return 'Financed (Splitit/ClarityPay) — settled 100% upfront, so Contracted Total = total settled';
   }
   const n = r.total_installments, k = r.payment_count || 0;
   if (n && k && n > k) {
-    return `${k} of ${n} installments collected — Projected Total = avg installment × ${n}. Plan length from Whop (split-pay count).`;
+    return `${k} of ${n} installments collected — Contracted Total = avg installment × ${n}. Plan length from Whop (split-pay count).`;
   }
   if (k >= 1 && (!n || n <= k)) {
-    let tip = `⚠ Plan cycle/length not set on Whop — Projected Total = collected to date (${money(r.total_paid)}).`;
+    let tip = `⚠ Plan cycle/length not set on Whop — Contracted Total = collected to date (${money(r.total_paid)}).`;
     if (r.total_contract_value && r.total_paid && r.total_contract_value > r.total_paid) {
       const hint = Math.ceil(r.total_contract_value / (r.total_paid / k));
       tip += ` GHL Deal Size (${money(r.total_contract_value)}) suggests ~${hint} payments — updates as installments land.`;
     }
     return tip;
   }
-  return 'Projected Total = collected to date';
+  return 'Contracted Total = collected to date';
 }
 function fmtDate(s) {
   if (!s) return '—';

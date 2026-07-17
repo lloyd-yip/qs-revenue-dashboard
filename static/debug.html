@@ -709,26 +709,26 @@
       return '$' + Math.round(v).toLocaleString();
     }
 
-    // Projected Total hover: where the projection comes from, flagging plans
+    // Contracted Total hover: where the projection comes from, flagging plans
     // whose cycle/length is not set.
     function projectedTooltip(r) {
       if (r.whop_projected == null) return 'No reconciled payment data (deal not matched)';
       if (r.is_splitit || r.is_claritypay) {
-        return 'Financed (Splitit/ClarityPay) — settled 100% upfront, so Projected Total = total settled';
+        return 'Financed (Splitit/ClarityPay) — settled 100% upfront, so Contracted Total = total settled';
       }
       const n = r.total_installments, k = r.payment_count || 0;
       if (n && k && n > k) {
-        return `${k} of ${n} installments collected — Projected Total = avg installment × ${n}. Plan length from Whop (split-pay count) or inferred from the GHL Deal Size when the subscription cycle is not set.`;
+        return `${k} of ${n} installments collected — Contracted Total = avg installment × ${n}. Plan length from Whop (split-pay count) or inferred from the GHL Deal Size when the subscription cycle is not set.`;
       }
       if (k >= 1 && (!n || n <= k)) {
-        let tip = `⚠ Plan cycle/length not set on Whop — Projected Total = collected to date (${money(r.total_paid)}).`;
+        let tip = `⚠ Plan cycle/length not set on Whop — Contracted Total = collected to date (${money(r.total_paid)}).`;
         if (r.total_contract_value && r.total_paid && r.total_contract_value > r.total_paid) {
           const hint = Math.ceil(r.total_contract_value / (r.total_paid / k));
           tip += ` If this is a renewing subscription, the GHL Deal Size (${money(r.total_contract_value)}) suggests ~${hint} payments — the projection updates as installments land.`;
         }
         return tip;
       }
-      return 'Projected Total = collected to date';
+      return 'Contracted Total = collected to date';
     }
 
     // Cash Collected hover: installment plan status for one deal.
@@ -883,7 +883,7 @@
         { key: 'projected_deal_size', label: 'Value' },
         ...(hasMoney ? [
           { key: 'total_contract_value', label: 'Deal Size' },
-          { key: 'whop_projected', label: 'Projected Total' },
+          { key: 'whop_projected', label: 'Contracted Total' },
           { key: 'total_paid', label: 'Cash Collected' },
         ] : []),
         { key: 'created_at_ghl', label: 'Created' },
