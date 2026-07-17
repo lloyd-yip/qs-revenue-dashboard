@@ -183,11 +183,13 @@ async def get_whop_live_summary_for_month(
         .where(DealWhopMatch.is_excluded.isnot(True))
         .where(
             or_(
-                # Whop-settled this month
+                # Whop-settled this month — a real payment must have landed
+                # (a $0 "paid" record, e.g. a comp/failed charge, is not a new deal).
                 and_(
                     DealWhopMatch.first_payment_date >= month_start,
                     DealWhopMatch.first_payment_date <= month_end,
                     DealWhopMatch.match_confidence.in_(LIVE_CONFIDENCE_TIERS),
+                    DealWhopMatch.total_paid > 0,
                 ),
                 # Won this month with no Whop payment → needs review (wire/other).
                 # Excludes deals a reviewer has explicitly ignored (hidden).
