@@ -638,14 +638,14 @@ function wlRender(data){
     +'<div class="wl-ti"><span class="wl-tl">Deals</span><span class="wl-tv">'+(t.deal_count||0)+'</span></div>'
     +'<div class="wl-ti"><span class="wl-tl">Flagged</span><span class="wl-tv">'+(t.flagged_count||0)+'</span></div>'
     +pendingChip+'</div>';
-  // Separate "Deals for Review" section (no-payment deals), grouped by owner.
-  h += wlReviewSection(reps);
   // Rep buckets — counted deals only; auto-open the first non-empty one.
   let opened = false;
   reps.forEach((r,i)=>{
     const html = wlRepBucket(r, i, !opened);
     if (html) { h += html; opened = true; }
   });
+  // "Deals for Review" section (no-payment deals), grouped by owner — last section.
+  h += wlReviewSection(reps);
   body.innerHTML = h;
 }
 async function wlReviewDeal(oppId, action, ev){
