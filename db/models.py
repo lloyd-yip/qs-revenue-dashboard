@@ -276,6 +276,9 @@ class DealWhopMatch(Base):
     # Payment metrics (populated from Whop payments API for HIGH/MEDIUM matches)
     upfront_cash: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
     total_paid: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    # total_refunded: cash refunded to the customer across this deal's Whop payments
+    # (status='refunded' / refunded amount). Net collected = total_paid - total_refunded.
+    total_refunded: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
     total_contract_value: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
     remaining_ar: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
     is_financing: Mapped[bool | None] = mapped_column(Boolean, nullable=True)

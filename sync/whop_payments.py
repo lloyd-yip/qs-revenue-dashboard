@@ -368,6 +368,21 @@ def _compute_payment_metrics(
         for p in paid
     )
     payment_count = len(paid)
+
+    # Refunds — Whop marks a refunded payment with status 'refunded'/'partially_refunded'
+    # and/or a refunded-amount field. Sum whatever was returned to the customer.
+    def _refund_amount(p: dict) -> float:
+        ramt = float(
+            p.get("refunded_amount") or p.get("amount_refunded")
+            or p.get("refund_amount") or 0
+        )
+        if ramt > 0:
+            return ramt
+        if (p.get("status") or "").lower() in ("refunded", "partially_refunded"):
+            return float(p.get("final_amount") or p.get("total") or p.get("subtotal") or 0)
+        return 0.0
+
+    total_refunded = round(sum(_refund_amount(p) for p in payments), 2)
     contract_value = ghl_monetary_value or 0.0
     remaining_ar = max(contract_value - total_paid, 0.0) if contract_value else None
     # is_financing = any deal with remaining AR outstanding, regardless of
@@ -474,6 +489,7 @@ def _compute_payment_metrics(
     return {
         "upfront_cash": round(upfront_cash, 2) if upfront_cash else None,
         "total_paid": round(total_paid, 2),
+        "total_refunded": total_refunded or None,
         "payment_count": payment_count,
         "is_financing": is_financing,
         "total_contract_value": round(contract_value, 2) if contract_value else None,

@@ -353,13 +353,47 @@
       transition:opacity .08s ease, transform .08s ease;
     }
     #tip.show { opacity:1; transform:translateY(0); }
+
+    /* ── Collections lens ────────────────────────────────────────────────── */
+    .col-periodbar { display:flex; align-items:center; gap:10px; margin-bottom:18px; flex-wrap:wrap; }
+    .col-plabel { font-size:12px; color:var(--muted); }
+    #colFrom, #colTo { background:var(--surface2); border:1px solid var(--border); color:var(--text); padding:6px 12px; border-radius:7px; font-size:14px; font-weight:600; font-family:inherit; cursor:pointer; }
+    .col-presets { display:flex; gap:6px; }
+    .col-preset { background:var(--surface2); border:1px solid var(--border); color:var(--muted); font-size:12px; padding:6px 11px; border-radius:7px; cursor:pointer; font-family:inherit; }
+    .col-preset:hover { color:var(--text); border-color:var(--accent); }
+
+    .col-cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:14px; margin-bottom:20px; }
+    .col-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px 18px; }
+    .col-card-label { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
+    .col-card-val { font-size:23px; font-weight:700; margin-top:6px; letter-spacing:-.4px; }
+    .col-card.pos .col-card-val { color:var(--green); }
+    .col-card.warn { border-color:#f59e0b44; } .col-card.warn .col-card-val { color:var(--yellow); }
+    .col-card.neg .col-card-val { color:var(--red); }
+
+    .col-strip-wrap { overflow-x:auto; margin-bottom:24px; padding-bottom:4px; }
+    .col-strip { display:flex; gap:12px; min-width:min-content; }
+    .col-mcard { flex:0 0 200px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:14px 16px; }
+    .col-mlabel { font-weight:700; font-size:14px; margin-bottom:10px; }
+    .col-mrow { display:flex; justify-content:space-between; font-size:13px; padding:3px 0; }
+    .col-mrow span:first-child { color:var(--muted); }
+    .col-mrow .pos { color:var(--green); font-variant-numeric:tabular-nums; }
+    .col-mrow .warn { color:var(--yellow); font-variant-numeric:tabular-nums; }
+    .col-mtotal { border-top:1px solid var(--border); margin-top:6px; padding-top:7px; font-weight:700; }
+    .col-mcount { font-size:11px; color:var(--muted); margin-top:8px; }
+
+    .col-plans-title { font-size:15px; font-weight:700; margin-bottom:12px; display:flex; align-items:baseline; gap:10px; }
+    .col-plans-title span { font-size:12px; font-weight:400; color:var(--muted); }
+    table.col-plans { min-width:1000px; }
+    .col-acct-sub { font-size:11px; color:var(--muted); margin-top:2px; }
+    td.num.warn { color:var(--yellow); }
   </style>
 </head>
 <body>
 
 <div class="subbar">
   <div class="wl-lens">
-    <button id="wl-tab-live" class="active" onclick="wlSetLens('live')"><span class="wl-dot"></span>Live · This Month</button>
+    <button id="wl-tab-live" class="active" onclick="wlSetLens('live')"><span class="wl-dot"></span>New Deals</button>
+    <button id="wl-tab-coll" onclick="wlSetLens('coll')">Collections</button>
     <button id="wl-tab-hist" onclick="wlSetLens('hist')">Historical · Reconciled</button>
   </div>
 </div>
@@ -388,6 +422,25 @@
       <span class="wl-refreshed" id="wlRefreshed">Whop-settled deals only · refreshed nightly</span>
     </div>
     <div id="wlBody"><div class="wl-empty">Loading…</div></div>
+  </section>
+
+  <!-- COLLECTIONS lens (projected cash across all payment plans) -->
+  <section id="lens-collections" class="wl-hidden">
+    <div class="col-periodbar">
+      <button class="wl-arrow" onclick="colStep(-1)">‹</button>
+      <span class="col-plabel">From</span>
+      <select id="colFrom" onchange="colClampAndLoad('from')"></select>
+      <span class="col-plabel">to</span>
+      <select id="colTo" onchange="colClampAndLoad('to')"></select>
+      <button class="wl-arrow" onclick="colStep(1)">›</button>
+      <span class="col-presets">
+        <button class="col-preset" onclick="colPreset(0)">This month</button>
+        <button class="col-preset" onclick="colPreset(3)">Next 3 mo</button>
+        <button class="col-preset" onclick="colPreset(6)">Next 6 mo</button>
+      </span>
+      <span class="wl-refreshed">Future cash is a projection (equal monthly installments) · financed deals settle upfront</span>
+    </div>
+    <div id="colBody"><div class="wl-empty">Loading…</div></div>
   </section>
 
   <!-- HISTORICAL lens (existing reconciliation) -->
@@ -668,11 +721,110 @@ async function wlReviewDeal(oppId, action, ev){
     await loadWhopLive();
   } catch (e) { showToast('❌ ' + e.message, 'error'); }
 }
+let colLoaded = false;
 function wlSetLens(which){
   el('wl-tab-live').classList.toggle('active', which==='live');
+  el('wl-tab-coll').classList.toggle('active', which==='coll');
   el('wl-tab-hist').classList.toggle('active', which==='hist');
   el('lens-live').classList.toggle('wl-hidden', which!=='live');
+  el('lens-collections').classList.toggle('wl-hidden', which!=='coll');
   el('lens-historical').classList.toggle('wl-hidden', which!=='hist');
+  if (which==='coll' && !colLoaded){ colLoaded = true; colInit(); }
+}
+
+// ── Collections lens (projected cash across all payment plans) ────────────────
+function colYm(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+function colMonthLabel(mk){ const p=mk.split('-'); return new Date(+p[0], +p[1]-1, 1).toLocaleString('en-US',{month:'short',year:'numeric'}); }
+function colShift(mk, n){ const p=mk.split('-'); const d=new Date(+p[0], +p[1]-1+n, 1); return colYm(d); }
+function colCmp(a,b){ return a<b?-1:a>b?1:0; }
+
+function colInit(){
+  const now = new Date();
+  const opts = [];
+  for (let i=-12; i<=18; i++){ opts.push(colYm(new Date(now.getFullYear(), now.getMonth()+i, 1))); }
+  const cur = colYm(now), to = colShift(cur, 3);
+  const optHtml = sel => opts.map(m=>`<option value="${m}"${m===sel?' selected':''}>${colMonthLabel(m)}</option>`).join('');
+  el('colFrom').innerHTML = optHtml(cur);
+  el('colTo').innerHTML = optHtml(to);
+  loadCollections();
+}
+function colClampAndLoad(which){
+  let f = el('colFrom').value, t = el('colTo').value;
+  if (colCmp(f,t) > 0){ if (which==='from') el('colTo').value = f; else el('colFrom').value = t; }
+  loadCollections();
+}
+function colStep(n){
+  el('colFrom').value = colShift(el('colFrom').value, n);
+  el('colTo').value = colShift(el('colTo').value, n);
+  loadCollections();
+}
+function colPreset(span){
+  const cur = colYm(new Date());
+  el('colFrom').value = cur;
+  el('colTo').value = colShift(cur, span);
+  loadCollections();
+}
+async function loadCollections(){
+  const s = el('colFrom').value, e = el('colTo').value;
+  const body = el('colBody'); body.innerHTML = '<div class="wl-empty">Loading…</div>';
+  try {
+    const r = await fetch(`${API}/pnl/collections?start=${s}&end=${e}`);
+    if (!r.ok) throw new Error('HTTP '+r.status);
+    colRender(await r.json());
+  } catch(err){ body.innerHTML = '<div class="wl-empty">Could not load collections ('+err.message+')</div>'; }
+}
+function colCard(label, val, cls, tip){
+  return '<div class="col-card'+(cls?' '+cls:'')+'"'+(tip?' data-tip="'+esc(tip)+'"':'')
+    +'><div class="col-card-label">'+label+'</div><div class="col-card-val">'+val+'</div></div>';
+}
+function colRender(data){
+  const t = data.totals||{}, months = data.months||[], plans = data.payment_plans||[];
+  let h = '<div class="col-cards">'
+    + colCard('Collected', fmtUSD(t.collected), 'pos', 'Cash already collected in this window (paid installments landed).')
+    + colCard('Outstanding', fmtUSD(t.outstanding), 'warn', 'Projected installments still to land in this window (estimated equal monthly installments).')
+    + colCard('Total Expected', fmtUSD(t.total), '', 'Collected + Outstanding across the selected window.')
+    + colCard('Refunded', fmtUSD(t.refunded), 'neg', 'Cash refunded to customers on these deals (from Whop payment refund status). Populates after the next Run Match.')
+    + colCard('Net Collected', fmtUSD(t.net_collected), '', 'Collected − Refunded.')
+    + '</div>';
+
+  h += '<div class="col-strip-wrap"><div class="col-strip">';
+  months.forEach(m => {
+    h += '<div class="col-mcard"><div class="col-mlabel">'+colMonthLabel(m.month)+'</div>'
+      + '<div class="col-mrow"><span>Collected</span><span class="pos">'+fmtUSD(m.collected)+'</span></div>'
+      + '<div class="col-mrow"><span>Outstanding</span><span class="warn">'+fmtUSD(m.outstanding)+'</span></div>'
+      + '<div class="col-mrow col-mtotal"><span>Total</span><span>'+fmtUSD(m.total)+'</span></div>'
+      + '<div class="col-mcount">'+m.deal_count+' deal'+(m.deal_count!==1?'s':'')+'</div></div>';
+  });
+  h += '</div></div>';
+
+  if (plans.length){
+    h += '<div class="col-plans-title">Outstanding Payment Plans <span>'+plans.length+' account'+(plans.length!==1?'s':'')+' with cash still to collect</span></div>';
+    h += '<div class="table-wrap"><table class="col-plans"><thead><tr>'
+      + '<th>Account</th><th>Owner</th><th>Plan</th><th style="text-align:right">Installment</th>'
+      + '<th style="text-align:right">Collected</th><th style="text-align:right">Outstanding</th>'
+      + '<th style="text-align:right">Projected Total</th><th>Next</th><th style="text-align:right">Refunded</th>'
+      + '</tr></thead><tbody>';
+    plans.forEach(p => {
+      const acct = p.deal_name || p.account || '—';
+      const acctHtml = p.ghl_opportunity_id
+        ? '<a class="wl-opplink" href="'+GHL_OPP_BASE+'/'+p.ghl_opportunity_id+'?tab=Opportunity+Details" target="_blank" rel="noopener">'+esc(acct)+'</a>'
+        : esc(acct);
+      h += '<tr><td class="deal-name">'+acctHtml
+        + (p.account?'<div class="col-acct-sub">'+esc(p.account)+'</div>':'')+'</td>'
+        + '<td class="dim">'+esc(p.owner||'—')+'</td>'
+        + '<td><span class="badge-fin">'+(p.paid_count||0)+'/'+p.total_installments+' paid</span></td>'
+        + '<td class="num">'+fmtUSD(p.installment_size)+'</td>'
+        + '<td class="num pos">'+fmtUSD(p.collected)+'</td>'
+        + '<td class="num warn">'+fmtUSD(p.outstanding)+'</td>'
+        + '<td class="num">'+fmtUSD(p.projected_total)+'</td>'
+        + '<td class="dim">'+(p.next_date?fmtDate(p.next_date):'—')+'</td>'
+        + '<td class="num neg">'+(p.refunded?fmtUSD(p.refunded):'—')+'</td></tr>';
+    });
+    h += '</tbody></table></div>';
+  } else {
+    h += '<div class="wl-empty">No outstanding payment plans in this window — everything is either paid in full or settled upfront.</div>';
+  }
+  el('colBody').innerHTML = h;
 }
 
 // ── API calls ───────────────────────────────────────────────────────────────

@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from db.queries.collections import get_collections_for_range
 from db.queries.whop_live import get_available_deal_months, get_whop_live_summary_for_month
 from db.session import get_db
 from sync.whop_refresh import refresh_current_month_payment_metrics
@@ -79,14 +80,19 @@ class WhopLiveResponse(BaseModel):
 
 @router.get("/pnl/whop-live", response_model=WhopLiveResponse)
 async def pnl_whop_live(
-    month: str = Query(..., pattern=r"^\d{4}-\d{2}$", description="Month in YYYY-MM format"),
+    month: str = Query(..., pattern=r"^\d{4}-\d{2}$", description="Month (YYYY-MM); range start when 'end' given"),
+    end: str | None = Query(None, pattern=r"^\d{4}-\d{2}$", description="Optional range end month (YYYY-MM)"),
     db: AsyncSession = Depends(get_db),
 ) -> WhopLiveResponse:
-    """Return real-time Whop revenue grouped by rep for a calendar month."""
+    """New-deals view: deals whose FIRST Whop payment landed in the month (or the
+    month range when `end` is given), grouped by rep."""
     try:
-        month_start, month_end = _parse_month_range(month)
+        month_start, _ = _parse_month_range(month)
+        _, month_end = _parse_month_range(end) if end else _parse_month_range(month)
     except ValueError:
-        raise HTTPException(status_code=422, detail=f"Invalid month: {month}")
+        raise HTTPException(status_code=422, detail=f"Invalid month range: {month}..{end}")
+    if month_end < month_start:
+        raise HTTPException(status_code=422, detail="Range end is before start")
 
     data = await get_whop_live_summary_for_month(db, month_start, month_end)
 
@@ -116,6 +122,26 @@ async def pnl_whop_live(
 async def whop_live_months(db: AsyncSession = Depends(get_db)) -> list[str]:
     """Return the deal-months ('YYYY-MM') that drive the Live lens month picker — current month included."""
     return await get_available_deal_months(db)
+
+
+@router.get("/pnl/collections")
+async def pnl_collections(
+    start: str = Query(..., pattern=r"^\d{4}-\d{2}$", description="Range start month (YYYY-MM)"),
+    end: str | None = Query(None, pattern=r"^\d{4}-\d{2}$", description="Range end month (YYYY-MM); defaults to start"),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Projected collections across ALL payment plans for a month range — how much
+    lands each month (collected vs still-outstanding), refunds, and the plan
+    breakdown. Future cash is estimated (equal monthly installments); financed
+    deals settle upfront. See db/queries/collections.py."""
+    try:
+        range_start, _ = _parse_month_range(start)
+        _, range_end = _parse_month_range(end) if end else _parse_month_range(start)
+    except ValueError:
+        raise HTTPException(status_code=422, detail=f"Invalid range: {start}..{end}")
+    if range_end < range_start:
+        raise HTTPException(status_code=422, detail="Range end is before start")
+    return await get_collections_for_range(db, range_start, range_end)
 
 
 class ReviewDealInput(BaseModel):
