@@ -354,6 +354,19 @@
     }
     #tip.show { opacity:1; transform:translateY(0); }
 
+    /* ── New Deals — per-rep tables ──────────────────────────────────────── */
+    .wl-rep-section { margin-bottom:20px; }
+    .wl-rep-head { display:flex; align-items:center; gap:10px; padding:12px 4px 10px; }
+    .wl-rep-head .wl-name { font-weight:700; font-size:16px; }
+    .wl-rep-total { margin-left:auto; font-weight:700; font-size:16px; display:flex; align-items:baseline; gap:6px; }
+    .wl-rep-total-lbl { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; font-weight:600; }
+    table.wl-deals-table { min-width:880px; }
+    .wl-deals-table thead th { cursor:default; }
+    .wl-deals-table td.wl-deal-cell { white-space:normal; max-width:320px; font-weight:500; }
+    .wl-deals-table tr.wl-totals-row td { font-weight:700; border-top:2px solid var(--border); background:var(--surface2); }
+    .wl-undo-link { font-size:11px; color:var(--muted); cursor:pointer; text-decoration:underline; margin-left:4px; }
+    .wl-undo-link:hover { color:var(--text); }
+
     /* ── Collections lens ────────────────────────────────────────────────── */
     .col-periodbar { display:flex; align-items:center; gap:10px; margin-bottom:18px; flex-wrap:wrap; }
     .col-plabel { font-size:12px; color:var(--muted); }
@@ -708,11 +721,6 @@ function wlStat(v, label, cls, tip){
   const t = tip ? ' data-tip="'+esc(tip)+'"' : '';
   return '<div class="wl-stat"><span class="wl-sv'+(cls?' '+cls:'')+'"'+t+'>'+fmtUSD(v)+'</span><span class="wl-sl">'+label+'</span></div>';
 }
-// Same as wlStat but renders a pre-formatted string (e.g. a date) instead of USD.
-function wlStatTxt(txt, label, cls, tip){
-  const t = tip ? ' data-tip="'+esc(tip)+'"' : '';
-  return '<div class="wl-stat"><span class="wl-sv'+(cls?' '+cls:'')+'"'+t+'>'+(txt||'—')+'</span><span class="wl-sl">'+label+'</span></div>';
-}
 const ASSIGN_HELP_TIP = 'These deals have no Opportunity Owner set in GHL, so they cannot be attributed to a rep.\n\nTo assign: open the opportunity in GoHighLevel (click the deal name) → set the Opportunity Owner (the assignedTo field) → save. It re-attributes automatically on the next sync (or immediately after Run Match).';
 
 function wlNameHtml(d){
@@ -722,28 +730,52 @@ function wlNameHtml(d){
 }
 
 // A COUNTED deal row (Whop-settled, or a confirmed manual/wire deal) in a rep bucket.
-function wlCountedRow(d){
-  d.total_contract_value = d.gross_contract_value; // alias for shared tooltip helpers
-  const email = d.whop_email || d.ghl_contact_email || '';
-  const firstPay = d.first_payment_date ? fmtDate(d.first_payment_date)
-    : (d.ghl_close_date ? 'Won '+fmtDate(d.ghl_close_date) : '—');
-  let right;
-  if (d.needs_review && d.is_confirmed) {
-    right = wlStatTxt(firstPay, 'First Pay', 'dim')
-      + wlStat(d.gross_contract_value, 'Contract (GHL)', 'dim', CONTRACT_TIP)
-      + wlStat(d.net_cash_collected, 'Net Cash (manual)', 'green', 'Manually-confirmed cash for a deal settled outside Whop (e.g. wire). No provider fee applied.')
-      + '<button class="wl-confirm-btn undo" onclick="wlReviewDeal(\''+d.ghl_opportunity_id+'\', \'reset\', event)">Undo</button>';
-  } else {
-    right = wlStatTxt(firstPay, 'First Pay', 'dim', 'Date of the first Whop/WAP payment — when this became a new deal.')
-      + wlStat(d.upfront_cash, 'Upfront', 'dim', 'First payment collected (upfront cash).')
-      + wlStat(d.gross_contract_value, 'Contract (GHL)', 'dim', CONTRACT_TIP)
-      + wlStat(d.whop_projected, 'Contracted Total', 'green', projectedTooltip(d))
-      + wlStat(d.total_paid, 'Cash', '', cashTooltip(d))
-      + wlStat(d.net_cash_collected, 'Net Cash (after fees)', '', NET_CASH_TIP);
-  }
-  return '<div class="wl-row"><div class="wl-rleft"><div class="wl-rname">'+wlNameHtml(d)+' '+wlBadges(d)
-    +'</div>'+(email?'<div class="wl-email">'+esc(email)+'</div>':'')+'</div>'
-    +'<div class="wl-stats">'+right+'</div></div>';
+// One rep section: a header (name · deals closed · net cash) + a table of that
+// rep's counted deals with a totals row. Columns match the money on each deal.
+function wlRepTable(rep){
+  const counted = rep.deals.filter(d => !d.needs_review || d.is_confirmed);
+  if (!counted.length) return '';
+  let tUp=0, tCon=0, tProj=0, tCash=0, tNet=0;
+  const rows = counted.map(d => {
+    d.total_contract_value = d.gross_contract_value; // alias for shared tooltip helpers
+    const isManual = d.needs_review && d.is_confirmed;
+    const firstPay = d.first_payment_date ? fmtDate(d.first_payment_date)
+      : (d.ghl_close_date ? 'Won '+fmtDate(d.ghl_close_date) : '—');
+    const email = d.whop_email || d.ghl_contact_email || '';
+    tUp += d.upfront_cash||0; tCon += d.gross_contract_value||0;
+    tProj += d.whop_projected||0; tCash += d.total_paid||0; tNet += d.net_cash_collected||0;
+    const undo = isManual ? ' <a class="wl-undo-link" onclick="wlReviewDeal(\''+d.ghl_opportunity_id+'\',\'reset\',event)">undo</a>' : '';
+    return '<tr>'
+      + '<td class="wl-deal-cell">'+wlNameHtml(d)+' '+wlBadges(d)+undo
+        + (email?'<div class="col-acct-sub">'+esc(email)+'</div>':'')+'</td>'
+      + '<td class="dim">'+firstPay+'</td>'
+      + '<td class="num">'+fmtUSD(d.upfront_cash)+'</td>'
+      + '<td class="num">'+fmtUSD(d.gross_contract_value)+'</td>'
+      + '<td class="num" style="color:var(--green)" data-tip="'+esc(projectedTooltip(d))+'">'+fmtUSD(d.whop_projected)+'</td>'
+      + '<td class="num" data-tip="'+esc(cashTooltip(d))+'">'+fmtUSD(d.total_paid)+'</td>'
+      + '<td class="num" data-tip="'+esc(NET_CASH_TIP)+'">'+fmtUSD(d.net_cash_collected)+'</td>'
+      + '</tr>';
+  }).join('');
+  const totals = '<tr class="wl-totals-row"><td>Totals</td><td></td>'
+    + '<td class="num">'+fmtUSD(tUp)+'</td>'
+    + '<td class="num">'+fmtUSD(tCon)+'</td>'
+    + '<td class="num" style="color:var(--green)">'+fmtUSD(tProj)+'</td>'
+    + '<td class="num">'+fmtUSD(tCash)+'</td>'
+    + '<td class="num">'+fmtUSD(tNet)+'</td></tr>';
+  const helpChip = (rep.rep_name === 'Unassigned')
+    ? ' <span class="wl-help" data-tip="'+esc(ASSIGN_HELP_TIP)+'">ⓘ How to assign</span>' : '';
+  return '<div class="wl-rep-section">'
+    + '<div class="wl-rep-head"><span class="wl-name">'+esc(rep.rep_name)+'</span>'
+      + '<span class="wl-count">'+counted.length+' deal'+(counted.length!==1?'s':'')+' closed</span>'+helpChip
+      + '<span class="wl-rep-total">'+fmtUSD(rep.net_cash_collected)+'<span class="wl-rep-total-lbl">net cash</span></span></div>'
+    + '<div class="table-wrap"><table class="wl-deals-table"><thead><tr>'
+      + '<th>Deal</th><th>First Pay</th>'
+      + '<th style="text-align:right" data-tip="First payment collected (upfront cash).">Upfront</th>'
+      + '<th style="text-align:right" data-tip="Rep-entered deal value from GHL.">Contract (GHL)</th>'
+      + '<th style="text-align:right;color:var(--green)" data-tip="Payment-verified full contract (Whop plan math).">Contracted Total</th>'
+      + '<th style="text-align:right">Cash</th>'
+      + '<th style="text-align:right" data-tip="Cash kept after the 15% Splitit/ClarityPay fee.">Net Cash (after fees)</th>'
+      + '</tr></thead><tbody>'+rows+totals+'</tbody></table></div></div>';
 }
 
 // A needs-review deal row (no WAP/Whop payment) inside the Deals for Review section.
@@ -788,22 +820,6 @@ function wlReviewSection(reps){
   return h + '</div>';
 }
 
-function wlRepBucket(rep, i, open){
-  // Rep buckets show COUNTED deals only (Whop-settled + confirmed). Unconfirmed
-  // needs-review deals live in the separate "Deals for Review" section.
-  const counted = rep.deals.filter(d => !d.needs_review || d.is_confirmed);
-  if (!counted.length) return '';
-  const rows = counted.map(wlCountedRow).join('');
-  const id='wlb'+i;
-  const helpChip = (rep.rep_name === 'Unassigned')
-    ? '<span class="wl-help" data-tip="'+esc(ASSIGN_HELP_TIP)+'">ⓘ How to assign</span>' : '';
-  return '<div class="wl-bucket'+(open?' open':'')+'" id="'+id+'">'
-    +'<div class="wl-bh" onclick="document.getElementById(\''+id+'\').classList.toggle(\'open\')">'
-    +'<div class="wl-bh-left"><span class="wl-chev">▶</span><span class="wl-name">'+esc(rep.rep_name)+'</span>'
-    +'<span class="wl-count">'+counted.length+' deal'+(counted.length!==1?'s':'')+'</span>'+helpChip+'</div>'
-    +'<span class="wl-total">'+fmtUSD(rep.net_cash_collected)+'</span></div>'
-    +'<div class="wl-body">'+rows+'</div></div>';
-}
 // Per-month summary strip for New Deals — only when a multi-month range is selected.
 // Buckets counted deals by first-payment month (client-side from the returned data).
 function wlMonthSummary(reps){
@@ -845,12 +861,8 @@ function wlRender(data){
     +pendingChip+'</div>';
   // Per-month summary strip (multi-month ranges only).
   h += wlMonthSummary(reps);
-  // Rep buckets — counted deals only; auto-open the first non-empty one.
-  let opened = false;
-  reps.forEach((r,i)=>{
-    const html = wlRepBucket(r, i, !opened);
-    if (html) { h += html; opened = true; }
-  });
+  // One table section per rep (all expanded), each with a totals row.
+  reps.forEach(r => { h += wlRepTable(r); });
   // "Deals for Review" section (no-payment deals), grouped by owner — last section.
   h += wlReviewSection(reps);
   body.innerHTML = h;
