@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.queries.collections import get_collections_for_range
+from db.queries.deal_matches import get_suggested_matches
 from db.queries.whop_live import get_available_deal_months, get_whop_live_summary_for_month
 from db.session import get_db
 from sync.whop_refresh import refresh_current_month_payment_metrics
@@ -144,9 +145,17 @@ async def pnl_collections(
     return await get_collections_for_range(db, range_start, range_end)
 
 
+@router.get("/pnl/suggested-matches")
+async def suggested_matches(db: AsyncSession = Depends(get_db)) -> dict:
+    """Non-exact-email matches that carry a payment — for the Confirm Matches UI.
+    Also returns the Whop business id so the frontend can deep-link the payer."""
+    matches = await get_suggested_matches(db)
+    return {"matches": matches, "whop_biz": "biz_I0rQ5yItozATsc"}
+
+
 class ReviewDealInput(BaseModel):
     ghl_opportunity_id: str
-    action: str  # 'confirm' | 'ignore' | 'reset'
+    action: str  # 'confirm' | 'ignore' | 'reset' | 'unmatch'
 
 
 @router.post("/pnl/whop-live/review-deal")
@@ -166,7 +175,7 @@ async def review_live_deal(body: ReviewDealInput, db: AsyncSession = Depends(get
     from db.models import DealWhopMatch
     from sqlalchemy import select as sa_select
 
-    if body.action not in ("confirm", "ignore", "reset"):
+    if body.action not in ("confirm", "ignore", "reset", "unmatch"):
         raise HTTPException(status_code=422, detail=f"Invalid action: {body.action}")
 
     row = (await db.execute(
@@ -178,13 +187,30 @@ async def review_live_deal(body: ReviewDealInput, db: AsyncSession = Depends(get
     if body.action == "confirm":
         row.is_confirmed = True
         row.is_ignored = False
-        row.confirmed_by = "manual-wire-confirm"
+        row.confirmed_by = "manual-confirm"
         row.confirmed_at = datetime.now(timezone.utc)
     elif body.action == "ignore":
         row.is_ignored = True
         row.is_confirmed = False
         row.confirmed_by = None
         row.confirmed_at = None
+    elif body.action == "unmatch":
+        # Reject a wrong attribution — clear the payment link entirely so it stops
+        # counting (the payment was not this deal's). Same as the manual Paul fix.
+        row.is_confirmed = False
+        row.confirmed_by = None
+        row.confirmed_at = None
+        row.match_confidence = "unmatched"
+        row.match_score = 0
+        row.match_method = "manual_link_removed"
+        for col in ("whop_membership_id", "whop_email", "whop_name", "whop_product_id",
+                    "whop_plan_name", "whop_created_at", "total_paid", "upfront_cash",
+                    "net_cash_collected", "total_refunded", "remaining_ar", "payment_count",
+                    "total_installments", "first_payment_date", "total_contract_value",
+                    "provider_fee_pct", "is_splitit", "is_claritypay", "plan_months_flag",
+                    "is_financing"):
+            setattr(row, col, None)
+        row.metrics_updated_at = datetime.now(timezone.utc)
     else:  # reset
         row.is_confirmed = False
         row.is_ignored = False

@@ -279,6 +279,57 @@ async def enrich_deal_match_payments(
     return True
 
 
+# Match methods that are DEFINITE — never need review. Exact payer-email matches,
+# plus stripe_contactid (the Stripe charge's metadata carries the GHL contact id,
+# so it is explicitly the right person).
+EXACT_MATCH_METHODS = ("email_exact", "stripe_email_exact", "stripe_contactid")
+
+
+async def get_suggested_matches(session: AsyncSession) -> list[dict]:
+    """Matches that carry a payment but were NOT made on an exact payer-email match
+    (domain / fuzzy / manual) — the ones a human should confirm or reject.
+
+    Each row exposes both sides (GHL opp + the paying Whop/Stripe account) plus a
+    same_domain flag (GHL email domain == payer email domain → likely same company,
+    lower risk). Excluded / ignored deals are skipped. Sorted riskiest first
+    (unconfirmed cross-domain), then confirmed last.
+    """
+    rows = (await session.execute(
+        select(DealWhopMatch)
+        .where(DealWhopMatch.is_excluded.isnot(True))
+        .where(DealWhopMatch.is_ignored.isnot(True))
+        .where(DealWhopMatch.total_paid.isnot(None))
+        .where(DealWhopMatch.total_paid > 0)
+        .where(DealWhopMatch.match_method.notin_(EXACT_MATCH_METHODS))
+    )).scalars().all()
+
+    def _domain(email: Optional[str]) -> str:
+        return email.split("@")[-1].lower() if email and "@" in email else ""
+
+    out = []
+    for r in rows:
+        gdom, wdom = _domain(r.ghl_contact_email), _domain(r.whop_email)
+        same_domain = bool(gdom and wdom and gdom == wdom)
+        out.append({
+            "ghl_opportunity_id": r.ghl_opportunity_id,
+            "ghl_opportunity_name": r.ghl_opportunity_name,
+            "ghl_owner_name": r.ghl_owner_name,
+            "ghl_contact_email": r.ghl_contact_email,
+            "whop_email": r.whop_email,
+            "whop_membership_id": r.whop_membership_id,
+            "match_method": r.match_method,
+            "match_score": float(r.match_score) if r.match_score else 0.0,
+            "is_confirmed": bool(r.is_confirmed),
+            "same_domain": same_domain,
+            "total_paid": float(r.total_paid) if r.total_paid else None,
+            "first_payment_date": str(r.first_payment_date) if r.first_payment_date else None,
+        })
+    # Riskiest first: unconfirmed before confirmed, cross-domain before same-domain,
+    # then larger cash first.
+    out.sort(key=lambda d: (d["is_confirmed"], d["same_domain"], -(d["total_paid"] or 0)))
+    return out
+
+
 async def get_deal_matches(
     session: AsyncSession,
     month_start: Optional[date] = None,
