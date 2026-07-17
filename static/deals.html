@@ -415,10 +415,17 @@
 
   <!-- LIVE lens (relocated from P&L) -->
   <section id="lens-live">
-    <div class="wl-monthnav">
-      <button class="wl-arrow" onclick="wlStepMonth(-1)">‹</button>
-      <select id="wlMonthSel" onchange="loadWhopLive()"></select>
-      <button class="wl-arrow" onclick="wlStepMonth(1)">›</button>
+    <div class="col-periodbar">
+      <button class="wl-arrow" onclick="wlStep(-1)">‹</button>
+      <span class="col-plabel">From</span>
+      <select id="wlFrom" onchange="wlClampAndLoad('from')"></select>
+      <span class="col-plabel">to</span>
+      <select id="wlTo" onchange="wlClampAndLoad('to')"></select>
+      <button class="wl-arrow" onclick="wlStep(1)">›</button>
+      <span class="col-presets">
+        <button class="col-preset" onclick="wlPreset(0)">This month</button>
+        <button class="col-preset" onclick="wlPreset(3)">Last 3 mo</button>
+      </span>
       <span class="wl-refreshed" id="wlRefreshed">Whop-settled deals only · refreshed nightly</span>
     </div>
     <div id="wlBody"><div class="wl-empty">Loading…</div></div>
@@ -535,29 +542,48 @@ let sortDir = -1; // -1 = desc
 
 // ── Boot ───────────────────────────────────────────────────────────────────
 (async () => {
-  await loadMonths();
+  wlInitMonths();
   await Promise.all([loadWhopLive(), loadSummary(), loadDeals()]);
 })();
 
-// ── Live lens (Whop cash, relocated from P&L) ────────────────────────────────
+// ── New Deals lens (Whop cash) — month or month-range ────────────────────────
 function wlCurMonth(){ return new Date().toISOString().slice(0,7); }
-function wlMonthLabel(m){ const p=m.split('-'); return new Date(+p[0], +p[1]-1, 1).toLocaleString('en-US',{month:'long',year:'numeric'}); }
 
-async function loadMonths(){
-  let months = [];
-  try { const r = await fetch(`${API}/pnl/whop-live/months`); if (r.ok) months = await r.json(); } catch(e){}
-  const cur = wlCurMonth();
-  if (!months.includes(cur)) months.unshift(cur);
-  el('wlMonthSel').innerHTML = months.map(m =>
-    `<option value="${m}"${m===cur?' selected':''}>${wlMonthLabel(m)}${m===cur?' (current)':''}</option>`).join('');
+// Populate the New Deals From/To selects (18 months back → 6 ahead), default to
+// the current month for both (single-month view by default).
+function wlInitMonths(){
+  const now = new Date();
+  const opts = [];
+  for (let i=-18; i<=6; i++){ opts.push(colYm(new Date(now.getFullYear(), now.getMonth()+i, 1))); }
+  const cur = colYm(now);
+  const optHtml = () => opts.map(m=>`<option value="${m}"${m===cur?' selected':''}>${colMonthLabel(m)}${m===cur?' (current)':''}</option>`).join('');
+  el('wlFrom').innerHTML = optHtml();
+  el('wlTo').innerHTML = optHtml();
 }
-function wlStepMonth(dir){ const s=el('wlMonthSel'); let i=s.selectedIndex+dir; if(i<0)i=0; if(i>=s.options.length)i=s.options.length-1; s.selectedIndex=i; loadWhopLive(); }
+function wlClampAndLoad(which){
+  const f = el('wlFrom').value, t = el('wlTo').value;
+  if (colCmp(f,t) > 0){ if (which==='from') el('wlTo').value = f; else el('wlFrom').value = t; }
+  loadWhopLive();
+}
+function wlStep(n){
+  el('wlFrom').value = colShift(el('wlFrom').value, n);
+  el('wlTo').value = colShift(el('wlTo').value, n);
+  loadWhopLive();
+}
+function wlPreset(back){
+  const cur = colYm(new Date());
+  el('wlTo').value = cur;
+  el('wlFrom').value = colShift(cur, -back);
+  loadWhopLive();
+}
 
 async function loadWhopLive(){
-  const s = el('wlMonthSel'); const month = (s && s.value) || wlCurMonth();
+  const f = (el('wlFrom') && el('wlFrom').value) || wlCurMonth();
+  const t = (el('wlTo') && el('wlTo').value) || f;
   const body = el('wlBody'); body.innerHTML = '<div class="wl-empty">Loading…</div>';
   try {
-    const r = await fetch(`${API}/pnl/whop-live?month=${month}`);
+    const url = (t && t!==f) ? `${API}/pnl/whop-live?month=${f}&end=${t}` : `${API}/pnl/whop-live?month=${f}`;
+    const r = await fetch(url);
     if (!r.ok) throw new Error('HTTP '+r.status);
     wlRender(await r.json());
   } catch(e){ body.innerHTML = '<div class="wl-empty">Could not load live Whop data ('+e.message+')</div>'; }
