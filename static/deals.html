@@ -964,28 +964,29 @@ function colRender(data){
   const nd = t.new_deals || {}, pp = t.payment_plans_revenue || {};
   h += '<div class="col-source">'
     + '<div class="col-source-head">Where the cash comes from</div>'
-    + '<div class="col-source-row" data-tip="Cash from deals whose FIRST payment lands in the selected window (net-new clients this period).">'
+    + '<div class="col-source-row" data-tip="Cash from FIRST payments landing in this window — a deal counts here in the month its first payment lands (net-new).">'
       + '<span class="col-source-dot nd"></span><span class="col-source-label">New Deals</span>'
-      + '<span class="col-source-sub">first payment in this window</span>'
+      + '<span class="col-source-sub">first payments in this window</span>'
       + '<span class="col-source-val">'+fmtUSD(nd.total)+'</span>'
       + '<span class="col-source-note">'+fmtUSD(nd.collected)+' collected</span></div>'
-    + '<div class="col-source-row" data-tip="Cash from deals that first paid BEFORE this window and are still paying installments (ongoing payment plans).">'
+    + '<div class="col-source-row" data-tip="Cash from LATER installments (2nd, 3rd, …) landing in this window — ongoing payment plans from deals that first paid earlier.">'
       + '<span class="col-source-dot pp"></span><span class="col-source-label">Payment Plans</span>'
-      + '<span class="col-source-sub">installments from earlier deals</span>'
+      + '<span class="col-source-sub">later installments from earlier deals</span>'
       + '<span class="col-source-val">'+fmtUSD(pp.total)+'</span>'
       + '<span class="col-source-note">'+fmtUSD(pp.collected)+' collected</span></div>'
     + '</div>';
 
   h += '<div class="col-strip-wrap"><div class="col-strip">';
   months.forEach(m => {
-    h += '<div class="col-mcard"><div class="col-mlabel">'+colMonthLabel(m.month)+'</div>'
-      + '<div class="col-mrow"><span>Collected</span><span class="pos">'+fmtUSD(m.collected)+'</span></div>'
-      + '<div class="col-mrow"><span>Outstanding</span><span class="warn">'+fmtUSD(m.outstanding)+'</span></div>'
+    const lbl = colMonthLabel(m.month);
+    h += '<div class="col-mcard"><div class="col-mlabel">'+lbl+'</div>'
+      + '<div class="col-mrow" data-tip="'+esc('Cash already collected in '+lbl+' — paid installments that have landed.')+'"><span>Collected</span><span class="pos">'+fmtUSD(m.collected)+'</span></div>'
+      + '<div class="col-mrow" data-tip="'+esc('Projected installments still to land in '+lbl+' (estimated equal monthly installments). Financed deals settle upfront, so nothing is outstanding for them.')+'"><span>Outstanding</span><span class="warn">'+fmtUSD(m.outstanding)+'</span></div>'
       + '<div class="col-msplit">'
-        + '<div class="col-mrow" data-tip="Cash this month from deals whose first payment is in the selected window (net-new)."><span><span class="col-dot nd"></span>New Deals</span><span>'+fmtUSD(m.new_deals)+'</span></div>'
-        + '<div class="col-mrow" data-tip="Cash this month from installments of deals that first paid before the window (ongoing plans)."><span><span class="col-dot pp"></span>Payment Plans</span><span>'+fmtUSD(m.payment_plans)+'</span></div>'
+        + '<div class="col-mrow" data-tip="'+esc('Cash in '+lbl+' from FIRST payments — deals whose first payment lands this month (net-new clients).')+'"><span><span class="col-dot nd"></span>New Deals</span><span>'+fmtUSD(m.new_deals)+'</span></div>'
+        + '<div class="col-mrow" data-tip="'+esc('Cash in '+lbl+' from LATER installments (2nd, 3rd, …) of deals that first paid in an earlier month — ongoing payment plans.')+'"><span><span class="col-dot pp"></span>Payment Plans</span><span>'+fmtUSD(m.payment_plans)+'</span></div>'
       + '</div>'
-      + '<div class="col-mrow col-mtotal"><span>Total</span><span>'+fmtUSD(m.total)+'</span></div>'
+      + '<div class="col-mrow col-mtotal" data-tip="'+esc('Total expected in '+lbl+' = Collected + Outstanding (equivalently New Deals + Payment Plans).')+'"><span>Total</span><span>'+fmtUSD(m.total)+'</span></div>'
       + '<div class="col-mcount">'+m.deal_count+' deal'+(m.deal_count!==1?'s':'')+'</div></div>';
   });
   h += '</div></div>';
