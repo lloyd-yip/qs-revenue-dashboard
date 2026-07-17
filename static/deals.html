@@ -320,6 +320,16 @@
     .wl-confirm-btn.ignore { border-color:var(--border); color:var(--muted); }
     .wl-confirm-btn.ignore:hover { background:var(--surface2); border-color:var(--red); color:var(--red); }
     .wl-review-actions { display:flex; gap:8px; align-items:center; }
+
+    /* ── Deals for Review — separate section, grouped by owner (rep) ──────── */
+    .wl-review-section { background:var(--surface); border:1px solid #f9731644; border-left:3px solid var(--orange); border-radius:var(--radius); margin-bottom:18px; overflow:hidden; }
+    .wl-review-head { padding:14px 18px; border-bottom:1px solid var(--border); display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; }
+    .wl-review-title { font-weight:700; font-size:15px; color:var(--orange); }
+    .wl-review-sub { font-size:12px; color:var(--muted); }
+    .wl-rev-group:not(:last-child) { border-bottom:1px solid rgba(42,45,62,0.6); }
+    .wl-rev-rep { display:flex; align-items:center; gap:10px; padding:11px 18px; background:var(--surface2); font-weight:600; font-size:13px; }
+    .wl-rev-owner-label { font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); font-weight:600; }
+    .wl-owner-col { font-size:11px; color:var(--muted); background:var(--surface2); padding:1px 7px; border-radius:5px; }
     .wl-pending-tv { color:var(--orange); }
 
     /* ── Custom instant tooltip (no native-title delay, larger + cleaner) ──── */
@@ -519,53 +529,95 @@ function wlStat(v, label, cls, tip){
   const t = tip ? ' data-tip="'+esc(tip)+'"' : '';
   return '<div class="wl-stat"><span class="wl-sv'+(cls?' '+cls:'')+'"'+t+'>'+fmtUSD(v)+'</span><span class="wl-sl">'+label+'</span></div>';
 }
-function wlRepBucket(rep, i){
-  const rows = rep.deals.map(d => {
-    d.total_contract_value = d.gross_contract_value; // alias for shared tooltip helpers
-    const email = d.whop_email || d.ghl_contact_email || '';
-    const metaBits = [];
-    if (d.first_payment_date) metaBits.push('First pay '+d.first_payment_date);
-    else if (d.ghl_close_date) metaBits.push('Won '+d.ghl_close_date);
-    if (d.upfront_cash != null) metaBits.push('Upfront '+fmtUSD(d.upfront_cash));
-    const meta = metaBits.join(' · ');
-    const nameHtml = d.ghl_opportunity_id
-      ? '<a class="wl-opplink" href="'+GHL_OPP_BASE+'/'+d.ghl_opportunity_id+'?tab=Opportunity+Details" target="_blank" rel="noopener" data-tip="Open this opportunity in GoHighLevel">'+esc(d.ghl_opportunity_name||d.ghl_opportunity_id)+'</a>'
-      : esc(d.ghl_opportunity_name||'—');
+const ASSIGN_HELP_TIP = 'These deals have no Opportunity Owner set in GHL, so they cannot be attributed to a rep.\n\nTo assign: open the opportunity in GoHighLevel (click the deal name) → set the Opportunity Owner (the assignedTo field) → save. It re-attributes automatically on the next sync (or immediately after Run Match).';
 
-    let right;
-    if (d.needs_review && !d.is_confirmed) {
-      // Pending: show contract, hold cash until confirmed. Offer confirm OR ignore.
-      right = wlStat(d.gross_contract_value, 'Contract (GHL)', 'dim')
-        + '<div class="wl-review-actions">'
-        + '<button class="wl-confirm-btn" onclick="wlReviewDeal(\''+d.ghl_opportunity_id+'\', \'confirm\', event)">Confirm to count</button>'
-        + '<button class="wl-confirm-btn ignore" data-tip="Hide this deal from the review list — not counted. You can bring it back by re-running Match." onclick="wlReviewDeal(\''+d.ghl_opportunity_id+'\', \'ignore\', event)">Ignore</button>'
-        + '</div>';
-    } else if (d.needs_review && d.is_confirmed) {
-      right = wlStat(d.gross_contract_value, 'Contract (GHL)', 'dim', CONTRACT_TIP)
-        + wlStat(d.net_cash_collected, 'Net Cash (manual)', 'green', 'Manually-confirmed cash for a deal settled outside Whop (e.g. wire). No provider fee applied.')
-        + '<button class="wl-confirm-btn undo" onclick="wlReviewDeal(\''+d.ghl_opportunity_id+'\', \'reset\', event)">Undo</button>';
-    } else {
-      right = wlStat(d.gross_contract_value, 'Contract (GHL)', 'dim', CONTRACT_TIP)
-        + wlStat(d.whop_projected, 'Projected Total', 'green', projectedTooltip(d))
-        + wlStat(d.total_paid, 'Cash', '', cashTooltip(d))
-        + wlStat(d.net_cash_collected, 'Net Cash (after fees)', '', NET_CASH_TIP);
-    }
-    const rowCls = 'wl-row' + (d.needs_review && !d.is_confirmed ? ' review' : '');
-    return '<div class="'+rowCls+'"><div class="wl-rleft"><div class="wl-rname">'+nameHtml+' '+wlBadges(d)
-      +'</div>'+(email?'<div class="wl-email">'+esc(email)+'</div>':'')
-      +(meta?'<div class="wl-meta">'+meta+'</div>':'')+'</div>'
-      +'<div class="wl-stats">'+right+'</div></div>';
-  }).join('');
+function wlNameHtml(d){
+  return d.ghl_opportunity_id
+    ? '<a class="wl-opplink" href="'+GHL_OPP_BASE+'/'+d.ghl_opportunity_id+'?tab=Opportunity+Details" target="_blank" rel="noopener" data-tip="Open this opportunity in GoHighLevel">'+esc(d.ghl_opportunity_name||d.ghl_opportunity_id)+'</a>'
+    : esc(d.ghl_opportunity_name||'—');
+}
+
+// A COUNTED deal row (Whop-settled, or a confirmed manual/wire deal) in a rep bucket.
+function wlCountedRow(d){
+  d.total_contract_value = d.gross_contract_value; // alias for shared tooltip helpers
+  const email = d.whop_email || d.ghl_contact_email || '';
+  const metaBits = [];
+  if (d.first_payment_date) metaBits.push('First pay '+d.first_payment_date);
+  else if (d.ghl_close_date) metaBits.push('Won '+d.ghl_close_date);
+  if (d.upfront_cash != null) metaBits.push('Upfront '+fmtUSD(d.upfront_cash));
+  const meta = metaBits.join(' · ');
+  let right;
+  if (d.needs_review && d.is_confirmed) {
+    right = wlStat(d.gross_contract_value, 'Contract (GHL)', 'dim', CONTRACT_TIP)
+      + wlStat(d.net_cash_collected, 'Net Cash (manual)', 'green', 'Manually-confirmed cash for a deal settled outside Whop (e.g. wire). No provider fee applied.')
+      + '<button class="wl-confirm-btn undo" onclick="wlReviewDeal(\''+d.ghl_opportunity_id+'\', \'reset\', event)">Undo</button>';
+  } else {
+    right = wlStat(d.gross_contract_value, 'Contract (GHL)', 'dim', CONTRACT_TIP)
+      + wlStat(d.whop_projected, 'Projected Total', 'green', projectedTooltip(d))
+      + wlStat(d.total_paid, 'Cash', '', cashTooltip(d))
+      + wlStat(d.net_cash_collected, 'Net Cash (after fees)', '', NET_CASH_TIP);
+  }
+  return '<div class="wl-row"><div class="wl-rleft"><div class="wl-rname">'+wlNameHtml(d)+' '+wlBadges(d)
+    +'</div>'+(email?'<div class="wl-email">'+esc(email)+'</div>':'')
+    +(meta?'<div class="wl-meta">'+meta+'</div>':'')+'</div>'
+    +'<div class="wl-stats">'+right+'</div></div>';
+}
+
+// A needs-review deal row (no WAP/Whop payment) inside the Deals for Review section.
+function wlReviewRow(d, owner){
+  d.total_contract_value = d.gross_contract_value;
+  const email = d.whop_email || d.ghl_contact_email || '';
+  const meta = d.ghl_close_date ? 'Won '+d.ghl_close_date : (d.first_payment_date ? 'First pay '+d.first_payment_date : '');
+  const ownerCol = '<span class="wl-owner-col" data-tip="Deal owner (sales rep) in GHL">'+esc(owner)+'</span>';
+  const right = wlStat(d.gross_contract_value, 'Contract (GHL)', 'dim', CONTRACT_TIP)
+    + '<div class="wl-review-actions">'
+    + '<button class="wl-confirm-btn" onclick="wlReviewDeal(\''+d.ghl_opportunity_id+'\', \'confirm\', event)">Confirm to count</button>'
+    + '<button class="wl-confirm-btn ignore" data-tip="Hide this deal from the review list — not counted. You can bring it back by re-running Match." onclick="wlReviewDeal(\''+d.ghl_opportunity_id+'\', \'ignore\', event)">Ignore</button>'
+    + '</div>';
+  return '<div class="wl-row"><div class="wl-rleft"><div class="wl-rname">'+wlNameHtml(d)+' '+wlBadges(d)+' '+ownerCol
+    +'</div>'+(email?'<div class="wl-email">'+esc(email)+'</div>':'')
+    +(meta?'<div class="wl-meta">'+meta+'</div>':'')+'</div>'
+    +'<div class="wl-stats">'+right+'</div></div>';
+}
+
+// "Deals for Review" — all unconfirmed no-payment deals, grouped by owner (rep).
+function wlReviewSection(reps){
+  const groups = [];
+  reps.forEach(rep => {
+    const rev = rep.deals.filter(d => d.needs_review && !d.is_confirmed);
+    if (rev.length) groups.push({ owner: rep.rep_name, deals: rev });
+  });
+  if (!groups.length) return '';
+  const total = groups.reduce((s,g)=>s+g.deals.length,0);
+  let h = '<div class="wl-review-section"><div class="wl-review-head">'
+    + '<span class="wl-review-title">⚠ Deals for Review</span>'
+    + '<span class="wl-review-sub">'+total+' deal'+(total!==1?'s':'')+' won with no WAP/Whop payment — grouped by rep. Confirm to count, or ignore.</span></div>';
+  groups.forEach(g => {
+    const helpChip = (g.owner === 'Unassigned')
+      ? ' <span class="wl-help" data-tip="'+esc(ASSIGN_HELP_TIP)+'">ⓘ How to assign</span>' : '';
+    h += '<div class="wl-rev-group"><div class="wl-rev-rep">'
+      + '<span class="wl-rev-owner-label">Owner</span> '+esc(g.owner)
+      + '<span class="wl-count">'+g.deals.length+' deal'+(g.deals.length!==1?'s':'')+'</span>'+helpChip
+      + '</div>'
+      + g.deals.map(d => wlReviewRow(d, g.owner)).join('')
+      + '</div>';
+  });
+  return h + '</div>';
+}
+
+function wlRepBucket(rep, i, open){
+  // Rep buckets show COUNTED deals only (Whop-settled + confirmed). Unconfirmed
+  // needs-review deals live in the separate "Deals for Review" section.
+  const counted = rep.deals.filter(d => !d.needs_review || d.is_confirmed);
+  if (!counted.length) return '';
+  const rows = counted.map(wlCountedRow).join('');
   const id='wlb'+i;
-  const pendingBadge = rep.pending_count > 0
-    ? '<span class="wl-count" style="color:var(--orange)">+'+rep.pending_count+' review</span>' : '';
   const helpChip = (rep.rep_name === 'Unassigned')
-    ? '<span class="wl-help" data-tip="These deals have no Opportunity Owner set in GHL, so they cannot be attributed to a rep.\n\nTo assign: open the opportunity in GoHighLevel (click the deal name) → set the Opportunity Owner (the assignedTo field) → save. It re-attributes automatically on the next sync (or immediately after Run Match).">ⓘ How to assign</span>'
-    : '';
-  return '<div class="wl-bucket'+(i===0?' open':'')+'" id="'+id+'">'
+    ? '<span class="wl-help" data-tip="'+esc(ASSIGN_HELP_TIP)+'">ⓘ How to assign</span>' : '';
+  return '<div class="wl-bucket'+(open?' open':'')+'" id="'+id+'">'
     +'<div class="wl-bh" onclick="document.getElementById(\''+id+'\').classList.toggle(\'open\')">'
-    +'<div class="wl-bh-left"><span class="wl-chev">▶</span><span class="wl-name">'+rep.rep_name+'</span>'
-    +'<span class="wl-count">'+rep.deal_count+' deal'+(rep.deal_count!==1?'s':'')+'</span>'+pendingBadge+helpChip+'</div>'
+    +'<div class="wl-bh-left"><span class="wl-chev">▶</span><span class="wl-name">'+esc(rep.rep_name)+'</span>'
+    +'<span class="wl-count">'+counted.length+' deal'+(counted.length!==1?'s':'')+'</span>'+helpChip+'</div>'
     +'<span class="wl-total">'+fmtUSD(rep.net_cash_collected)+'</span></div>'
     +'<div class="wl-body">'+rows+'</div></div>';
 }
@@ -586,7 +638,14 @@ function wlRender(data){
     +'<div class="wl-ti"><span class="wl-tl">Deals</span><span class="wl-tv">'+(t.deal_count||0)+'</span></div>'
     +'<div class="wl-ti"><span class="wl-tl">Flagged</span><span class="wl-tv">'+(t.flagged_count||0)+'</span></div>'
     +pendingChip+'</div>';
-  reps.forEach((r,i)=>{ h += wlRepBucket(r,i); });
+  // Separate "Deals for Review" section (no-payment deals), grouped by owner.
+  h += wlReviewSection(reps);
+  // Rep buckets — counted deals only; auto-open the first non-empty one.
+  let opened = false;
+  reps.forEach((r,i)=>{
+    const html = wlRepBucket(r, i, !opened);
+    if (html) { h += html; opened = true; }
+  });
   body.innerHTML = h;
 }
 async function wlReviewDeal(oppId, action, ev){
