@@ -92,6 +92,12 @@ async def update_live_payment_metrics(
     return result.rowcount > 0
 
 
+def _earliest(*vals):
+    """Earliest non-null datetime among the args (or None)."""
+    present = [v for v in vals if v is not None]
+    return min(present) if present else None
+
+
 def _projected_total(r: DealWhopMatch) -> float | None:
     """Payment-verified projected full contract — mirror of
     common.whop_projected_total_expr() / deal_matches._projected()."""
@@ -124,8 +130,8 @@ def _deal_to_live_item(r: DealWhopMatch, call1_appt=None) -> dict:
     Such deals are shown highlighted and only counted in the rep/portfolio totals
     once a human confirms them (is_confirmed); until then they sit in a pending bucket.
 
-    call1_appt = the deal's Call-1 (business-evaluation) appointment datetime — used
-    as the "entered pipeline" date and the start of the sales-cycle clock.
+    call1_appt = the earliest Call-1 (business-evaluation) appointment datetime for
+    this contact/company — the "entered pipeline" date and start of the sales-cycle clock.
     """
     # Entered pipeline = first business-evaluation call; sales cycle = days from
     # that to the first payment (or the GHL close date when there is no payment).
@@ -216,6 +222,39 @@ async def get_whop_live_summary_for_month(
         )
     )).all()
 
+    # "Entered pipeline" = the earliest Call-1 (business-evaluation) appointment for
+    # the CONTACT or their COMPANY, not just this opportunity. Build two lookups:
+    #   contact_min[contact_id] — earliest Call-1 across that contact's opportunities
+    #   domain_min[domain]      — earliest Call-1 across matched deals sharing a
+    #                             corporate email domain (someone else at the company)
+    from sync.match_deals_whop import PERSONAL_DOMAINS  # canonical personal-domain set
+
+    contact_min = dict((await session.execute(
+        select(Opportunity.ghl_contact_id, func.min(Opportunity.call1_appointment_date))
+        .where(Opportunity.ghl_contact_id.isnot(None))
+        .where(Opportunity.call1_appointment_date.isnot(None))
+        .where(Opportunity.is_excluded.is_(False))
+        .group_by(Opportunity.ghl_contact_id)
+    )).all())
+
+    _dom = func.lower(func.split_part(DealWhopMatch.ghl_contact_email, "@", 2))
+    domain_min = {
+        dom: dt for dom, dt in (await session.execute(
+            select(_dom, func.min(Opportunity.call1_appointment_date))
+            .join(Opportunity, Opportunity.ghl_opportunity_id == DealWhopMatch.ghl_opportunity_id)
+            .where(DealWhopMatch.ghl_contact_email.isnot(None))
+            .where(Opportunity.call1_appointment_date.isnot(None))
+            .group_by(_dom)
+        )).all()
+        if dom and dom not in PERSONAL_DOMAINS
+    }
+
+    def _entered(r, own_call1):
+        email = (r.ghl_contact_email or "").lower()
+        dom = email.split("@")[-1] if "@" in email else ""
+        dom_min = domain_min.get(dom) if (dom and dom not in PERSONAL_DOMAINS) else None
+        return _earliest(own_call1, contact_min.get(r.ghl_contact_id), dom_min)
+
     rep_buckets: dict[str, dict] = {}
     last_refreshed: datetime | None = None
 
@@ -232,7 +271,7 @@ async def get_whop_live_summary_for_month(
             "pending_contract_value": 0.0,
             "deals": [],
         })
-        item = _deal_to_live_item(r, call1_appt)
+        item = _deal_to_live_item(r, _entered(r, call1_appt))
         counts = (not item["needs_review"]) or item["is_confirmed"]
         if counts:
             bucket["deal_count"] += 1
