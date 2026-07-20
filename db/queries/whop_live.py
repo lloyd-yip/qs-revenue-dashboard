@@ -15,7 +15,7 @@ from datetime import date, datetime, timezone
 from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.models import DealWhopMatch
+from db.models import DealWhopMatch, Opportunity
 
 LIVE_CONFIDENCE_TIERS = ("high", "medium")
 
@@ -117,13 +117,22 @@ def _non_whop_cash(r: DealWhopMatch) -> float:
     return float(g) if g is not None else 0.0
 
 
-def _deal_to_live_item(r: DealWhopMatch) -> dict:
+def _deal_to_live_item(r: DealWhopMatch, call1_appt=None) -> dict:
     """Shape one DealWhopMatch row into a live-revenue deal item dict.
 
     needs_review = the deal was won this month but has NO Whop payment (wire/other).
     Such deals are shown highlighted and only counted in the rep/portfolio totals
     once a human confirms them (is_confirmed); until then they sit in a pending bucket.
+
+    call1_appt = the deal's Call-1 (business-evaluation) appointment datetime — used
+    as the "entered pipeline" date and the start of the sales-cycle clock.
     """
+    # Entered pipeline = first business-evaluation call; sales cycle = days from
+    # that to the first payment (or the GHL close date when there is no payment).
+    entered = call1_appt.date() if hasattr(call1_appt, "date") else call1_appt
+    cycle_end = r.first_payment_date or r.ghl_close_date
+    sales_cycle_days = (cycle_end - entered).days if (entered and cycle_end) else None
+
     gross = r.total_contract_value if r.total_contract_value is not None else r.ghl_monetary_value
     needs_review = r.first_payment_date is None
     if needs_review:
@@ -141,6 +150,8 @@ def _deal_to_live_item(r: DealWhopMatch) -> dict:
         "ghl_opportunity_name": r.ghl_opportunity_name,
         "ghl_close_date": str(r.ghl_close_date) if r.ghl_close_date else None,
         "first_payment_date": str(r.first_payment_date) if r.first_payment_date else None,
+        "entered_pipeline_date": str(entered) if entered else None,
+        "sales_cycle_days": sales_cycle_days,
         "whop_email": r.whop_email,
         "ghl_contact_email": r.ghl_contact_email,
         "gross_contract_value": float(gross) if gross is not None else None,
@@ -178,7 +189,9 @@ async def get_whop_live_summary_for_month(
     cash desc), portfolio totals, and the most recent refresh timestamp.
     """
     rows = (await session.execute(
-        select(DealWhopMatch)
+        # Join the opportunity for its Call-1 (entered-pipeline) appointment date.
+        select(DealWhopMatch, Opportunity.call1_appointment_date)
+        .outerjoin(Opportunity, Opportunity.ghl_opportunity_id == DealWhopMatch.ghl_opportunity_id)
         # Separate-offer deals (e.g. Calendar Automation) are excluded from all metrics.
         .where(DealWhopMatch.is_excluded.isnot(True))
         .where(
@@ -201,12 +214,12 @@ async def get_whop_live_summary_for_month(
                 ),
             )
         )
-    )).scalars().all()
+    )).all()
 
     rep_buckets: dict[str, dict] = {}
     last_refreshed: datetime | None = None
 
-    for r in rows:
+    for r, call1_appt in rows:
         rep = r.ghl_owner_name or "Unassigned"
         bucket = rep_buckets.setdefault(rep, {
             "rep_name": rep,
@@ -219,7 +232,7 @@ async def get_whop_live_summary_for_month(
             "pending_contract_value": 0.0,
             "deals": [],
         })
-        item = _deal_to_live_item(r)
+        item = _deal_to_live_item(r, call1_appt)
         counts = (not item["needs_review"]) or item["is_confirmed"]
         if counts:
             bucket["deal_count"] += 1

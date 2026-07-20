@@ -360,7 +360,7 @@
     .wl-rep-head .wl-name { font-weight:700; font-size:16px; }
     .wl-rep-total { margin-left:auto; font-weight:700; font-size:16px; display:flex; align-items:baseline; gap:6px; }
     .wl-rep-total-lbl { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; font-weight:600; }
-    table.wl-deals-table { min-width:880px; table-layout:fixed; }
+    table.wl-deals-table { min-width:1080px; table-layout:fixed; }
     .wl-deals-table thead th { cursor:default; }
     .wl-deals-table td.wl-deal-cell { white-space:normal; max-width:320px; font-weight:500; }
     .wl-deals-table tr.wl-totals-row td { font-weight:700; border-bottom:2px solid var(--border); background:var(--surface2); }
@@ -703,6 +703,8 @@ async function loadWhopLive(){
 }
 const CONTRACT_TIP = 'Deal value entered by the rep in GoHighLevel (monetary_value). Rep-entered, before any fees — blank when the rep did not fill it in.';
 const NET_CASH_TIP = 'Cash QS actually keeps, after the 15% Splitit/ClarityPay (Whop) provider fee. Equals Cash for non-financed deals (no fee).';
+const ENTERED_TIP = 'Entered Pipeline — the date of the FIRST business-evaluation call (Call 1) for this deal: when the prospect (or someone from their company) first booked/attended a call and entered our pipeline.';
+const CYCLE_TIP = 'Sales Cycle — whole days from Entered Pipeline (first call) to First Pay / Closed. e.g. first call Jul 1 → first pay Jul 16 = 15 days.';
 function wlBadges(d){
   if (d.needs_review) {
     return d.is_confirmed
@@ -735,25 +737,32 @@ function wlNameHtml(d){
 function wlRepTable(rep){
   const counted = rep.deals.filter(d => !d.needs_review || d.is_confirmed);
   if (!counted.length) return '';
-  let tProj=0, tCash=0, tNet=0;
+  let tProj=0, tCash=0, tNet=0, cycleSum=0, cycleN=0;
   const rows = counted.map(d => {
     d.total_contract_value = d.gross_contract_value; // alias for shared tooltip helpers
     const isManual = d.needs_review && d.is_confirmed;
+    const entered = d.entered_pipeline_date ? fmtDate(d.entered_pipeline_date) : '—';
     const firstPay = d.first_payment_date ? fmtDate(d.first_payment_date)
       : (d.ghl_close_date ? 'Won '+fmtDate(d.ghl_close_date) : '—');
+    const cycle = (d.sales_cycle_days != null) ? d.sales_cycle_days+'d' : '—';
+    if (d.sales_cycle_days != null) { cycleSum += d.sales_cycle_days; cycleN++; }
     const email = d.whop_email || d.ghl_contact_email || '';
     tProj += d.whop_projected||0; tCash += d.total_paid||0; tNet += d.net_cash_collected||0;
     const undo = isManual ? ' <a class="wl-undo-link" onclick="wlReviewDeal(\''+d.ghl_opportunity_id+'\',\'reset\',event)">undo</a>' : '';
     return '<tr>'
       + '<td class="wl-deal-cell">'+wlNameHtml(d)+' '+wlBadges(d)+undo
         + (email?'<div class="col-acct-sub">'+esc(email)+'</div>':'')+'</td>'
+      + '<td class="dim" data-tip="'+esc(ENTERED_TIP)+'">'+entered+'</td>'
       + '<td class="dim">'+firstPay+'</td>'
+      + '<td class="num" data-tip="'+esc(CYCLE_TIP)+'">'+cycle+'</td>'
       + '<td class="num" style="color:var(--green)" data-tip="'+esc(projectedTooltip(d))+'">'+fmtUSD(d.whop_projected)+'</td>'
       + '<td class="num" data-tip="'+esc(cashTooltip(d))+'">'+fmtUSD(d.total_paid)+'</td>'
       + '<td class="num" data-tip="'+esc(NET_CASH_TIP)+'">'+fmtUSD(d.net_cash_collected)+'</td>'
       + '</tr>';
   }).join('');
-  const totals = '<tr class="wl-totals-row"><td>Totals</td><td></td>'
+  const avgCycle = cycleN ? Math.round(cycleSum/cycleN)+'d avg' : '—';
+  const totals = '<tr class="wl-totals-row"><td>Totals</td><td></td><td></td>'
+    + '<td class="num" data-tip="Average sales cycle across this rep\'s closed deals in the selected window.">'+avgCycle+'</td>'
     + '<td class="num" style="color:var(--green)">'+fmtUSD(tProj)+'</td>'
     + '<td class="num">'+fmtUSD(tCash)+'</td>'
     + '<td class="num">'+fmtUSD(tNet)+'</td></tr>';
@@ -764,9 +773,12 @@ function wlRepTable(rep){
       + '<span class="wl-count">'+counted.length+' deal'+(counted.length!==1?'s':'')+' closed</span>'+helpChip
       + '<span class="wl-rep-total">'+fmtUSD(rep.net_cash_collected)+'<span class="wl-rep-total-lbl">net cash</span></span></div>'
     + '<div class="table-wrap"><table class="wl-deals-table">'
-      + '<colgroup><col style="width:42%"><col style="width:22%"><col style="width:12%"><col style="width:12%"><col style="width:12%"></colgroup>'
+      + '<colgroup><col style="width:30%"><col style="width:13%"><col style="width:13%"><col style="width:9%"><col style="width:12%"><col style="width:11%"><col style="width:12%"></colgroup>'
       + '<thead><tr>'
-      + '<th>Deal</th><th>First Pay</th>'
+      + '<th>Deal</th>'
+      + '<th data-tip="'+esc(ENTERED_TIP)+'">Entered Pipeline</th>'
+      + '<th>First Pay / Closed</th>'
+      + '<th style="text-align:right" data-tip="'+esc(CYCLE_TIP)+'">Sales Cycle</th>'
       + '<th style="text-align:right;color:var(--green)" data-tip="Payment-verified full contract (Whop plan math).">Contracted Total</th>'
       + '<th style="text-align:right">Cash</th>'
       + '<th style="text-align:right" data-tip="Cash kept after the 15% Splitit/ClarityPay fee.">Net Cash (after fees)</th>'

@@ -39,6 +39,8 @@ class WhopLiveDealItem(BaseModel):
     ghl_opportunity_name: str | None
     ghl_close_date: str | None
     first_payment_date: str | None
+    entered_pipeline_date: str | None = None
+    sales_cycle_days: int | None = None
     whop_email: str | None = None
     ghl_contact_email: str | None = None
     gross_contract_value: float | None
