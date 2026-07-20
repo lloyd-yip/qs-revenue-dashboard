@@ -735,30 +735,25 @@ function wlNameHtml(d){
 function wlRepTable(rep){
   const counted = rep.deals.filter(d => !d.needs_review || d.is_confirmed);
   if (!counted.length) return '';
-  let tUp=0, tCon=0, tProj=0, tCash=0, tNet=0;
+  let tProj=0, tCash=0, tNet=0;
   const rows = counted.map(d => {
     d.total_contract_value = d.gross_contract_value; // alias for shared tooltip helpers
     const isManual = d.needs_review && d.is_confirmed;
     const firstPay = d.first_payment_date ? fmtDate(d.first_payment_date)
       : (d.ghl_close_date ? 'Won '+fmtDate(d.ghl_close_date) : '—');
     const email = d.whop_email || d.ghl_contact_email || '';
-    tUp += d.upfront_cash||0; tCon += d.gross_contract_value||0;
     tProj += d.whop_projected||0; tCash += d.total_paid||0; tNet += d.net_cash_collected||0;
     const undo = isManual ? ' <a class="wl-undo-link" onclick="wlReviewDeal(\''+d.ghl_opportunity_id+'\',\'reset\',event)">undo</a>' : '';
     return '<tr>'
       + '<td class="wl-deal-cell">'+wlNameHtml(d)+' '+wlBadges(d)+undo
         + (email?'<div class="col-acct-sub">'+esc(email)+'</div>':'')+'</td>'
       + '<td class="dim">'+firstPay+'</td>'
-      + '<td class="num">'+fmtUSD(d.upfront_cash)+'</td>'
-      + '<td class="num">'+fmtUSD(d.gross_contract_value)+'</td>'
       + '<td class="num" style="color:var(--green)" data-tip="'+esc(projectedTooltip(d))+'">'+fmtUSD(d.whop_projected)+'</td>'
       + '<td class="num" data-tip="'+esc(cashTooltip(d))+'">'+fmtUSD(d.total_paid)+'</td>'
       + '<td class="num" data-tip="'+esc(NET_CASH_TIP)+'">'+fmtUSD(d.net_cash_collected)+'</td>'
       + '</tr>';
   }).join('');
   const totals = '<tr class="wl-totals-row"><td>Totals</td><td></td>'
-    + '<td class="num">'+fmtUSD(tUp)+'</td>'
-    + '<td class="num">'+fmtUSD(tCon)+'</td>'
     + '<td class="num" style="color:var(--green)">'+fmtUSD(tProj)+'</td>'
     + '<td class="num">'+fmtUSD(tCash)+'</td>'
     + '<td class="num">'+fmtUSD(tNet)+'</td></tr>';
@@ -770,8 +765,6 @@ function wlRepTable(rep){
       + '<span class="wl-rep-total">'+fmtUSD(rep.net_cash_collected)+'<span class="wl-rep-total-lbl">net cash</span></span></div>'
     + '<div class="table-wrap"><table class="wl-deals-table"><thead><tr>'
       + '<th>Deal</th><th>First Pay</th>'
-      + '<th style="text-align:right" data-tip="First payment collected (upfront cash).">Upfront</th>'
-      + '<th style="text-align:right" data-tip="Rep-entered deal value from GHL.">Contract (GHL)</th>'
       + '<th style="text-align:right;color:var(--green)" data-tip="Payment-verified full contract (Whop plan math).">Contracted Total</th>'
       + '<th style="text-align:right">Cash</th>'
       + '<th style="text-align:right" data-tip="Cash kept after the 15% Splitit/ClarityPay fee.">Net Cash (after fees)</th>'
