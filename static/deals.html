@@ -360,7 +360,7 @@
     .wl-rep-head .wl-name { font-weight:700; font-size:16px; }
     .wl-rep-total { margin-left:auto; font-weight:700; font-size:16px; display:flex; align-items:baseline; gap:6px; }
     .wl-rep-total-lbl { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; font-weight:600; }
-    table.wl-deals-table { min-width:880px; }
+    table.wl-deals-table { min-width:880px; table-layout:fixed; }
     .wl-deals-table thead th { cursor:default; }
     .wl-deals-table td.wl-deal-cell { white-space:normal; max-width:320px; font-weight:500; }
     .wl-deals-table tr.wl-totals-row td { font-weight:700; border-bottom:2px solid var(--border); background:var(--surface2); }
@@ -763,7 +763,9 @@ function wlRepTable(rep){
     + '<div class="wl-rep-head"><span class="wl-name">'+esc(rep.rep_name)+'</span>'
       + '<span class="wl-count">'+counted.length+' deal'+(counted.length!==1?'s':'')+' closed</span>'+helpChip
       + '<span class="wl-rep-total">'+fmtUSD(rep.net_cash_collected)+'<span class="wl-rep-total-lbl">net cash</span></span></div>'
-    + '<div class="table-wrap"><table class="wl-deals-table"><thead><tr>'
+    + '<div class="table-wrap"><table class="wl-deals-table">'
+      + '<colgroup><col style="width:42%"><col style="width:22%"><col style="width:12%"><col style="width:12%"><col style="width:12%"></colgroup>'
+      + '<thead><tr>'
       + '<th>Deal</th><th>First Pay</th>'
       + '<th style="text-align:right;color:var(--green)" data-tip="Payment-verified full contract (Whop plan math).">Contracted Total</th>'
       + '<th style="text-align:right">Cash</th>'
