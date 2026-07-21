@@ -651,12 +651,59 @@ async def run_matching() -> dict:
                     )
                     stats["errors"] += 1
 
+            # ── Step 4b: Orphan coaching payments (unclaimed memberships) ──
+            try:
+                stats["orphans"] = await _detect_orphans(
+                    session, memberships, by_membership, claimed_by_membership,
+                )
+            except Exception as exc:
+                logger.error(f"Orphan detection failed: {exc}", exc_info=True)
+
         # ── Step 5: Stripe enrichment pass ─────────────────────────────
         stripe_stats = await _run_stripe_pass(session, won_deals, contact_cache)
         stats.update(stripe_stats)
 
     logger.info(f"=== Matching complete: {stats} ===")
     return stats
+
+
+async def _detect_orphans(session, memberships, by_membership, claimed_by_membership) -> int:
+    """Persist unclaimed coaching memberships (paid >= floor, non-excluded product)
+    as orphan payments for review. Preserves each orphan's human status; removes any
+    orphan whose membership has since been claimed by a deal."""
+    from config import ORPHAN_COACHING_FLOOR
+    from db.queries.whop_orphans import delete_claimed_orphans, upsert_orphan
+
+    claimed = set(claimed_by_membership.keys())
+    found = 0
+    for m in memberships:
+        mid = m.get("id")
+        if not mid or mid in claimed or _is_excluded_membership(m):
+            continue
+        payments = by_membership.get(mid, [])
+        if not payments:
+            continue
+        metrics = _compute_payment_metrics(
+            payments, 0.0,
+            installments_override=m.get("split_pay_required_payments"),
+            is_recurring=membership_is_recurring(m),
+        )
+        if (metrics.get("total_paid") or 0) < ORPHAN_COACHING_FLOOR:
+            continue
+        w_email, w_name = _extract_whop_identity(m)
+        rec = {
+            "whop_membership_id": mid,
+            "whop_email": w_email or None,
+            "whop_name": w_name or None,
+            "whop_product_id": _membership_product_id(m),
+        }
+        rec.update(metrics)  # extra keys are ignored by upsert_orphan
+        await upsert_orphan(session, rec)
+        found += 1
+    removed = await delete_claimed_orphans(session, claimed)
+    await session.commit()
+    logger.info(f"Orphan coaching payments: {found} unclaimed >= floor; {removed} now-claimed removed")
+    return found
 
 
 async def _match_one_deal(

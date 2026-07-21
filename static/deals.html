@@ -403,6 +403,10 @@
     .cm-badge.ok { background:rgba(34,197,94,0.14); color:var(--green); }
     @media (max-width:900px){ .cm-row { grid-template-columns:1fr; } }
 
+    /* ── Whop payments to attribute (orphans) ────────────────────────────── */
+    .wl-orphan-section { background:var(--surface); border:1px solid rgba(108,99,255,0.35); border-left:3px solid var(--accent); border-radius:var(--radius); margin-top:22px; overflow:hidden; }
+    .wl-orphan-section .cm-title { color:var(--accent); }
+
     .col-source { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:8px 18px; margin-bottom:20px; }
     .col-source-head { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; padding:8px 0 6px; border-bottom:1px solid var(--border); }
     .col-source-row { display:flex; align-items:center; gap:10px; padding:11px 0; border-bottom:1px solid rgba(42,45,62,0.5); }
@@ -706,6 +710,14 @@ const NET_CASH_TIP = 'Cash QS actually keeps, after the 15% Splitit/ClarityPay (
 const ENTERED_TIP = 'Entered Pipeline — the date of the FIRST business-evaluation call (Call 1) for this deal: when the prospect (or someone from their company) first booked/attended a call and entered our pipeline.';
 const CYCLE_TIP = 'Sales Cycle — whole days from Entered Pipeline (first call) to First Pay / Closed. e.g. first call Jul 1 → first pay Jul 16 = 15 days.';
 function wlBadges(d){
+  if (d.is_orphan) {
+    let b = '<span class="wl-badge" style="color:var(--accent);background:rgba(108,99,255,0.16)">Whop-only · no GHL</span>';
+    if (d.is_splitit) b += ' <span class="wl-badge fee">Splitit −15%</span>';
+    else if (d.is_claritypay) b += ' <span class="wl-badge fee">ClarityPay −15%</span>';
+    else if (d.total_installments && d.total_installments >= 2) b += ' <span class="wl-badge pay">'+(d.payment_count||0)+'/'+d.total_installments+' paid</span>';
+    else b += ' <span class="wl-badge plan">Pay in full</span>';
+    return b;
+  }
   if (d.needs_review) {
     return d.is_confirmed
       ? '<span class="wl-badge counted">✓ Counted (manual)</span>'
@@ -748,7 +760,8 @@ function wlRepTable(rep){
     if (d.sales_cycle_days != null) { cycleSum += d.sales_cycle_days; cycleN++; }
     const email = d.whop_email || d.ghl_contact_email || '';
     tProj += d.whop_projected||0; tCash += d.total_paid||0; tNet += d.net_cash_collected||0;
-    const undo = isManual ? ' <a class="wl-undo-link" onclick="wlReviewDeal(\''+d.ghl_opportunity_id+'\',\'reset\',event)">undo</a>' : '';
+    const undo = isManual ? ' <a class="wl-undo-link" onclick="wlReviewDeal(\''+d.ghl_opportunity_id+'\',\'reset\',event)">undo</a>'
+      : (d.is_orphan ? ' <a class="wl-undo-link" onclick="wlOrphanReview(\''+d.whop_membership_id+'\',\'reset\',event)">un-attribute</a>' : '');
     return '<tr>'
       + '<td class="wl-deal-cell">'+wlNameHtml(d)+' '+wlBadges(d)+undo
         + (email?'<div class="col-acct-sub">'+esc(email)+'</div>':'')+'</td>'
@@ -800,6 +813,62 @@ function wlReviewRow(d, owner){
     +'</div>'+(email?'<div class="wl-email">'+esc(email)+'</div>':'')
     +(meta?'<div class="wl-meta">'+meta+'</div>':'')+'</div>'
     +'<div class="wl-stats">'+right+'</div></div>';
+}
+
+// "Whop payments to attribute" — Whop coaching payments with no GHL deal (orphans),
+// pending review, grouped by first-payment month. Confirm → counts under Unassigned.
+function wlOrphanSection(orphans){
+  if (!orphans || !orphans.length) return '';
+  const groups = {};
+  orphans.forEach(o => { const mk = (o.first_payment_date||'').slice(0,7) || 'unknown'; (groups[mk] = groups[mk] || []).push(o); });
+  const months = Object.keys(groups).sort().reverse();
+  let h = '<div class="wl-orphan-section"><div class="cm-head">'
+    + '<span class="cm-title">💳 Whop payments to attribute</span>'
+    + '<span class="cm-sub">'+orphans.length+' coaching payment'+(orphans.length!==1?'s':'')+' on Whop with no matching GHL deal — grouped by first-payment month. Confirm to count (under Unassigned), or ignore.</span></div>';
+  months.forEach(mk => {
+    const lbl = (mk==='unknown') ? 'No date' : colMonthLabel(mk);
+    h += '<div class="wl-rev-group"><div class="wl-rev-rep">'+lbl
+      + '<span class="wl-count">'+groups[mk].length+'</span></div>'
+      + groups[mk].map(wlOrphanRow).join('') + '</div>';
+  });
+  return h + '</div>';
+}
+function wlOrphanRow(o){
+  o.total_contract_value = o.total_paid; // alias for shared tooltip helpers
+  const email = o.whop_email || '';
+  const bits = [];
+  if (o.first_payment_date) bits.push('First pay '+fmtDate(o.first_payment_date));
+  const meta = bits.join(' · ');
+  const stats = wlStat(o.whop_projected, 'Contracted Total', 'green', projectedTooltip(o))
+    + wlStat(o.total_paid, 'Cash', '', cashTooltip(o))
+    + wlStat(o.net_cash_collected, 'Net Cash (after fees)', '', NET_CASH_TIP)
+    + '<div class="wl-review-actions">'
+    + '<button class="wl-confirm-btn" onclick="wlOrphanReview(\''+o.whop_membership_id+'\', \'confirm\', event)">Confirm to count</button>'
+    + '<button class="wl-confirm-btn ignore" data-tip="Not a coaching deal (or a duplicate) — hide it. Comes back on the next Run Match if still unmatched." onclick="wlOrphanReview(\''+o.whop_membership_id+'\', \'ignore\', event)">Ignore</button>'
+    + '</div>';
+  return '<div class="wl-row"><div class="wl-rleft"><div class="wl-rname">'+esc(o.ghl_opportunity_name||'—')+' '+wlBadges(o)
+    +'</div>'+(email?'<div class="wl-email">'+esc(email)+'</div>':'')
+    +(meta?'<div class="wl-meta">'+meta+'</div>':'')+'</div>'
+    +'<div class="wl-stats">'+stats+'</div></div>';
+}
+async function wlOrphanReview(mid, action, ev){
+  if (ev) ev.stopPropagation();
+  const MSG = {
+    confirm: ['✅ Payment attributed — now counted (Unassigned). Attribute the rep by creating the GHL deal.', 'success'],
+    ignore:  ['Payment ignored — hidden from the list.', 'info'],
+    reset:   ['Moved back to review.', 'info'],
+  };
+  try {
+    const r = await fetch(`${API}/pnl/whop-orphan/review`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ whop_membership_id: mid, action }),
+    });
+    const j = await r.json();
+    if (!r.ok || j.ok === false) throw new Error(j.detail || j.error || ('HTTP ' + r.status));
+    const [msg, type] = MSG[action] || ['Updated.', 'info'];
+    showToast(msg, type);
+    await loadWhopLive();
+  } catch (e) { showToast('❌ ' + e.message, 'error'); }
 }
 
 // "Deals for Review" — all unconfirmed no-payment deals, grouped by owner (rep).
@@ -870,6 +939,8 @@ function wlRender(data){
   h += wlMonthSummary(reps);
   // One table section per rep (all expanded), each with a totals row.
   reps.forEach(r => { h += wlRepTable(r); });
+  // Whop payments with no GHL deal (orphans), pending review — by first-pay month.
+  h += wlOrphanSection(data.orphans_pending);
   // "Deals for Review" section (no-payment deals), grouped by owner — last section.
   h += wlReviewSection(reps);
   body.innerHTML = h;

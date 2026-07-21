@@ -315,6 +315,42 @@ class DealWhopMatch(Base):
     )
 
 
+class WhopOrphanPayment(Base):
+    """A Whop coaching payment (membership) with NO matching GHL closed-won deal.
+
+    Populated by the matcher at the end of run_matching: memberships that were not
+    claimed by any deal, are not on an excluded product, and paid >= the coaching
+    floor. Reviewed on the New Deals tab and confirmed to count (under Unassigned)
+    or ignored. status: pending | confirmed | ignored.
+    """
+
+    __tablename__ = "whop_orphan_payments"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    whop_membership_id: Mapped[str] = mapped_column(String(100), nullable=False, unique=True, index=True)
+    whop_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    whop_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    whop_product_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    first_payment_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    total_paid: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    net_cash_collected: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    upfront_cash: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    total_refunded: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    payment_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_installments: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    is_splitit: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    is_claritypay: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    plan_months_flag: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    provider_fee_pct: Mapped[float | None] = mapped_column(Numeric(5, 4), nullable=True)
+    # pending (awaiting review) | confirmed (counts under Unassigned) | ignored (hidden)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending", index=True)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
 class XeroBankTransfer(Base):
     """One row per incoming bank transfer on the Wise USD / Wise EUR accounts in Xero.
 

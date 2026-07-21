@@ -82,6 +82,12 @@ EXCLUDED_WHOP_PRODUCT_IDS: frozenset[str] = frozenset({
     "prod_bgKXIW0Wly5R1",
 })
 
+# An UNMATCHED Whop membership (no GHL deal) counts as a "coaching orphan" — worth
+# surfacing for review — when it paid at least this much and isn't an excluded
+# product. Real coaching starts ~$2,667, so a $1,000 floor cleanly separates it
+# from community subs / low-ticket products.
+ORPHAN_COACHING_FLOOR: float = 1000.0
+
 # Upsell stage IDs — Client Delivery Revenue Pipeline
 UPSELL_STAGE_OUTREACH_SENT  = "e08df229-3462-4b6c-aa5a-7a16d6b18773"
 UPSELL_STAGE_CALL_SCHEDULED = "859efac7-0f23-4d7e-8b53-032e95b69c58"

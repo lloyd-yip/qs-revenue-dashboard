@@ -178,6 +178,54 @@ def _deal_to_live_item(r: DealWhopMatch, call1_appt=None) -> dict:
     }
 
 
+def _new_rep_bucket(rep: str) -> dict:
+    return {
+        "rep_name": rep, "deal_count": 0, "gross_contract_value": 0.0,
+        "projected_total": 0.0, "net_cash_collected": 0.0, "flagged_count": 0,
+        "pending_count": 0, "pending_contract_value": 0.0, "deals": [],
+    }
+
+
+def _orphan_to_item(o) -> dict:
+    """Shape a WhopOrphanPayment (Whop coaching payment with no GHL deal) into the
+    same item dict the frontend renders — flagged is_orphan, owner Unassigned."""
+    tp = float(o.total_paid) if o.total_paid else 0.0
+    if o.is_splitit or o.is_claritypay:
+        projected = tp
+    elif o.total_installments and o.total_installments > 0 and o.payment_count and o.payment_count > 0:
+        projected = tp / o.payment_count * o.total_installments
+    else:
+        projected = tp
+    net = float(o.net_cash_collected) if o.net_cash_collected is not None else tp
+    return {
+        "ghl_opportunity_id": None,
+        "ghl_opportunity_name": o.whop_name or o.whop_email or o.whop_membership_id,
+        "ghl_close_date": None,
+        "first_payment_date": str(o.first_payment_date) if o.first_payment_date else None,
+        "entered_pipeline_date": None,
+        "sales_cycle_days": None,
+        "whop_email": o.whop_email,
+        "ghl_contact_email": o.whop_email,
+        "gross_contract_value": None,
+        "upfront_cash": float(o.upfront_cash) if o.upfront_cash is not None else None,
+        "total_paid": round(tp, 2),
+        "whop_projected": round(projected, 2),
+        "net_cash_collected": round(net, 2),
+        "remaining_ar": None,
+        "provider_fee_pct": float(o.provider_fee_pct) if o.provider_fee_pct is not None else None,
+        "payment_count": o.payment_count,
+        "is_splitit": o.is_splitit,
+        "is_claritypay": o.is_claritypay,
+        "plan_months_flag": o.plan_months_flag,
+        "match_confidence": "high",
+        "total_installments": o.total_installments,
+        "needs_review": (o.status != "confirmed"),
+        "is_confirmed": (o.status == "confirmed"),
+        "is_orphan": True,
+        "whop_membership_id": o.whop_membership_id,
+    }
+
+
 async def get_whop_live_summary_for_month(
     session: AsyncSession,
     month_start: date,
@@ -260,17 +308,7 @@ async def get_whop_live_summary_for_month(
 
     for r, call1_appt in rows:
         rep = r.ghl_owner_name or "Unassigned"
-        bucket = rep_buckets.setdefault(rep, {
-            "rep_name": rep,
-            "deal_count": 0,
-            "gross_contract_value": 0.0,
-            "projected_total": 0.0,
-            "net_cash_collected": 0.0,
-            "flagged_count": 0,
-            "pending_count": 0,
-            "pending_contract_value": 0.0,
-            "deals": [],
-        })
+        bucket = rep_buckets.setdefault(rep, _new_rep_bucket(rep))
         item = _deal_to_live_item(r, _entered(r, call1_appt))
         counts = (not item["needs_review"]) or item["is_confirmed"]
         if counts:
@@ -287,6 +325,22 @@ async def get_whop_live_summary_for_month(
 
         if r.metrics_updated_at and (last_refreshed is None or r.metrics_updated_at > last_refreshed):
             last_refreshed = r.metrics_updated_at
+
+    # ── Orphan coaching payments (Whop payment, no GHL deal) ──────────────────
+    # Confirmed → count under Unassigned like any other deal; pending → a separate
+    # "payments to attribute" list the frontend shows for review.
+    from db.queries.whop_orphans import get_orphans_for_range
+    orphans_pending: list[dict] = []
+    for o in await get_orphans_for_range(session, month_start, month_end):
+        item = _orphan_to_item(o)
+        if o.status == "confirmed":
+            bucket = rep_buckets.setdefault("Unassigned", _new_rep_bucket("Unassigned"))
+            bucket["deal_count"] += 1
+            bucket["projected_total"] += item["whop_projected"] or 0.0
+            bucket["net_cash_collected"] += item["net_cash_collected"] or 0.0
+            bucket["deals"].append(item)
+        else:
+            orphans_pending.append(item)
 
     # Within a rep: Whop-settled first (newest first), then needs-review pending.
     reps = sorted(rep_buckets.values(), key=lambda b: b["net_cash_collected"], reverse=True)
@@ -307,11 +361,14 @@ async def get_whop_live_summary_for_month(
         "flagged_count": sum(b["flagged_count"] for b in reps),
         "pending_count": sum(b["pending_count"] for b in reps),
         "pending_contract_value": round(sum(b["pending_contract_value"] for b in reps), 2),
+        "orphan_pending_count": len(orphans_pending),
+        "orphan_pending_total": round(sum(o["total_paid"] or 0 for o in orphans_pending), 2),
     }
 
     return {
         "reps": reps,
         "totals": totals,
+        "orphans_pending": orphans_pending,
         "last_refreshed": last_refreshed.isoformat() if last_refreshed else None,
     }
 

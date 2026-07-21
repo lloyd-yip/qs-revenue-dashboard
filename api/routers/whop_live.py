@@ -58,6 +58,8 @@ class WhopLiveDealItem(BaseModel):
     total_installments: int | None
     needs_review: bool = False
     is_confirmed: bool = False
+    is_orphan: bool = False
+    whop_membership_id: str | None = None
 
 
 class WhopLiveRepRow(BaseModel):
@@ -78,6 +80,7 @@ class WhopLiveResponse(BaseModel):
     month: str
     reps: list[WhopLiveRepRow]
     totals: dict
+    orphans_pending: list[WhopLiveDealItem] = []
     last_refreshed: str | None
 
 
@@ -117,6 +120,7 @@ async def pnl_whop_live(
         month=month,
         reps=reps,
         totals=data["totals"],
+        orphans_pending=[WhopLiveDealItem(**o) for o in data.get("orphans_pending", [])],
         last_refreshed=data["last_refreshed"],
     )
 
@@ -145,6 +149,25 @@ async def pnl_collections(
     if range_end < range_start:
         raise HTTPException(status_code=422, detail="Range end is before start")
     return await get_collections_for_range(db, range_start, range_end)
+
+
+class OrphanReviewInput(BaseModel):
+    whop_membership_id: str
+    action: str  # 'confirm' | 'ignore' | 'reset'
+
+
+@router.post("/pnl/whop-orphan/review")
+async def review_orphan(body: OrphanReviewInput, db: AsyncSession = Depends(get_db)) -> dict:
+    """Resolve an orphan Whop coaching payment (no GHL deal). confirm → counts under
+    Unassigned; ignore → hidden; reset → back to pending."""
+    from db.queries.whop_orphans import set_orphan_status
+    status = {"confirm": "confirmed", "ignore": "ignored", "reset": "pending"}.get(body.action)
+    if status is None:
+        raise HTTPException(status_code=422, detail=f"Invalid action: {body.action}")
+    ok = await set_orphan_status(db, body.whop_membership_id, status)
+    if not ok:
+        raise HTTPException(status_code=404, detail=f"Orphan {body.whop_membership_id} not found")
+    return {"ok": True, "whop_membership_id": body.whop_membership_id, "status": status}
 
 
 @router.get("/pnl/suggested-matches")
