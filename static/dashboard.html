@@ -116,9 +116,12 @@
     .chart-box {
       background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
       padding: 20px;
+      /* allow grid/flex items to shrink below their canvas's intrinsic width so
+         responsive Chart.js canvases resize down instead of overflowing the page */
+      min-width: 0;
     }
     .chart-box h3 { font-size: 13px; font-weight: 600; color: var(--text2); margin-bottom: 16px; text-transform: uppercase; letter-spacing: 0.4px; }
-    .chart-box canvas { max-height: 260px; }
+    .chart-box canvas { max-height: 260px; max-width: 100%; }
 
     /* Section header with toggle */
     .section-header {
@@ -132,6 +135,12 @@
       background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
       overflow: hidden; margin-bottom: 24px;
     }
+    /* Wide data tables must scroll horizontally within their card instead of
+       being clipped by the wrap's overflow:hidden (Rep Breakdown's RORI columns
+       were unreachable). The inner scroll keeps the table from pushing page width. */
+    #rep-table-view, #daily-activity-view { overflow-x: auto; }
+    #rep-table-view > table { min-width: 100%; }
+    #rep-table-view th, #rep-table-view td { white-space: nowrap; }
     table { width: 100%; border-collapse: collapse; }
     th { background: var(--surface2); color: var(--text2); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; padding: 10px 14px; text-align: left; }
     td { padding: 10px 14px; border-top: 1px solid var(--border); font-size: 13px; }
