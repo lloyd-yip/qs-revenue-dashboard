@@ -33,6 +33,19 @@ def _parse_month_range(month: str) -> tuple[date, date]:
     return date(year, mon, 1), date(year, mon, last_day)
 
 
+# Range bounds accept a whole month ('YYYY-MM') or an exact day ('YYYY-MM-DD') —
+# the day form drives the frontend's "Custom dates" mode.
+_BOUND_PATTERN = r"^\d{4}-\d{2}(-\d{2})?$"
+
+
+def _parse_bound(value: str, *, is_end: bool) -> date:
+    """'YYYY-MM' → first (start) / last (end) day of that month; 'YYYY-MM-DD' → that exact day."""
+    if len(value) == 7:
+        first, last = _parse_month_range(value)
+        return last if is_end else first
+    return date.fromisoformat(value)
+
+
 class WhopLiveDealItem(BaseModel):
     """One deal row inside a rep's collapsible table."""
     ghl_opportunity_id: str
@@ -86,15 +99,15 @@ class WhopLiveResponse(BaseModel):
 
 @router.get("/pnl/whop-live", response_model=WhopLiveResponse)
 async def pnl_whop_live(
-    month: str = Query(..., pattern=r"^\d{4}-\d{2}$", description="Month (YYYY-MM); range start when 'end' given"),
-    end: str | None = Query(None, pattern=r"^\d{4}-\d{2}$", description="Optional range end month (YYYY-MM)"),
+    month: str = Query(..., pattern=_BOUND_PATTERN, description="Month (YYYY-MM) or exact day (YYYY-MM-DD); range start when 'end' given"),
+    end: str | None = Query(None, pattern=_BOUND_PATTERN, description="Optional range end — month (YYYY-MM) or exact day (YYYY-MM-DD)"),
     db: AsyncSession = Depends(get_db),
 ) -> WhopLiveResponse:
     """New-deals view: deals whose FIRST Whop payment landed in the month (or the
-    month range when `end` is given), grouped by rep."""
+    month/day range when `end` is given), grouped by rep."""
     try:
-        month_start, _ = _parse_month_range(month)
-        _, month_end = _parse_month_range(end) if end else _parse_month_range(month)
+        month_start = _parse_bound(month, is_end=False)
+        month_end = _parse_bound(end or month, is_end=True)
     except ValueError:
         raise HTTPException(status_code=422, detail=f"Invalid month range: {month}..{end}")
     if month_end < month_start:
@@ -133,17 +146,18 @@ async def whop_live_months(db: AsyncSession = Depends(get_db)) -> list[str]:
 
 @router.get("/pnl/collections")
 async def pnl_collections(
-    start: str = Query(..., pattern=r"^\d{4}-\d{2}$", description="Range start month (YYYY-MM)"),
-    end: str | None = Query(None, pattern=r"^\d{4}-\d{2}$", description="Range end month (YYYY-MM); defaults to start"),
+    start: str = Query(..., pattern=_BOUND_PATTERN, description="Range start — month (YYYY-MM) or exact day (YYYY-MM-DD)"),
+    end: str | None = Query(None, pattern=_BOUND_PATTERN, description="Range end — month (YYYY-MM) or exact day (YYYY-MM-DD); defaults to start"),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Projected collections across ALL payment plans for a month range — how much
     lands each month (collected vs still-outstanding), refunds, and the plan
-    breakdown. Future cash is estimated (equal monthly installments); financed
+    breakdown. Day-level bounds filter installments by their (estimated) dates.
+    Future cash is estimated (equal monthly installments); financed
     deals settle upfront. See db/queries/collections.py."""
     try:
-        range_start, _ = _parse_month_range(start)
-        _, range_end = _parse_month_range(end) if end else _parse_month_range(start)
+        range_start = _parse_bound(start, is_end=False)
+        range_end = _parse_bound(end or start, is_end=True)
     except ValueError:
         raise HTTPException(status_code=422, detail=f"Invalid range: {start}..{end}")
     if range_end < range_start:

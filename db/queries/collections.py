@@ -40,15 +40,15 @@ def _months_between(start: date, end: date) -> list[str]:
     return out
 
 
-def _clamp_paid(month_key: str, paid: bool, today_key: str) -> str:
-    """A PAID installment cannot land in the future — cap its month at today.
-    Payments don't arrive on a perfectly monthly cadence, so the even-spacing
-    estimate can push an already-paid installment past the current month; clamp
-    it so 'collected' never shows up in a month that hasn't happened yet."""
-    return today_key if (paid and month_key > today_key) else month_key
+def _clamp_paid(d: date, paid: bool, today: date) -> date:
+    """A PAID installment cannot land in the future — cap its (estimated) date at
+    today. Payments don't arrive on a perfectly monthly cadence, so the even-spacing
+    estimate can push an already-paid installment past today; clamp it so
+    'collected' never shows up in a period that hasn't happened yet."""
+    return today if (paid and d > today) else d
 
 
-def _deal_schedule(m: DealWhopMatch, today_key: str) -> list[dict]:
+def _deal_schedule(m: DealWhopMatch, today: date) -> list[dict]:
     """Projected installments for one deal → [{month, amount, paid, date, is_first}]."""
     total_paid = float(m.total_paid) if m.total_paid else 0.0
     fpd = m.first_payment_date
@@ -56,28 +56,33 @@ def _deal_schedule(m: DealWhopMatch, today_key: str) -> list[dict]:
         return []
     if m.is_splitit or m.is_claritypay:
         # External financing settles 100% upfront: one installment, no future cash.
-        return [{"month": _clamp_paid(_mk(fpd), True, today_key), "amount": round(total_paid, 2),
-                 "paid": True, "date": fpd, "is_first": True}]
+        d = _clamp_paid(fpd, True, today)
+        return [{"month": _mk(d), "amount": round(total_paid, 2),
+                 "paid": True, "date": d, "is_first": True}]
     paid_count = m.payment_count or 0
     n = max(m.total_installments or paid_count or 1, paid_count, 1)
     size = total_paid / paid_count if paid_count else total_paid / n
     out = []
     for k in range(n):
-        d = _add_months(fpd, k)
         paid = k < paid_count
-        out.append({"month": _clamp_paid(_mk(d), paid, today_key), "amount": round(size, 2),
+        d = _clamp_paid(_add_months(fpd, k), paid, today)
+        out.append({"month": _mk(d), "amount": round(size, 2),
                     "paid": paid, "date": d, "is_first": k == 0})
     return out
 
 
 async def get_collections_for_range(session: AsyncSession, start: date, end: date) -> dict:
-    """Aggregate projected collections for the month window [start, end].
+    """Aggregate projected collections for the window [start, end].
+
+    Bounds are dates, so custom day-level windows work: installments are filtered
+    by their (estimated, day-clamped) date. For month-aligned bounds this is
+    identical to the original whole-month behaviour.
 
     Returns per-month collected/outstanding/total, window totals (incl. refunds),
     and the outstanding payment-plan breakdown (which accounts, how much left).
     """
     start_key, end_key = _mk(start), _mk(end)
-    today_key = _mk(date.today())  # paid installments never project past this month
+    today = date.today()  # paid installments never project past today
     rows = (await session.execute(
         select(DealWhopMatch).where(DealWhopMatch.is_excluded.isnot(True))
     )).scalars().all()
@@ -98,10 +103,10 @@ async def get_collections_for_range(session: AsyncSession, start: date, end: dat
     }
 
     for r in rows:
-        sched = _deal_schedule(r, today_key)
+        sched = _deal_schedule(r, today)
         if not sched:
             continue
-        in_window = [s for s in sched if start_key <= s["month"] <= end_key]
+        in_window = [s for s in sched if start <= s["date"] <= end]
         for s in in_window:
             b = months[s["month"]]
             paidkey = "collected" if s["paid"] else "outstanding"

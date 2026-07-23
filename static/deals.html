@@ -370,10 +370,12 @@
     /* ── Collections lens ────────────────────────────────────────────────── */
     .col-periodbar { display:flex; align-items:center; gap:10px; margin-bottom:18px; flex-wrap:wrap; }
     .col-plabel { font-size:12px; color:var(--muted); }
-    #colFrom, #colTo, #wlFrom, #wlTo { background:var(--surface2); border:1px solid var(--border); color:var(--text); padding:6px 12px; border-radius:7px; font-size:14px; font-weight:600; font-family:inherit; cursor:pointer; }
+    #colFrom, #colTo, #wlFrom, #wlTo,
+    #colFromD, #colToD, #wlFromD, #wlToD { background:var(--surface2); border:1px solid var(--border); color:var(--text); padding:6px 12px; border-radius:7px; font-size:14px; font-weight:600; font-family:inherit; cursor:pointer; }
     .col-presets { display:flex; gap:6px; }
     .col-preset { background:var(--surface2); border:1px solid var(--border); color:var(--muted); font-size:12px; padding:6px 11px; border-radius:7px; cursor:pointer; font-family:inherit; }
     .col-preset:hover { color:var(--text); border-color:var(--accent); }
+    .col-preset.active { background:var(--accent); border-color:var(--accent); color:#fff; }
 
     .col-cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:14px; margin-bottom:20px; }
     .col-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px 18px; }
@@ -468,17 +470,22 @@
   <!-- LIVE lens (relocated from P&L) -->
   <section id="lens-live">
     <div class="col-periodbar">
-      <button class="wl-arrow" onclick="wlStep(-1)">‹</button>
-      <span class="col-plabel">From</span>
-      <select id="wlFrom" onchange="wlClampAndLoad('from')"></select>
-      <span class="col-plabel">to</span>
-      <select id="wlTo" onchange="wlClampAndLoad('to')"></select>
-      <button class="wl-arrow" onclick="wlStep(1)">›</button>
+      <button class="wl-arrow pb-month-el" onclick="wlStep(-1)">‹</button>
+      <span class="col-plabel pb-month-el">From</span>
+      <select id="wlFrom" class="pb-month-el" onchange="wlClampAndLoad('from')"></select>
+      <span class="col-plabel pb-month-el">to</span>
+      <select id="wlTo" class="pb-month-el" onchange="wlClampAndLoad('to')"></select>
+      <button class="wl-arrow pb-month-el" onclick="wlStep(1)">›</button>
+      <span class="col-plabel pb-custom-el wl-hidden">From</span>
+      <input type="date" id="wlFromD" class="pb-custom-el wl-hidden" onchange="pbDateChange('wl','from')">
+      <span class="col-plabel pb-custom-el wl-hidden">to</span>
+      <input type="date" id="wlToD" class="pb-custom-el wl-hidden" onchange="pbDateChange('wl','to')">
       <span class="col-presets">
         <button class="col-preset" onclick="wlPreset(6)">Last 6 mo</button>
         <button class="col-preset" onclick="wlPreset(3)">Last 3 mo</button>
         <button class="col-preset" onclick="wlPreset(1)">Last month</button>
         <button class="col-preset" onclick="wlPreset(0)">This month</button>
+        <button class="col-preset" id="wlCustomBtn" onclick="pbToggleCustom('wl')" data-tip="Filter by exact dates (first-payment date) instead of whole months">📅 Custom dates</button>
       </span>
       <span class="wl-refreshed" id="wlRefreshed">Whop-settled deals only · refreshed nightly</span>
     </div>
@@ -489,12 +496,16 @@
   <!-- COLLECTIONS lens (projected cash across all payment plans) -->
   <section id="lens-collections" class="wl-hidden">
     <div class="col-periodbar">
-      <button class="wl-arrow" onclick="colStep(-1)">‹</button>
-      <span class="col-plabel">From</span>
-      <select id="colFrom" onchange="colClampAndLoad('from')"></select>
-      <span class="col-plabel">to</span>
-      <select id="colTo" onchange="colClampAndLoad('to')"></select>
-      <button class="wl-arrow" onclick="colStep(1)">›</button>
+      <button class="wl-arrow pb-month-el" onclick="colStep(-1)">‹</button>
+      <span class="col-plabel pb-month-el">From</span>
+      <select id="colFrom" class="pb-month-el" onchange="colClampAndLoad('from')"></select>
+      <span class="col-plabel pb-month-el">to</span>
+      <select id="colTo" class="pb-month-el" onchange="colClampAndLoad('to')"></select>
+      <button class="wl-arrow pb-month-el" onclick="colStep(1)">›</button>
+      <span class="col-plabel pb-custom-el wl-hidden">From</span>
+      <input type="date" id="colFromD" class="pb-custom-el wl-hidden" onchange="pbDateChange('col','from')">
+      <span class="col-plabel pb-custom-el wl-hidden">to</span>
+      <input type="date" id="colToD" class="pb-custom-el wl-hidden" onchange="pbDateChange('col','to')">
       <span class="col-presets">
         <button class="col-preset" onclick="colPresetBack(6)">Last 6 mo</button>
         <button class="col-preset" onclick="colPresetBack(3)">Last 3 mo</button>
@@ -502,6 +513,7 @@
         <button class="col-preset" onclick="colPreset(0)">This month</button>
         <button class="col-preset" onclick="colPreset(3)">Next 3 mo</button>
         <button class="col-preset" onclick="colPreset(6)">Next 6 mo</button>
+        <button class="col-preset" id="colCustomBtn" onclick="pbToggleCustom('col')" data-tip="Filter by exact dates. Note: installment dates are estimates (equal monthly spacing), so mid-month cutoffs are approximate.">📅 Custom dates</button>
       </span>
       <span class="wl-refreshed">Future cash is a projection (equal monthly installments) · financed deals settle upfront</span>
     </div>
@@ -663,6 +675,50 @@ async function cmAction(id, action){
   } catch(e){ showToast('❌ '+e.message, 'error'); }
 }
 
+// ── Custom date-range mode (shared by the New Deals + Collections period bars) ──
+// 'wl' = New Deals lens, 'col' = Collections lens. Month mode stays the default;
+// the 📅 button swaps the month selects/arrows for two exact-day date inputs.
+const pbCustom = { wl:false, col:false };
+const PB = {
+  wl:  { lens:'lens-live',        from:'wlFrom',  to:'wlTo',  fromD:'wlFromD',  toD:'wlToD',  btn:'wlCustomBtn',  load: () => loadWhopLive() },
+  col: { lens:'lens-collections', from:'colFrom', to:'colTo', fromD:'colFromD', toD:'colToD', btn:'colCustomBtn', load: () => loadCollections() },
+};
+function pbMonthLastDay(mk){ const p=mk.split('-'); const last=new Date(+p[0], +p[1], 0).getDate(); return mk+'-'+String(last).padStart(2,'0'); }
+function pbToggleCustom(k){
+  const c = PB[k];
+  pbCustom[k] = !pbCustom[k];
+  if (pbCustom[k]){ // seed the date inputs from the selected months for continuity
+    el(c.fromD).value = el(c.from).value + '-01';
+    el(c.toD).value = pbMonthLastDay(el(c.to).value);
+  }
+  pbSyncUI(k);
+  c.load();
+}
+function pbExitCustom(k){ // month presets always return to month mode
+  if (pbCustom[k]){ pbCustom[k] = false; pbSyncUI(k); }
+}
+function pbSyncUI(k){
+  const c = PB[k], on = pbCustom[k];
+  document.querySelectorAll('#'+c.lens+' .pb-month-el').forEach(e=>e.classList.toggle('wl-hidden', on));
+  document.querySelectorAll('#'+c.lens+' .pb-custom-el').forEach(e=>e.classList.toggle('wl-hidden', !on));
+  const btn = el(c.btn);
+  btn.textContent = on ? '↩ Months' : '📅 Custom dates';
+  btn.classList.toggle('active', on);
+}
+function pbDateChange(k, which){
+  const c = PB[k], f = el(c.fromD).value, t = el(c.toD).value;
+  if (f && t && f > t){ if (which==='from') el(c.toD).value = f; else el(c.fromD).value = t; }
+  if (el(c.fromD).value && el(c.toD).value) c.load();
+}
+// Current [from, to] — 'YYYY-MM-DD' in custom mode, 'YYYY-MM' in month mode.
+// The backend accepts both forms on the same params.
+function pbRange(k){
+  const c = PB[k];
+  return pbCustom[k] && el(c.fromD).value && el(c.toD).value
+    ? [el(c.fromD).value, el(c.toD).value]
+    : [el(c.from) && el(c.from).value, el(c.to) && el(c.to).value];
+}
+
 // ── New Deals lens (Whop cash) — month or month-range ────────────────────────
 function wlCurMonth(){ return new Date().toISOString().slice(0,7); }
 
@@ -688,6 +744,7 @@ function wlStep(n){
   loadWhopLive();
 }
 function wlPreset(back){
+  pbExitCustom('wl');
   const cur = colYm(new Date());
   el('wlTo').value = cur;
   el('wlFrom').value = colShift(cur, -back);
@@ -695,8 +752,9 @@ function wlPreset(back){
 }
 
 async function loadWhopLive(){
-  const f = (el('wlFrom') && el('wlFrom').value) || wlCurMonth();
-  const t = (el('wlTo') && el('wlTo').value) || f;
+  const [f0, t0] = pbRange('wl');
+  const f = f0 || wlCurMonth();
+  const t = t0 || f;
   const body = el('wlBody'); body.innerHTML = '<div class="wl-empty">Loading…</div>';
   try {
     const url = (t && t!==f) ? `${API}/pnl/whop-live?month=${f}&end=${t}` : `${API}/pnl/whop-live?month=${f}`;
@@ -1003,12 +1061,14 @@ function colStep(n){
   loadCollections();
 }
 function colPreset(span){
+  pbExitCustom('col');
   const cur = colYm(new Date());
   el('colFrom').value = cur;
   el('colTo').value = colShift(cur, span);
   loadCollections();
 }
 function colPresetBack(back){
+  pbExitCustom('col');
   const cur = colYm(new Date());
   el('colTo').value = cur;
   el('colFrom').value = colShift(cur, -back);
@@ -1016,7 +1076,7 @@ function colPresetBack(back){
 }
 function colMonthsBetween(from, to){ const out=[]; let m=from; while(colCmp(m,to)<=0){ out.push(m); m=colShift(m,1); } return out; }
 async function loadCollections(){
-  const s = el('colFrom').value, e = el('colTo').value;
+  const [s, e] = pbRange('col');
   const body = el('colBody'); body.innerHTML = '<div class="wl-empty">Loading…</div>';
   try {
     const r = await fetch(`${API}/pnl/collections?start=${s}&end=${e}`);
