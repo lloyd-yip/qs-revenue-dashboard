@@ -99,6 +99,27 @@ class WhopLiveResponse(BaseModel):
     last_refreshed: str | None
 
 
+def _safe_items(raw: list[dict]) -> list[WhopLiveDealItem]:
+    """Build deal items, skipping (and logging) any single malformed row.
+
+    Defence-in-depth: a schema/data mismatch on ONE row must never 500 the whole
+    New Deals section — the rest of the reps' deals should still render. The
+    dropped row is logged with enough context to chase down and fix at the source.
+    """
+    items: list[WhopLiveDealItem] = []
+    for d in raw:
+        try:
+            items.append(WhopLiveDealItem(**d))
+        except Exception as exc:
+            logger.error(
+                "Skipping malformed whop-live item (opp=%s, membership=%s): %s",
+                (d or {}).get("ghl_opportunity_id"),
+                (d or {}).get("whop_membership_id"),
+                exc,
+            )
+    return items
+
+
 @router.get("/pnl/whop-live", response_model=WhopLiveResponse)
 async def pnl_whop_live(
     month: str = Query(..., pattern=_BOUND_PATTERN, description="Month (YYYY-MM) or exact day (YYYY-MM-DD); range start when 'end' given"),
@@ -127,7 +148,7 @@ async def pnl_whop_live(
             flagged_count=r["flagged_count"],
             pending_count=r.get("pending_count", 0),
             pending_contract_value=r.get("pending_contract_value", 0.0),
-            deals=[WhopLiveDealItem(**d) for d in r["deals"]],
+            deals=_safe_items(r["deals"]),
         )
         for r in data["reps"]
     ]
@@ -135,7 +156,7 @@ async def pnl_whop_live(
         month=month,
         reps=reps,
         totals=data["totals"],
-        orphans_pending=[WhopLiveDealItem(**o) for o in data.get("orphans_pending", [])],
+        orphans_pending=_safe_items(data.get("orphans_pending", [])),
         last_refreshed=data["last_refreshed"],
     )
 
