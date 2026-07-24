@@ -48,7 +48,9 @@ def _parse_bound(value: str, *, is_end: bool) -> date:
 
 class WhopLiveDealItem(BaseModel):
     """One deal row inside a rep's collapsible table."""
-    ghl_opportunity_id: str
+    # None for orphan Whop payments (a Whop coaching payment with no GHL deal) —
+    # those are keyed by whop_membership_id instead.
+    ghl_opportunity_id: str | None = None
     ghl_opportunity_name: str | None
     ghl_close_date: str | None
     first_payment_date: str | None

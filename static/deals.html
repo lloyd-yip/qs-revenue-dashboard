@@ -581,7 +581,7 @@
           <th onclick="sortBy('first_payment_date')">Close Date <span class="sort-arrow">↕</span></th>
           <th onclick="sortBy('match_confidence')">Match <span class="sort-arrow">↕</span></th>
           <th>Whop Email</th>
-          <th onclick="sortBy('upfront_cash')" style="text-align:right" data-tip="First payment received (WAP/Whop)">Upfront Cash <span class="sort-arrow">↕</span></th>
+          <th onclick="sortBy('upfront_cash')" style="text-align:right" data-tip="First payment received (Whop)">Upfront Cash <span class="sort-arrow">↕</span></th>
           <th onclick="sortBy('total_paid')" style="text-align:right" data-tip="Cash collected to date across all installments (reconciled from Whop payments)">Cash Collected <span class="sort-arrow">↕</span></th>
           <th onclick="sortBy('whop_projected')" style="text-align:right;color:var(--green)" data-tip="Payment-verified projected FULL contract, from Whop plan math: Splitit/ClarityPay settle 100% upfront (paid = full contract); internal plans project avg installment × plan length. No rep input.">Contracted Total <span class="sort-arrow">↕</span></th>
           <th onclick="sortBy('net_cash_collected')" style="text-align:right" data-tip="Cash collected net of the 15% provider fee on financed (Splitit/ClarityPay) deals; equals Cash Collected otherwise">Net Cash <span class="sort-arrow">↕</span></th>
@@ -656,7 +656,7 @@ function cmRow(m, biz){
   return '<div class="cm-row'+(m.is_confirmed?' ok':'')+'">'
     + '<div><div class="cm-lbl">GHL deal</div>'+ghlLink
       + '<div class="cm-meta">'+esc(m.ghl_contact_email||'—')+' · '+esc(m.ghl_owner_name||'—')+'</div></div>'
-    + '<div class="cm-arrow">'+fmtUSD(m.total_paid)+'<span>paid on WAP</span></div>'
+    + '<div class="cm-arrow">'+fmtUSD(m.total_paid)+'<span>paid on Whop</span></div>'
     + '<div><div class="cm-lbl">Paid by</div>'+payer
       + '<div class="cm-meta">'+domBadge+' '+methodBadge+okTag+'</div></div>'
     + '<div class="cm-actions">'+actions+'</div></div>';
@@ -856,7 +856,7 @@ function wlRepTable(rep){
       + '</tr></thead><tbody>'+totals+rows+'</tbody></table></div></div>';
 }
 
-// A needs-review deal row (no WAP/Whop payment) inside the Deals for Review section.
+// A needs-review deal row (no Whop payment) inside the Deals for Review section.
 function wlReviewRow(d, owner){
   d.total_contract_value = d.gross_contract_value;
   const email = d.whop_email || d.ghl_contact_email || '';
@@ -940,7 +940,7 @@ function wlReviewSection(reps){
   const total = groups.reduce((s,g)=>s+g.deals.length,0);
   let h = '<div class="wl-review-section"><div class="wl-review-head">'
     + '<span class="wl-review-title">⚠ Deals for Review</span>'
-    + '<span class="wl-review-sub">'+total+' deal'+(total!==1?'s':'')+' won with no WAP/Whop payment — grouped by rep. Confirm to count, or ignore.</span></div>';
+    + '<span class="wl-review-sub">'+total+' deal'+(total!==1?'s':'')+' won with no Whop payment — grouped by rep. Confirm to count, or ignore.</span></div>';
   groups.forEach(g => {
     const helpChip = (g.owner === 'Unassigned')
       ? ' <span class="wl-help" data-tip="'+esc(ASSIGN_HELP_TIP)+'">ⓘ How to assign</span>' : '';
