@@ -14,7 +14,7 @@ from sqlalchemy import (
     func,
     Index,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from db.session import Base
@@ -154,6 +154,13 @@ class Opportunity(Base):
     contact_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     close_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
 
+    # Contact snapshot pulled from the GHL contact record at sync time (contact is already
+    # fetched + cached per sales opp). Drives tag-first AI-channel classification, phone→Retell
+    # matching, and internal-domain exclusion (@quantum-scaling.com / @ig-institute.com).
+    contact_tags: Mapped[list[str] | None] = mapped_column(ARRAY(String), nullable=True)
+    contact_email: Mapped[str | None] = mapped_column(String, nullable=True)
+    contact_phone: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+
     # GHL timestamps
     created_at_ghl: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     updated_at_ghl: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -186,6 +193,39 @@ class Appointment(Base):
     appointment_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     appointment_status: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class RetellCall(Base):
+    """One Retell AI voice call, pulled from the Retell API and matched to a GHL contact.
+
+    Retell telephony is external to GHL (calls never appear in GHL conversations), so this
+    is the sole source of call volume/minutes/recordings. Matched to a GHL contact by phone
+    (contact_phone on opportunities). Upserted on retell_call_id — safe to re-run.
+    """
+    __tablename__ = "retell_calls"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    retell_call_id: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    agent_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    direction: Mapped[str | None] = mapped_column(String, nullable=True)  # 'inbound' | 'outbound'
+    from_number: Mapped[str | None] = mapped_column(String, nullable=True)
+    to_number: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    duration_sec: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    call_status: Mapped[str | None] = mapped_column(String, nullable=True)
+    disconnect_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    recording_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    transcript: Mapped[str | None] = mapped_column(Text, nullable=True)
+    analysis: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # sentiment, call_successful, custom flags
+    # Match to GHL (by normalized phone). method: 'phone_exact' | 'unmatched'
+    ghl_contact_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    ghl_contact_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    match_method: Mapped[str | None] = mapped_column(String, nullable=True)
+    match_confidence: Mapped[str | None] = mapped_column(String, nullable=True)  # HIGH | MEDIUM | LOW
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
 
 
 class SyncRun(Base):

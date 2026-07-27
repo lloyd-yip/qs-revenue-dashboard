@@ -64,6 +64,12 @@ from db.queries.lead_source import (
 )
 from db.queries.channel_detail import get_channel_detail
 from db.queries.channel_cost import delete_channel_cost, get_channel_cost, set_channel_cost
+from db.queries.ai_channels import (
+    get_ai_channel_stats,
+    get_ai_data_quality,
+    get_retell_calls,
+    get_vera_chat_contacts,
+)
 from db.queries.data_quality import get_data_quality_issues
 from db.queries.debug_drilldown import get_drilldown_opps
 from db.queries.funnel_economics import get_auto_funnel_economics, get_period_inputs, upsert_marketing_spend, upsert_rep_compensations
@@ -248,6 +254,78 @@ async def save_channel_detail_cost(
         await set_channel_cost(db, body.channel, start, end, body.cost)
         cost = body.cost
     return {"channel": body.channel, "cost": cost, "is_set": cost is not None}
+
+
+@router.get("/channel-detail/ai")
+async def channel_detail_ai(
+    channel: str = Query(...),
+    params: tuple = Depends(_date_params),
+    db: AsyncSession = Depends(get_db),
+):
+    """AI-channel extras (booked/held/confidence + Retell call volume) — Retell/Appointwise only."""
+    start, end, date_by = params
+    data = await get_ai_channel_stats(db, channel, start, end, date_by)
+    return {"data": data, "meta": _meta(start, end, date_by)}
+
+
+@router.get("/retell/calls")
+async def retell_calls(
+    filter: str = Query("all", description="all | dq"),
+    params: tuple = Depends(_date_params),
+    db: AsyncSession = Depends(get_db),
+):
+    """Retell voice-call reconciliation list. filter='dq' → only disqualified-lead calls."""
+    start, end, date_by = params
+    data = await get_retell_calls(db, start, end, "dq" if filter == "dq" else "all")
+    return {"data": data, "meta": _meta(start, end, date_by)}
+
+
+@router.get("/retell/recording/{call_id}")
+async def retell_recording(call_id: str, db: AsyncSession = Depends(get_db)):
+    """Stream a Retell call recording through the server (dodges CORS + URL expiry)."""
+    import httpx
+    from fastapi.responses import StreamingResponse
+    from sqlalchemy import select as _select
+    from db.models import RetellCall
+
+    row = (await db.execute(
+        _select(RetellCall.recording_url).where(RetellCall.retell_call_id == call_id)
+    )).one_or_none()
+    url = row[0] if row else None
+    if not url:
+        # Try to refresh the URL from Retell.
+        from api.utils.retell_utils import get_retell_config
+        from sync.retell_client import RetellClient
+        cfg = await get_retell_config()
+        if cfg.api_key:
+            call = await RetellClient(cfg.api_key).get_call(call_id)
+            url = (call or {}).get("recording_url")
+    if not url:
+        raise HTTPException(status_code=404, detail="No recording for this call.")
+
+    async def _stream():
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            async with client.stream("GET", url) as resp:
+                resp.raise_for_status()
+                async for chunk in resp.aiter_bytes():
+                    yield chunk
+
+    return StreamingResponse(_stream(), media_type="audio/mpeg")
+
+
+@router.get("/ai/data-quality")
+async def ai_data_quality(db: AsyncSession = Depends(get_db)):
+    """AI data-quality tiles (leaks, ownerless wons, tag gaps, source='call', freshness)."""
+    return {"data": await get_ai_data_quality(db)}
+
+
+@router.get("/ai/vera-chat-contacts")
+async def ai_vera_chat_contacts(
+    limit: int = Query(5, ge=1, le=20),
+    db: AsyncSession = Depends(get_db),
+):
+    """Vera-chat opps (folded into Appointwise) — for fact-checking the classification."""
+    return {"data": await get_vera_chat_contacts(db, limit)}
 
 
 @router.get("/slwa/weekly", response_model=SLWADashboardResponse)

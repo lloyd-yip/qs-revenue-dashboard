@@ -192,6 +192,7 @@
       <div class="btn-row">
         <button class="btn-secondary" id="btn-retell-save">Save API key</button>
         <button class="btn-primary" id="btn-retell-test">Test connection</button>
+        <button class="btn-secondary" id="btn-retell-sync" style="display:none">Sync calls now</button>
         <button class="btn-danger" id="btn-retell-disconnect" style="display:none">Disconnect</button>
         <span class="msg" id="retell-msg"></span>
       </div>
@@ -360,6 +361,7 @@
     $("retell-api-key").placeholder = s.api_key_set ? `saved (${s.api_key_hint})` : "paste Retell API key";
     $("src-retell-key").textContent = `· ${SRC_LABELS[s.api_key_source] || ""}`;
     $("btn-retell-disconnect").style.display = s.api_key_set ? "" : "none";
+    $("btn-retell-sync").style.display = s.api_key_set ? "" : "none";
     $("btn-retell-test").disabled = !s.api_key_set;
   }
 
@@ -406,6 +408,20 @@
       setRetellMsg(`Test failed: ${err.message}`, false);
     } finally {
       $("btn-retell-test").disabled = false;
+    }
+  });
+
+  $("btn-retell-sync").addEventListener("click", async () => {
+    $("btn-retell-sync").disabled = true;
+    setRetellMsg("Sync started in the background…", true);
+    try {
+      const resp = await fetch(`${API}/api/sync/retell`, { method: "POST", headers: HEADERS });
+      if (!resp.ok) throw new Error((await resp.json()).detail || `HTTP ${resp.status}`);
+      setRetellMsg("Retell call sync triggered — check the Retell channel page shortly.", true);
+    } catch (err) {
+      setRetellMsg(`Sync failed: ${err.message}`, false);
+    } finally {
+      $("btn-retell-sync").disabled = false;
     }
   });
 

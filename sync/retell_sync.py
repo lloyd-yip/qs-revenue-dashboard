@@ -1,0 +1,140 @@
+"""Retell call sync — pull voice calls from Retell, match to GHL contacts by phone, upsert.
+
+Matching uses opportunities.contact_phone (populated from the GHL contact at opportunity
+sync time). Match is by normalized last-10-digits, so +1/country-code differences don't
+break it. Re-runnable: upsert on retell_call_id, match fields refreshed each run (so calls
+match as soon as contact_phone is backfilled).
+"""
+
+import logging
+from datetime import datetime, timezone
+
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+from api.utils.retell_utils import get_retell_config
+from db.models import Opportunity, RetellCall
+from db.session import AsyncSessionLocal
+from sync.retell_client import RetellClient
+
+logger = logging.getLogger(__name__)
+
+
+def normalize_phone(phone: str | None) -> str | None:
+    """Return the last 10 digits of a phone number (US-friendly), or None."""
+    if not phone:
+        return None
+    digits = "".join(ch for ch in str(phone) if ch.isdigit())
+    if len(digits) < 10:
+        return digits or None
+    return digits[-10:]
+
+
+def _ms_to_dt(ms: int | None) -> datetime | None:
+    if not ms:
+        return None
+    try:
+        return datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc)
+    except (ValueError, OSError, TypeError):
+        return None
+
+
+async def _build_phone_index(session) -> dict[str, tuple[str, str]]:
+    """Map normalized phone → (ghl_contact_id, contact_name) from stored opportunities."""
+    result = await session.execute(
+        select(
+            Opportunity.contact_phone,
+            Opportunity.ghl_contact_id,
+            Opportunity.opportunity_name,
+        ).where(Opportunity.contact_phone.isnot(None))
+    )
+    index: dict[str, tuple[str, str]] = {}
+    for phone, contact_id, name in result.all():
+        norm = normalize_phone(phone)
+        if norm and contact_id and norm not in index:
+            index[norm] = (contact_id, name or "")
+    return index
+
+
+def _row_from_call(call: dict, phone_index: dict[str, tuple[str, str]]) -> dict:
+    """Build a retell_calls upsert row from a raw Retell call dict + phone match."""
+    to_num = call.get("to_number")
+    from_num = call.get("from_number")
+    # The customer number is whichever side isn't the agent — try both against the index.
+    match = None
+    for candidate in (to_num, from_num):
+        norm = normalize_phone(candidate)
+        if norm and norm in phone_index:
+            match = phone_index[norm]
+            break
+
+    analysis = call.get("call_analysis") or None
+    duration_ms = call.get("duration_ms")
+    return {
+        "retell_call_id": call.get("call_id"),
+        "agent_id": call.get("agent_id"),
+        "direction": call.get("direction"),
+        "from_number": from_num,
+        "to_number": to_num,
+        "started_at": _ms_to_dt(call.get("start_timestamp")),
+        "duration_sec": int(duration_ms / 1000) if duration_ms else None,
+        "call_status": call.get("call_status"),
+        "disconnect_reason": call.get("disconnection_reason"),
+        "recording_url": call.get("recording_url"),
+        "transcript": call.get("transcript"),
+        "analysis": analysis,
+        "ghl_contact_id": match[0] if match else None,
+        "ghl_contact_name": match[1] if match else None,
+        "match_method": "phone_exact" if match else "unmatched",
+        "match_confidence": "HIGH" if match else None,
+    }
+
+
+async def run_retell_sync(max_calls: int | None = None, after_ms: int | None = None) -> dict:
+    """Pull Retell calls, match to GHL contacts, upsert. Returns a summary dict.
+
+    No-op (returns 'skipped') when no API key is configured.
+    """
+    cfg = await get_retell_config()
+    if not cfg.api_key:
+        logger.info("Retell sync skipped — no API key configured")
+        return {"status": "skipped", "reason": "no_api_key", "calls": 0, "matched": 0}
+
+    client = RetellClient(cfg.api_key)
+    processed = 0
+    matched = 0
+
+    async with AsyncSessionLocal() as session:
+        phone_index = await _build_phone_index(session)
+
+        batch: list[dict] = []
+        async for call in client.list_calls(max_calls=max_calls, after_ms=after_ms):
+            if not call.get("call_id"):
+                continue
+            row = _row_from_call(call, phone_index)
+            if row["ghl_contact_id"]:
+                matched += 1
+            batch.append(row)
+            processed += 1
+            if len(batch) >= 200:
+                await _upsert_calls(session, batch)
+                batch = []
+        if batch:
+            await _upsert_calls(session, batch)
+
+    logger.info("Retell sync: %d calls processed, %d matched to GHL contacts", processed, matched)
+    return {"status": "completed", "calls": processed, "matched": matched}
+
+
+async def _upsert_calls(session, rows: list[dict]) -> None:
+    for row in rows:
+        stmt = (
+            pg_insert(RetellCall)
+            .values(**row)
+            .on_conflict_do_update(
+                index_elements=["retell_call_id"],
+                set_={k: v for k, v in row.items() if k != "retell_call_id"},
+            )
+        )
+        await session.execute(stmt)
+    await session.commit()

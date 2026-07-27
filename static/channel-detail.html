@@ -121,6 +121,12 @@
     let END = params.get('end') || today();
     let DATE_BY = params.get('date_by') || 'appointment';
     const RETELL_CHANNEL = 'Retell (VERA)';
+    const APPOINTWISE_CHANNEL = 'AI Bot (Appointwise)';
+    const AI_CHANNELS = new Set([RETELL_CHANNEL, APPOINTWISE_CHANNEL]);
+    const isAI = AI_CHANNELS.has(CHANNEL);
+    const GHL_CONTACT_BASE = 'https://app.gohighlevel.com/v2/location/G7ZOWCq78JrzUjlLMCxt/contacts/detail';
+    const RETELL_CALL_BASE = 'https://dashboard.retellai.com/calls';
+    let dqMode = 'all';
 
     // ── formatting ──
     const money = v => (v || v === 0) ? '$' + Math.round(v).toLocaleString() : '—';
@@ -218,14 +224,108 @@
         <tbody>${rows}</tbody></table></div>`;
     }
 
-    function retellSection() {
-      // Part 2 wires the live voice/DQ table here. Until the connector exists, show a pointer.
-      return `<div class="section"><h2>Voice Calls / Data Quality</h2>
-        <div class="note">Retell voice-call reconciliation and recordings appear here once the Retell connector is set up.
-        Add your Retell API key in <a href="/settings">Settings → Connectors</a>.</div></div>`;
+    function renderAiSection(ai) {
+      if (!ai) return '';
+      const c = ai.confidence || {};
+      const total = (c.source_confirmed || 0) + (c.tag_inferred || 0);
+      const tagPct = total ? Math.round((c.tag_inferred / total) * 100) : 0;
+      const callsTile = ai.calls
+        ? statCard('Voice Calls', num(ai.calls.count), `${ai.calls.minutes} min · ${ai.calls.matched} matched`)
+        : '';
+      return `<div class="section"><h2>AI Booking Performance</h2><div class="stat-grid">
+        ${statCard('Booked', num(ai.booked))}
+        ${statCard('Held', num(ai.held), 'showed up')}
+        ${statCard('Held Rate', pct(ai.held_rate), null, rateCls(ai.held_rate, 0.5, 0.25))}
+        ${statCard('Won', num(ai.won))}
+        ${statCard('Cash', money(ai.cash_collected), null, 'pos')}
+        ${callsTile}
+      </div>
+      <div class="note" style="margin-top:12px">
+        <strong>Attribution confidence:</strong> ${num(c.source_confirmed)} source-confirmed ·
+        ${num(c.tag_inferred)} tag-inferred (${tagPct}%). Tag-inferred = bot-worked, booked during
+        engagement (empty booking source). The upstream fix (bot stamps source at booking) migrates
+        these to high-confidence over time.
+      </div></div>`;
     }
 
-    function render(detail, closes) {
+    function voiceDQSection() {
+      // Container + toggle; rows load lazily via loadVoiceCalls().
+      return `<div class="section"><h2>Voice Calls / Data Quality</h2>
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <button class="btn ghost" id="dq-all" onclick="setDqMode('all')">All calls</button>
+          <button class="btn ghost" id="dq-dq" onclick="setDqMode('dq')">Disqualified only</button>
+        </div>
+        <div id="voice-calls"><div class="loading">Loading calls…</div></div></div>`;
+    }
+
+    window.setDqMode = function (mode) {
+      dqMode = mode;
+      document.getElementById('dq-all').className = 'btn ' + (mode === 'all' ? 'primary' : 'ghost');
+      document.getElementById('dq-dq').className = 'btn ' + (mode === 'dq' ? 'primary' : 'ghost');
+      loadVoiceCalls();
+    };
+
+    async function loadVoiceCalls() {
+      const host = document.getElementById('voice-calls');
+      if (!host) return;
+      host.innerHTML = '<div class="loading">Loading calls…</div>';
+      try {
+        const j = await apiFetch(`/api/dashboard/retell/calls?filter=${dqMode}&start=${START}&end=${END}&date_by=${DATE_BY}`);
+        const calls = j.data;
+        if (!calls.length) {
+          host.innerHTML = `<div class="empty">No Retell calls for this range${dqMode === 'dq' ? ' (disqualified filter)' : ''}. ` +
+            `If you just added the API key, run a sync from <a class="link" href="/settings">Settings</a>.</div>`;
+          return;
+        }
+        const rows = calls.map(c => {
+          const when = c.started_at ? new Date(c.started_at).toLocaleString() : '—';
+          const mins = c.duration_sec ? (c.duration_sec / 60).toFixed(1) + 'm' : '—';
+          const contact = c.ghl_contact_name || (c.ghl_contact_id ? 'Matched' : '—');
+          const conf = c.match_confidence
+            ? `<span class="pill">${c.match_confidence}</span>`
+            : '<span class="pill" style="background:rgba(148,163,184,.15);color:var(--text2)">unmatched</span>';
+          const ghlLink = c.ghl_contact_id
+            ? `<a class="link" href="${GHL_CONTACT_BASE}/${c.ghl_contact_id}" target="_blank">GHL ↗</a>` : '—';
+          const retellLink = `<a class="link" href="${RETELL_CALL_BASE}/${c.retell_call_id}" target="_blank">Retell ↗</a>`;
+          const player = c.has_recording
+            ? `<audio controls preload="none" style="height:32px;max-width:220px" src="/api/dashboard/retell/recording/${encodeURIComponent(c.retell_call_id)}"></audio>`
+            : '<span style="color:var(--text2)">no recording</span>';
+          return `<tr>
+            <td>${when}</td>
+            <td>${contact} ${conf}</td>
+            <td>${c.to_number || c.from_number || '—'}</td>
+            <td class="num">${mins}</td>
+            <td>${c.call_status || '—'}${c.sentiment ? ' · ' + c.sentiment : ''}</td>
+            <td>${ghlLink} · ${retellLink}</td>
+            <td>${player}</td>
+          </tr>`;
+        }).join('');
+        host.innerHTML = `<div class="table-scroll"><table>
+          <thead><tr><th>When</th><th>Contact</th><th>Number</th><th class="num">Dur</th>
+          <th>Outcome</th><th>Open in</th><th>Recording</th></tr></thead>
+          <tbody>${rows}</tbody></table></div>`;
+      } catch (e) {
+        host.innerHTML = `<div class="empty">Failed to load calls. ${e.message}</div>`;
+      }
+    }
+
+    function renderDqTiles(dq) {
+      if (!dq) return '';
+      const tile = (label, val, warnIf) => {
+        const bad = warnIf !== undefined && val > warnIf;
+        return statCard(label, num(val), null, bad ? 'val-bad' : '');
+      };
+      const fresh = dq.last_synced_at ? new Date(dq.last_synced_at).toLocaleString() : '—';
+      return `<div class="section"><h2>Data Quality</h2><div class="stat-grid">
+        ${tile('Same-contact ≥2 open', dq.same_contact_multi_open, 0)}
+        ${tile('$0 / ownerless wons', dq.zero_or_ownerless_wons, 3)}
+        ${tile('AI source, no tag', dq.method_token_without_tag, 0)}
+        ${tile("source='call' (phone/manual)", dq.source_call_pending)}
+        ${statCard('Last synced', fresh)}
+      </div></div>`;
+    }
+
+    function render(detail, closes, ai, dqTiles) {
       const h = detail.headline;
       document.getElementById('ch-name').textContent = detail.channel;
       document.getElementById('ch-subtitle').textContent =
@@ -258,10 +358,14 @@
       const quality = `<div class="section"><h2>Lead Quality (1st-call shows)</h2>${renderQualityBar(h)}</div>`;
       const reps = `<div class="section"><h2>Rep Breakdown</h2>${renderRepTable(detail.reps)}</div>`;
       const closesHtml = `<div class="section"><h2>Closed Deals</h2>${renderCloses(closes)}</div>`;
-      const retell = detail.channel === RETELL_CHANNEL ? retellSection() : '';
+      const aiHtml = renderAiSection(ai);
+      const dqHtml = isAI ? renderDqTiles(dqTiles) : '';
+      const voiceHtml = detail.channel === RETELL_CHANNEL ? voiceDQSection() : '';
 
-      document.getElementById('content').innerHTML = funnel + revenue + roi + quality + reps + closesHtml + retell;
+      document.getElementById('content').innerHTML =
+        aiHtml + funnel + revenue + roi + quality + reps + voiceHtml + closesHtml + dqHtml;
       wireCost(detail.roi);
+      if (detail.channel === RETELL_CHANNEL) loadVoiceCalls();
     }
 
     function wireCost() {
@@ -285,11 +389,16 @@
     async function load() {
       document.getElementById('content').innerHTML = '<div class="loading">Loading channel metrics…</div>';
       try {
-        const [detail, closes] = await Promise.all([
+        const reqs = [
           apiFetch(`/api/dashboard/channel-detail?${qs()}`),
           apiFetch(`/api/dashboard/channels/closes?${qs()}`),
-        ]);
-        render(detail.data, closes.data);
+        ];
+        if (isAI) {
+          reqs.push(apiFetch(`/api/dashboard/channel-detail/ai?${qs()}`));
+          reqs.push(apiFetch(`/api/dashboard/ai/data-quality`));
+        }
+        const [detail, closes, ai, dq] = await Promise.all(reqs);
+        render(detail.data, closes.data, ai ? ai.data : null, dq ? dq.data : null);
       } catch (e) {
         document.getElementById('content').innerHTML =
           `<div class="empty">Failed to load. ${e.message} <button class="btn" onclick="load()">Retry</button></div>`;

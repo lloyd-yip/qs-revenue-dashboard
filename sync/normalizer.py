@@ -70,6 +70,72 @@ def resolve_canonical_channel(
     return CHANNEL_UNKNOWN
 
 
+# ── AI-channel classification (tag-first, verified against the GHL tag registry) ──
+# Retell (VERA) = AI *voice* only. AI Bot (Appointwise) = AI *SMS* + Vera *chat*.
+# Booking-attribution: a definitive AI signal (Vera booking tag or AI booking source)
+# wins over first-touch UTM, so a lead sourced from e.g. Meta but *booked* by the AI
+# caller counts as Retell. The broad "ai bot" worked-contact tag is only trusted when the
+# booking source is empty (a real non-AI source like webinar/email wins) — 235 of the ~249
+# SMS bookings carry the tag with an empty source ("bot-worked, booked during engagement").
+RETELL_VERA_CHANNEL = "Retell (VERA)"
+APPOINTWISE_CHANNEL = "AI Bot (Appointwise)"
+
+# Definitive AI booking sources (op_book_campaign_source), verified vocabulary.
+_AI_SOURCE_VOICE = "ai-caller"
+_AI_SOURCE_CHAT = "ai-chat"
+_AI_SOURCE_SMS = "ai_bot"
+
+
+def _normalize_tags(contact_tags: list[str] | None) -> set[str]:
+    return {t.strip().lower() for t in (contact_tags or []) if t and t.strip()}
+
+
+def classify_ai_channel(
+    contact_tags: list[str] | None,
+    op_book_campaign_source: str | None,
+) -> str | None:
+    """Return "Retell (VERA)" (voice), "AI Bot (Appointwise)" (SMS+chat), or None (not AI).
+
+    Precedence (verified, zero voice↔chat overlap):
+      Voice  = tag vera-voice-booked → source ai-caller → tag vera-booked (w/o chat tag)
+      Chat   = tag vera-chat-booked → source ai-chat            → folded into Appointwise
+      SMS    = source ai_bot → tag "ai bot" WITH an empty booking source → Appointwise
+    """
+    tags = _normalize_tags(contact_tags)
+    src = (op_book_campaign_source or "").strip().lower()
+
+    # Definitive Vera booking tags (precise, stamped at booking) — win over source.
+    if "vera-voice-booked" in tags:
+        return RETELL_VERA_CHANNEL
+    if "vera-chat-booked" in tags:
+        return APPOINTWISE_CHANNEL
+
+    # Definitive AI booking source (overrides first-touch UTM).
+    if src == _AI_SOURCE_VOICE:
+        return RETELL_VERA_CHANNEL
+    if src == _AI_SOURCE_CHAT:
+        return APPOINTWISE_CHANNEL
+    if src == _AI_SOURCE_SMS:
+        return APPOINTWISE_CHANNEL
+
+    # Generic Vera booking tag (only 3 opps carry this without a specific tag) → Voice.
+    if "vera-booked" in tags:
+        return RETELL_VERA_CHANNEL
+
+    # Broad SMS worked-contact tag — trusted only when no real booking source competes.
+    if not src and "ai bot" in tags:
+        return APPOINTWISE_CHANNEL
+
+    return None
+
+
+def ai_attribution_confidence(op_book_campaign_source: str | None) -> str:
+    """For an AI-classified opp: 'source' if a definitive AI booking source is present,
+    else 'tag' (inferred from the contact tag). Drives the attribution-confidence tile."""
+    src = (op_book_campaign_source or "").strip().lower()
+    return "source" if src in {_AI_SOURCE_VOICE, _AI_SOURCE_CHAT, _AI_SOURCE_SMS} else "tag"
+
+
 def compute_compliance_failure(
     pipeline_stage_id: str | None,
     call1_appointment_date: datetime | None,

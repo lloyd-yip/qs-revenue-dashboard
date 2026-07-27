@@ -85,6 +85,18 @@ def create_scheduler() -> AsyncIOScheduler:
         max_instances=1,
     )
 
+    # Daily Retell voice-call sync — 21:30 UTC. Pulls Retell calls (external to GHL) and
+    # matches them to GHL contacts by phone. No-op when no Retell API key is configured.
+    scheduler.add_job(
+        _run_retell_sync,
+        trigger=CronTrigger(hour=21, minute=30, timezone="UTC"),
+        id="daily_retell_sync",
+        name="Daily Retell voice-call sync",
+        replace_existing=True,
+        misfire_grace_time=600,
+        max_instances=1,
+    )
+
     # Weekly full sync on Sundays at configured hour — catches any data GHL didn't surface incrementally
     scheduler.add_job(
         _run_full,
@@ -148,6 +160,16 @@ async def _run_incremental() -> None:
         logger.info("Scheduler: incremental sync complete — %s", summary)
     except Exception as exc:
         logger.error("Scheduler: incremental sync failed — %s", exc)
+
+
+async def _run_retell_sync() -> None:
+    logger.info("Scheduler: starting daily Retell voice-call sync")
+    try:
+        from sync.retell_sync import run_retell_sync
+        summary = await run_retell_sync()
+        logger.info("Scheduler: Retell sync complete — %s", summary)
+    except Exception as exc:
+        logger.error("Scheduler: Retell sync failed — %s", exc)
 
 
 async def _run_full() -> None:

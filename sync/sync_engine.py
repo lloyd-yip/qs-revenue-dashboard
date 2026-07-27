@@ -35,6 +35,7 @@ from sync.ghl_client import (
 SALES_PIPELINE_ID  = "zbI8YxmB9qhk1h4cInnq"
 UPSELL_PIPELINE_ID = "NjidsHukHHUpYtTcQefX"
 from sync.normalizer import (
+    classify_ai_channel,
     compute_compliance_failure,
     compute_outcome_unfilled,
     compute_post_call_note_word_count,
@@ -259,10 +260,24 @@ async def _build_opportunity_row(
     # contact_created_at: fetch from GHL contact record (dateAdded).
     # Only fetched if not already stored — incremental syncs avoid re-fetching.
     contact_created_at: datetime | None = None
+    contact_tags: list[str] | None = None
+    contact_email: str | None = None
+    contact_phone: str | None = None
     if contact_id and not is_upsell:
         contact = await ghl_client.get_contact(contact_id)
         if contact:
             contact_created_at = parse_ghl_datetime(contact.get("dateAdded"))
+            raw_tags = contact.get("tags")
+            contact_tags = [str(t) for t in raw_tags if t] if isinstance(raw_tags, list) else None
+            contact_email = (contact.get("email") or "").strip().lower() or None
+            contact_phone = (contact.get("phone") or "").strip() or None
+
+    # Tag-first AI-channel classification overrides the source-based channel for AI-booked
+    # opps: a definitive Vera booking tag / AI booking source wins over first-touch UTM
+    # (a Meta lead booked by the AI caller is a Retell booking). Non-AI opps are untouched.
+    ai_channel = classify_ai_channel(contact_tags, op_book_source)
+    if ai_channel:
+        canonical_channel = ai_channel
 
     # close_date: automation-set custom field wonlostabandoned_date (vzU9IqXPuwAYkKrJ3I3F).
     # Written by GHL automation when deal status changes to won/lost/abandoned — stable and precise.
@@ -368,6 +383,9 @@ async def _build_opportunity_row(
         "outcome_unfilled": outcome_unfilled,
         "post_call_note_word_count": post_call_note_word_count,
         "contact_created_at": contact_created_at,
+        "contact_tags": contact_tags,
+        "contact_email": contact_email,
+        "contact_phone": contact_phone,
         "close_date": close_date,
         "created_at_ghl": parse_ghl_datetime(opp.get("createdAt")),
         "updated_at_ghl": parse_ghl_datetime(opp.get("updatedAt")),

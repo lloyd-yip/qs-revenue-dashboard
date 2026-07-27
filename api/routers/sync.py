@@ -90,6 +90,43 @@ async def backfill_attribution():
         return {"ok": False, "error": str(exc)}
 
 
+@router.post("/backfill-contact-tags")
+async def backfill_contact_tags(background_tasks: BackgroundTasks, only_missing: bool = True):
+    """Fetch GHL contact tags/email/phone for sales opps + reclassify AI channels.
+
+    GHL-heavy (one cached contact fetch per unique contact) — runs in the background.
+    only_missing=True limits to opps without tags yet. The fast alternative to a full
+    re-sync when only the new contact fields + AI reclassification are needed.
+    """
+    background_tasks.add_task(_run_contact_backfill_background, only_missing)
+    return {"message": "Contact-tag backfill triggered. Check Railway logs / status.",
+            "only_missing": only_missing}
+
+
+@router.post("/reclassify-ai")
+async def reclassify_ai():
+    """One-shot: recompute AI-channel classification from ALREADY-stored contact tags.
+
+    No GHL calls — pure DB pass. Use after a tag backfill/full sync, or to re-apply
+    classification-logic changes. Fast + idempotent.
+    """
+    from sync.contact_backfill import reclassify_ai_from_stored_tags
+
+    try:
+        stats = await reclassify_ai_from_stored_tags()
+        return {"ok": True, "stats": stats}
+    except Exception as exc:
+        logger.error("AI reclassification failed: %s", exc)
+        return {"ok": False, "error": str(exc)}
+
+
+@router.post("/retell")
+async def trigger_retell_sync(background_tasks: BackgroundTasks):
+    """Pull Retell voice calls, match to GHL contacts by phone, upsert. Background."""
+    background_tasks.add_task(_run_retell_sync_background)
+    return {"message": "Retell call sync triggered. Check /api/dashboard/retell/calls after it runs."}
+
+
 @router.post("/backfill-appointment-owners")
 async def backfill_appointment_owners():
     """One-shot: recover rep for owner-less deals via the Call-2 appointment's assigned rep. Idempotent."""
@@ -219,3 +256,21 @@ async def _run_resolver_background(lookback_days: int) -> None:
         logger.info("Manual resolver complete: %s", summary)
     except Exception as exc:
         logger.error("Manual resolver failed: %s", exc)
+
+
+async def _run_contact_backfill_background(only_missing: bool) -> None:
+    from sync.contact_backfill import backfill_contact_data
+    try:
+        stats = await backfill_contact_data(only_missing=only_missing)
+        logger.info("Contact-tag backfill complete: %s", stats)
+    except Exception as exc:
+        logger.error("Contact-tag backfill failed: %s", exc)
+
+
+async def _run_retell_sync_background() -> None:
+    from sync.retell_sync import run_retell_sync
+    try:
+        summary = await run_retell_sync()
+        logger.info("Retell sync complete: %s", summary)
+    except Exception as exc:
+        logger.error("Retell sync failed: %s", exc)
