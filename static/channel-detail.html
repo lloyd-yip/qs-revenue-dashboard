@@ -33,6 +33,11 @@
     .pill { font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px; background: rgba(99,102,241,0.15); color: var(--accent2); letter-spacing: .2px; }
 
     /* Controls */
+    .header-controls { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+    .presets { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+    .preset-btn { background: var(--surface); border: 1px solid var(--border); color: var(--text2); border-radius: 999px; padding: 5px 12px; font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer; transition: color .15s, border-color .15s, background .15s; }
+    .preset-btn:hover { color: var(--text); border-color: var(--accent); }
+    .preset-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
     .controls { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
     .controls label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--text2); font-weight: 500; }
     .controls input, .controls select { background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 7px 10px; font-family: inherit; font-size: 13px; }
@@ -95,17 +100,26 @@
         <h1><span id="ch-name">Channel</span> <span class="pill" id="ch-pill" style="display:none"></span></h1>
         <div class="subtitle" id="ch-subtitle">Loading…</div>
       </div>
-      <div class="controls">
-        <label>From<input type="date" id="f-start"></label>
-        <label>To<input type="date" id="f-end"></label>
-        <label>Date by
-          <select id="f-dateby">
-            <option value="appointment">Appointment</option>
-            <option value="booked">Booked</option>
-            <option value="created">Created</option>
-          </select>
-        </label>
-        <button class="btn" id="apply-btn">Apply</button>
+      <div class="header-controls">
+        <div class="presets" id="presets">
+          <button class="preset-btn" data-preset="7d">Last 7 days</button>
+          <button class="preset-btn" data-preset="30d">Last 30D</button>
+          <button class="preset-btn" data-preset="thismonth">This month</button>
+          <button class="preset-btn" data-preset="lastmonth">Last month</button>
+          <button class="preset-btn" data-preset="3m">Last 3 months</button>
+        </div>
+        <div class="controls">
+          <label>From<input type="date" id="f-start"></label>
+          <label>To<input type="date" id="f-end"></label>
+          <label>Date by
+            <select id="f-dateby">
+              <option value="appointment">Appointment</option>
+              <option value="booked">Booked</option>
+              <option value="created">Created</option>
+            </select>
+          </label>
+          <button class="btn" id="apply-btn">Apply</button>
+        </div>
       </div>
     </div>
 
@@ -405,22 +419,57 @@
       }
     }
 
+    // Preset date ranges (UTC, matching the app's date semantics).
+    function presetRange(key) {
+      const iso = d => d.toISOString().slice(0, 10);
+      const now = new Date();
+      const y = now.getUTCFullYear(), m = now.getUTCMonth();
+      let s, e = now;
+      if (key === '7d') { s = new Date(now); s.setUTCDate(now.getUTCDate() - 6); }
+      else if (key === '30d') { s = new Date(now); s.setUTCDate(now.getUTCDate() - 29); }
+      else if (key === '3m') { s = new Date(now); s.setUTCMonth(now.getUTCMonth() - 3); }
+      else if (key === 'thismonth') { s = new Date(Date.UTC(y, m, 1)); }
+      else if (key === 'lastmonth') { s = new Date(Date.UTC(y, m - 1, 1)); e = new Date(Date.UTC(y, m, 0)); }
+      else { s = now; }
+      return [iso(s), iso(e)];
+    }
+
+    function highlightPreset() {
+      document.querySelectorAll('.preset-btn').forEach(b => {
+        const [s, e] = presetRange(b.dataset.preset);
+        b.classList.toggle('active', s === START && e === END);
+      });
+    }
+
+    function commitRange() {
+      const u = new URL(window.location);
+      u.searchParams.set('start', START); u.searchParams.set('end', END); u.searchParams.set('date_by', DATE_BY);
+      history.replaceState(null, '', u);
+      document.getElementById('f-start').value = START;
+      document.getElementById('f-end').value = END;
+      document.getElementById('back-link').href = `/dashboard?start=${START}&end=${END}&date_by=${DATE_BY}`;
+      highlightPreset();
+      load();
+    }
+
     function initControls() {
       document.getElementById('f-start').value = START;
       document.getElementById('f-end').value = END;
       document.getElementById('f-dateby').value = DATE_BY;
-      // preserve current filter on the back link
       document.getElementById('back-link').href = `/dashboard?start=${START}&end=${END}&date_by=${DATE_BY}`;
       document.getElementById('apply-btn').addEventListener('click', () => {
         START = document.getElementById('f-start').value;
         END = document.getElementById('f-end').value;
         DATE_BY = document.getElementById('f-dateby').value;
-        const u = new URL(window.location);
-        u.searchParams.set('start', START); u.searchParams.set('end', END); u.searchParams.set('date_by', DATE_BY);
-        history.replaceState(null, '', u);
-        document.getElementById('back-link').href = `/dashboard?start=${START}&end=${END}&date_by=${DATE_BY}`;
-        load();
+        commitRange();
       });
+      document.querySelectorAll('.preset-btn').forEach(b => {
+        b.addEventListener('click', () => {
+          [START, END] = presetRange(b.dataset.preset);
+          commitRange();
+        });
+      });
+      highlightPreset();
     }
 
     initControls();
