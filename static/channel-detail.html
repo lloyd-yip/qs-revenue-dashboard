@@ -156,8 +156,10 @@
       return res.json();
     }
 
-    function statCard(label, value, sub, cls) {
-      return `<div class="stat"><div class="label">${label}</div><div class="value ${cls || ''}">${value}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
+    const esc = s => String(s).replace(/"/g, '&quot;');
+    function statCard(label, value, sub, cls, tip) {
+      const t = tip ? ` data-tip="${esc(tip)}"` : '';
+      return `<div class="stat"${t}><div class="label">${label}</div><div class="value ${cls || ''}">${value}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
     }
 
     const LQ_COLORS = { great: '#22c55e', ok: '#84cc16', barely: '#f59e0b', bad: '#ef4444', missing: '#64748b' };
@@ -182,7 +184,7 @@
     function renderRoi(roi) {
       const set = roi.is_set;
       const costVal = set ? Math.round(roi.cost) : '';
-      const m = (label, val, isX) => statCard(label, val === null || val === undefined ? '—' : (isX ? val + '×' : money(val)));
+      const m = (label, val, isX, tip) => statCard(label, val === null || val === undefined ? '—' : (isX ? val + '×' : money(val)), null, null, tip);
       return `
         <div class="roi-card">
           <div class="roi-input-row">
@@ -194,11 +196,11 @@
             <span class="roi-hint">${set ? 'ROI uses this cost for ' + START + ' → ' + END : 'Enter the channel cost (ad spend / tool subscription) for this range to compute ROI.'}</span>
           </div>
           <div class="roi-metrics">
-            ${m('Cash ROI', roi.roi, true)}
-            ${m('Contract ROI', roi.contract_roi, true)}
-            ${m('Cost / Show', roi.cost_per_show)}
-            ${m('Cost / Qualified', roi.cost_per_qualified)}
-            ${m('Cost / Close', roi.cost_per_close)}
+            ${m('Cash ROI', roi.roi, true, 'Cash Collected ÷ Channel cost for this range. e.g. 8× = $8 collected per $1 spent.')}
+            ${m('Contract ROI', roi.contract_roi, true, 'Contracted Total ÷ Channel cost (forward-looking — counts projected full contract, not just cash in yet).')}
+            ${m('Cost / Show', roi.cost_per_show, false, 'Channel cost ÷ Shows — what it costs to get one prospect to show up.')}
+            ${m('Cost / Qualified', roi.cost_per_qualified, false, 'Channel cost ÷ Qualified shows.')}
+            ${m('Cost / Close', roi.cost_per_close, false, 'Channel cost ÷ Units Closed — customer acquisition cost for this channel.')}
           </div>
         </div>`;
     }
@@ -244,14 +246,20 @@
       const total = (c.source_confirmed || 0) + (c.tag_inferred || 0);
       const tagPct = total ? Math.round((c.tag_inferred / total) * 100) : 0;
       const callsTile = ai.calls
-        ? statCard('Voice Calls', num(ai.calls.count), `${ai.calls.minutes} min · ${ai.calls.matched} matched`)
+        ? statCard('Voice Calls', num(ai.calls.count), `${ai.calls.minutes} min · ${ai.calls.matched} matched`, null,
+            'Retell voice calls pulled from the Retell API (external to GHL — the only source of call volume). Minutes = total talk time; matched = linked to a GHL contact by phone. Run the Retell sync in Settings if this is 0.')
         : '';
       return `<div class="section"><h2>AI Booking Performance</h2><div class="stat-grid">
-        ${statCard('Booked', num(ai.booked))}
-        ${statCard('Held', num(ai.held), 'showed up')}
-        ${statCard('Held Rate', pct(ai.held_rate), null, rateCls(ai.held_rate, 0.5, 0.25))}
-        ${statCard('Won', num(ai.won))}
-        ${statCard('Cash', money(ai.cash_collected), null, 'pos')}
+        ${statCard('Booked', num(ai.booked), null, null,
+          'AI-booked opportunities in this channel — classified by GHL booking tag / source. Scope: Sales pipeline only, internal @quantum-scaling.com / @ig-institute.com contacts excluded.')}
+        ${statCard('Held', num(ai.held), 'showed up', null,
+          "Booked calls the prospect actually attended. Stage in {1st Call Done, 2nd Call Done, Warm List, Hot List, Deal Won, Long Term Nurture, Hot Long Term Nurture}, OR Call-1 status 'Showed'.")}
+        ${statCard('Held Rate', pct(ai.held_rate), null, rateCls(ai.held_rate, 0.5, 0.25),
+          'Held ÷ Booked — how often an AI-booked call actually happens.')}
+        ${statCard('Won', num(ai.won), null, null,
+          'Booked opportunities that reached the Deal Won stage.')}
+        ${statCard('Cash', money(ai.cash_collected), null, 'pos',
+          "Cash collected to date on this channel's won deals (all installments, reconciled).")}
         ${callsTile}
       </div>
       <div class="note" style="margin-top:12px">
@@ -325,17 +333,22 @@
 
     function renderDqTiles(dq) {
       if (!dq) return '';
-      const tile = (label, val, warnIf) => {
+      const tile = (label, val, warnIf, tip) => {
         const bad = warnIf !== undefined && val > warnIf;
-        return statCard(label, num(val), null, bad ? 'val-bad' : '');
+        return statCard(label, num(val), null, bad ? 'val-bad' : '', tip);
       };
       const fresh = dq.last_synced_at ? new Date(dq.last_synced_at).toLocaleString() : '—';
       return `<div class="section"><h2>Data Quality</h2><div class="stat-grid">
-        ${tile('Same-contact ≥2 open', dq.same_contact_multi_open, 0)}
-        ${tile('$0 / ownerless wons', dq.zero_or_ownerless_wons, 3)}
-        ${tile('AI source, no tag', dq.method_token_without_tag, 0)}
-        ${tile("source='call' (phone/manual)", dq.source_call_pending)}
-        ${statCard('Last synced', fresh)}
+        ${tile('Same-contact ≥2 open', dq.same_contact_multi_open, 0,
+          'Contacts with 2+ still-open opportunities in the Sales pipeline (not won / lost / DQ / no-show / cancelled). Expect 0 — a duplicate/leak alert.')}
+        ${tile('$0 / ownerless wons', dq.zero_or_ownerless_wons, 3,
+          'Won deals with no rep owner assigned. ~3 are known; anything above that is worth checking.')}
+        ${tile('AI source, no tag', dq.method_token_without_tag, 0,
+          'Opps with a definitive AI booking source (ai-caller / ai-chat / ai_bot) but no contact tags synced yet. Drops to ~0 after the tag backfill runs.')}
+        ${tile("source='call' (phone/manual)", dq.source_call_pending, undefined,
+          "Opps whose GHL booking source is 'call' — phone/manual bookings, NOT AI. Pending a channel definition (~123 expected).")}
+        ${statCard('Last synced', fresh, null, null,
+          'Timestamp of the most recent opportunity sync from GHL — how fresh the numbers on this page are.')}
       </div></div>`;
     }
 
@@ -351,21 +364,33 @@
       }
 
       const funnel = `<div class="section"><h2>Funnel</h2><div class="stat-grid">
-        ${statCard('Total Opps', num(h.total_ops))}
-        ${statCard('Shows', num(h.shows))}
-        ${statCard('Show Rate', pct(h.show_rate), null, rateCls(h.show_rate, 0.6, 0.3))}
-        ${statCard('Qualified', num(h.qualified))}
-        ${statCard('Qual Rate', pct(h.qual_rate), null, rateCls(h.qual_rate, 0.6, 0.3))}
-        ${statCard('DQ Rate', pct(h.dq_rate), null, h.dq_rate === null ? '' : (h.dq_rate > 0.3 ? 'val-bad' : ''))}
-        ${statCard('Units Closed', num(h.units_closed))}
-        ${statCard('Close Rate', pct(h.close_rate), 'of shows', rateCls(h.close_rate, 0.2, 0.05))}
+        ${statCard('Total Opps', num(h.total_ops), null, null,
+          'Every opportunity attributed to this channel in the selected range, counted by the Date-by dimension (appointment / booked / created).')}
+        ${statCard('Shows', num(h.shows), null, null,
+          "Opportunities where the prospect showed for the 1st call — appointment status 'Showed', or the pipeline stage advanced past the call.")}
+        ${statCard('Show Rate', pct(h.show_rate), null, rateCls(h.show_rate, 0.6, 0.3),
+          'Shows ÷ Total Opps.')}
+        ${statCard('Qualified', num(h.qualified), null, null,
+          'Shows graded Great, Ok, or Barely Passable on the 1st call (excludes Bad, DQ, and ungraded).')}
+        ${statCard('Qual Rate', pct(h.qual_rate), null, rateCls(h.qual_rate, 0.6, 0.3),
+          'Qualified ÷ Shows (1st-call shows only).')}
+        ${statCard('DQ Rate', pct(h.dq_rate), null, h.dq_rate === null ? '' : (h.dq_rate > 0.3 ? 'val-bad' : ''),
+          'Disqualified ÷ 1st-call shows.')}
+        ${statCard('Units Closed', num(h.units_closed), null, null,
+          'Won deals whose 1st call falls inside the selected range (the cohort). A subset of Shows.')}
+        ${statCard('Close Rate', pct(h.close_rate), 'of shows', rateCls(h.close_rate, 0.2, 0.05),
+          'Units Closed ÷ Shows.')}
       </div></div>`;
 
       const revenue = `<div class="section"><h2>Revenue</h2><div class="stat-grid">
-        ${statCard('Contract Value', money(h.contract_value), 'GHL-entered', 'pos')}
-        ${statCard('Contracted Total', money(h.whop_projected_total), 'payment-verified', 'pos')}
-        ${statCard('Cash Collected', money(h.cash_collected), 'to date', 'pos')}
-        ${statCard('Avg Deal Size', h.avg_deal_size ? money(h.avg_deal_size) : '—', 'per close')}
+        ${statCard('Contract Value', money(h.contract_value), 'GHL-entered', 'pos',
+          "Sum of GHL-entered deal value (monetary_value) on this channel's won deals. Rep-entered — not payment-verified.")}
+        ${statCard('Contracted Total', money(h.whop_projected_total), 'payment-verified', 'pos',
+          'Payment-verified projected full contract (Whop plan math): financed deals settle upfront; internal plans project avg installment × plan length.')}
+        ${statCard('Cash Collected', money(h.cash_collected), 'to date', 'pos',
+          'Cash collected to date on won deals — all installments as they land (reconciled Whop / Stripe / Wise).')}
+        ${statCard('Avg Deal Size', h.avg_deal_size ? money(h.avg_deal_size) : '—', 'per close', null,
+          'Contracted Total ÷ Units Closed.')}
       </div></div>`;
 
       const roi = `<div class="section"><h2>ROI &amp; Cost Efficiency</h2>${renderRoi(detail.roi)}</div>`;
@@ -475,6 +500,7 @@
     initControls();
     load();
   </script>
+  <script src="/static/tooltip.js"></script>
   <script src="/static/nav.js"></script>
 </body>
 
