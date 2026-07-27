@@ -100,6 +100,21 @@
       background: var(--surface2); border: 1px solid var(--border); border-radius: 4px;
       padding: 1px 5px; font-size: 11.5px;
     }
+
+    .intro { color: var(--text3); font-size: 13px; margin-bottom: 22px; }
+    .conn-section { margin-bottom: 26px; }
+    .conn-section h2 { font-size: 15px; font-weight: 600; margin-bottom: 3px; }
+    .conn-sub { font-size: 12px; color: var(--text3); margin-bottom: 14px; }
+    .conn-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+    .conn-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; display: flex; flex-direction: column; gap: 10px; }
+    .conn-card .top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .conn-card .nm { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 600; }
+    .conn-ic { width: 34px; height: 34px; border-radius: 8px; background: var(--surface2); display: flex; align-items: center; justify-content: center; font-size: 17px; flex-shrink: 0; }
+    .conn-card .cdesc { font-size: 12.5px; color: var(--text3); line-height: 1.5; flex: 1; }
+    .manage { align-self: flex-start; background: none; border: none; color: var(--accent2); font-weight: 600; font-size: 13px; cursor: pointer; padding: 0; }
+    .manage:hover { text-decoration: underline; }
+    .back-btn { background: none; border: none; color: var(--accent2); font-weight: 600; font-size: 13px; cursor: pointer; margin-bottom: 18px; padding: 0; }
+    .back-btn:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
@@ -109,9 +124,24 @@
 </header>
 
 <main id="main-content">
-  <div class="section-title">Connectors</div>
+  <h1 style="font-size:22px;font-weight:700;margin-bottom:4px;display:flex;align-items:center;gap:8px">⚙️ Connectors</h1>
+  <div class="intro">Manage the integrations and AI providers that power the dashboard.</div>
 
-  <div class="card" id="xero-card">
+  <div id="grid-view">
+    <div class="conn-section">
+      <h2>Integrations</h2><div class="conn-sub">CRM, accounting, payments &amp; third-party services.</div>
+      <div class="conn-grid" id="grid-integration"></div>
+    </div>
+    <div class="conn-section">
+      <h2>AI Providers</h2><div class="conn-sub">AI agents that book &amp; work your leads.</div>
+      <div class="conn-grid" id="grid-ai"></div>
+    </div>
+  </div>
+
+  <div id="detail-view" style="display:none">
+    <button class="back-btn" onclick="showGrid()">← All connectors</button>
+
+  <div class="card conn-panel" id="xero-card" style="display:none">
     <div class="card-header">
       <div>
         <div class="name">Xero</div>
@@ -172,7 +202,7 @@
     </div>
   </div>
 
-  <div class="card" id="retell-card">
+  <div class="card conn-panel" id="retell-card" style="display:none">
     <div class="card-header">
       <div>
         <div class="name">Retell (VERA)</div>
@@ -208,6 +238,47 @@
       </details>
     </div>
   </div>
+
+  <div class="card conn-panel" id="appointwise-card" style="display:none">
+    <div class="card-header">
+      <div>
+        <div class="name">Appointwise</div>
+        <div class="desc">AI SMS appointment setter (GHL-native). SMS metrics are read from GHL Conversations; the key/client ID are stored for source-checking &amp; future use.</div>
+      </div>
+      <span class="badge warn" id="aw-badge">Loading…</span>
+    </div>
+    <div class="card-body">
+      <div class="meta-line" id="aw-meta"></div>
+      <div class="field">
+        <label>API Key <span class="src" id="src-aw-key"></span></label>
+        <input type="password" id="aw-api-key" autocomplete="new-password" spellcheck="false" />
+        <div class="hint">From your Appointwise account. Stored server-side, never shown again — leave blank to keep the current one.</div>
+      </div>
+      <div class="field">
+        <label>Client ID <span class="src" id="src-aw-cid"></span></label>
+        <input type="text" id="aw-client-id" autocomplete="off" spellcheck="false" />
+        <div class="hint">Optional — if Appointwise issued a client ID alongside the key.</div>
+      </div>
+      <div class="btn-row">
+        <button class="btn-secondary" id="btn-aw-save">Save</button>
+        <button class="btn-danger" id="btn-aw-disconnect" style="display:none">Disconnect</button>
+        <span class="msg" id="aw-msg"></span>
+      </div>
+      <div class="hint" style="margin-top:12px">Appointwise has no public analytics API, so the SMS metrics (messages sent, replies, response timing, opt-outs) are sourced from <strong>GHL Conversations</strong> for Appointwise-tagged contacts. Saving credentials here enables source-checking and any future Appointwise API use.</div>
+    </div>
+  </div>
+
+  <div class="card conn-panel" id="generic-card" style="display:none">
+    <div class="card-header">
+      <div><div class="name"></div><div class="desc"></div></div>
+      <span class="badge warn">—</span>
+    </div>
+    <div class="card-body">
+      <div class="hint">This connector is configured via environment variables (Railway → Variables) and managed by an admin — not editable here.</div>
+    </div>
+  </div>
+
+  </div><!-- /detail-view -->
 </main>
 
 <script>
@@ -440,6 +511,123 @@
   });
 
   loadRetell();
+
+  // ── Connector overview grid + Manage/back navigation ──────────────────────
+  let CONNECTORS = [];
+  const CONN_ICONS = { xero: "📊", retell: "🎙️", appointwise: "💬", ghl: "⚡", stripe: "💳", whop: "🛒", wise: "🏦", fireflies: "🔥" };
+
+  function connBadge(connected) {
+    return connected ? '<span class="badge ok">Connected</span>' : '<span class="badge err">Not configured</span>';
+  }
+  function connCard(c) {
+    return `<div class="conn-card">
+      <div class="top"><div class="nm"><span class="conn-ic">${CONN_ICONS[c.key] || "🔌"}</span>${c.name}</div>${connBadge(c.connected)}</div>
+      <div class="cdesc">${c.desc}</div>
+      <button class="manage" onclick="manageConn('${c.key}')">Manage →</button>
+    </div>`;
+  }
+  function renderGrid() {
+    $("grid-integration").innerHTML = CONNECTORS.filter(c => c.group === "integration").map(connCard).join("");
+    $("grid-ai").innerHTML = CONNECTORS.filter(c => c.group === "ai").map(connCard).join("");
+  }
+  async function loadSummary() {
+    try {
+      const resp = await fetch(`${API}/api/settings/connectors/summary`, { headers: HEADERS });
+      CONNECTORS = (await resp.json()).data;
+      renderGrid();
+    } catch (err) {
+      $("grid-integration").innerHTML = `<div class="hint">Failed to load connectors: ${err.message}</div>`;
+    }
+  }
+
+  window.manageConn = function (key) {
+    const c = CONNECTORS.find(x => x.key === key);
+    $("grid-view").style.display = "none";
+    $("detail-view").style.display = "";
+    document.querySelectorAll(".conn-panel").forEach(p => (p.style.display = "none"));
+    const panel = $(`${key}-card`);
+    if (c && c.manageable && panel) {
+      panel.style.display = "";
+      if (key === "appointwise") loadAppointwise();
+    } else if (c) {
+      const g = $("generic-card");
+      g.querySelector(".name").textContent = c.name;
+      g.querySelector(".desc").textContent = c.desc;
+      const b = g.querySelector(".badge");
+      b.className = "badge " + (c.connected ? "ok" : "err");
+      b.textContent = c.connected ? "Connected" : "Not configured";
+      g.style.display = "";
+    }
+    window.scrollTo(0, 0);
+  };
+  window.showGrid = function () {
+    $("detail-view").style.display = "none";
+    $("grid-view").style.display = "";
+    loadSummary();
+  };
+
+  // ── Appointwise connector ─────────────────────────────────────────────────
+  function setAwMsg(text, ok) {
+    const el = $("aw-msg");
+    el.textContent = text;
+    el.className = "msg " + (ok ? "ok" : "err");
+    if (text) setTimeout(() => { if (el.textContent === text) el.textContent = ""; }, 6000);
+  }
+  function renderAW(s) {
+    const badge = $("aw-badge");
+    badge.className = "badge " + (s.connected ? "ok" : "err");
+    badge.textContent = s.connected ? "Connected" : "Not connected";
+    $("aw-meta").textContent = s.api_key_set
+      ? (s.updated_at ? `Saved · ${new Date(s.updated_at).toLocaleString()}` : "Credentials set.")
+      : "Enter your Appointwise API key (and client ID if you have one).";
+    $("aw-api-key").value = "";
+    $("aw-api-key").placeholder = s.api_key_set ? `saved (${s.api_key_hint})` : "paste Appointwise API key";
+    $("aw-client-id").value = s.client_id || "";
+    $("src-aw-key").textContent = `· ${SRC_LABELS[s.api_key_source] || ""}`;
+    $("btn-aw-disconnect").style.display = s.api_key_set ? "" : "none";
+  }
+  async function loadAppointwise() {
+    try {
+      const resp = await fetch(`${API}/api/settings/connectors/appointwise`, { headers: HEADERS });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      renderAW(await resp.json());
+    } catch (err) {
+      $("aw-badge").textContent = "Error";
+      $("aw-badge").className = "badge err";
+      setAwMsg(`Failed to load: ${err.message}`, false);
+    }
+  }
+  $("btn-aw-save").addEventListener("click", async () => {
+    const body = { client_id: $("aw-client-id").value.trim() };
+    const key = $("aw-api-key").value.trim();
+    if (key) body.api_key = key;
+    $("btn-aw-save").disabled = true;
+    try {
+      const resp = await fetch(`${API}/api/settings/connectors/appointwise`, {
+        method: "PUT", headers: HEADERS, body: JSON.stringify(body),
+      });
+      if (!resp.ok) throw new Error((await resp.json()).detail || `HTTP ${resp.status}`);
+      renderAW(await resp.json());
+      setAwMsg("Saved.", true);
+    } catch (err) {
+      setAwMsg(`Save failed: ${err.message}`, false);
+    } finally {
+      $("btn-aw-save").disabled = false;
+    }
+  });
+  $("btn-aw-disconnect").addEventListener("click", async () => {
+    if (!confirm("Remove the Appointwise credentials?")) return;
+    try {
+      const resp = await fetch(`${API}/api/settings/connectors/appointwise/disconnect`, { method: "POST", headers: HEADERS });
+      if (!resp.ok) throw new Error((await resp.json()).detail || `HTTP ${resp.status}`);
+      renderAW(await resp.json());
+      setAwMsg("Disconnected.", true);
+    } catch (err) {
+      setAwMsg(`Disconnect failed: ${err.message}`, false);
+    }
+  });
+
+  loadSummary();
 </script>
 
 <script src="/static/nav.js"></script>

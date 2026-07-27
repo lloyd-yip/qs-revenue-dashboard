@@ -22,11 +22,17 @@ from api.utils.xero_utils import (
     XERO_SETTING_TENANT_ID,
     get_xero_config,
 )
+from api.utils.appointwise_utils import (
+    APPOINTWISE_SETTING_API_KEY,
+    APPOINTWISE_SETTING_CLIENT_ID,
+    get_appointwise_config,
+)
 from api.utils.retell_utils import (
     RETELL_SETTING_API_KEY,
     get_retell_config,
     test_retell_key,
 )
+from config import settings as _env
 from db.queries.settings import delete_setting, get_setting, get_setting_meta, set_setting
 from db.session import AsyncSessionLocal
 
@@ -222,3 +228,106 @@ async def disconnect_retell() -> RetellConnectorStatus:
         raise HTTPException(status_code=404, detail="Retell is not connected.")
     logger.info("Retell disconnected — API key removed")
     return await _retell_status()
+
+
+# ── Appointwise (AI SMS) ───────────────────────────────────────────────────────
+
+class AppointwiseConnectorStatus(BaseModel):
+    api_key_set: bool
+    api_key_hint: str
+    api_key_source: str
+    client_id: str
+    client_id_source: str
+    connected: bool
+    updated_at: str | None
+
+
+class AppointwiseConnectorUpdate(BaseModel):
+    api_key: str | None = None
+    client_id: str | None = None
+
+
+async def _appointwise_status() -> AppointwiseConnectorStatus:
+    cfg = await get_appointwise_config()
+    async with AsyncSessionLocal() as session:
+        meta = await get_setting_meta(session, APPOINTWISE_SETTING_API_KEY)
+    return AppointwiseConnectorStatus(
+        api_key_set=bool(cfg.api_key),
+        api_key_hint=_mask(cfg.api_key) if cfg.api_key else "",
+        api_key_source=cfg.api_key_source,
+        client_id=cfg.client_id,
+        client_id_source=cfg.client_id_source,
+        connected=bool(cfg.api_key),
+        updated_at=meta[1].isoformat() if meta else None,
+    )
+
+
+@router.get("/appointwise", response_model=AppointwiseConnectorStatus)
+async def get_appointwise_connector() -> AppointwiseConnectorStatus:
+    return await _appointwise_status()
+
+
+@router.put("/appointwise", response_model=AppointwiseConnectorStatus)
+async def update_appointwise_connector(body: AppointwiseConnectorUpdate) -> AppointwiseConnectorStatus:
+    """Save the Appointwise API key + client ID. Null = unchanged; empty = clear."""
+    fields = {APPOINTWISE_SETTING_API_KEY: body.api_key, APPOINTWISE_SETTING_CLIENT_ID: body.client_id}
+    async with AsyncSessionLocal() as session:
+        for key, value in fields.items():
+            if value is None:
+                continue
+            value = value.strip()
+            if value:
+                await set_setting(session, key, value)
+            else:
+                await delete_setting(session, key)
+    logger.info("Appointwise connector updated")
+    return await _appointwise_status()
+
+
+@router.post("/appointwise/disconnect", response_model=AppointwiseConnectorStatus)
+async def disconnect_appointwise() -> AppointwiseConnectorStatus:
+    async with AsyncSessionLocal() as session:
+        removed = await delete_setting(session, APPOINTWISE_SETTING_API_KEY)
+        await delete_setting(session, APPOINTWISE_SETTING_CLIENT_ID)
+    if not removed:
+        raise HTTPException(status_code=404, detail="Appointwise is not connected.")
+    logger.info("Appointwise disconnected")
+    return await _appointwise_status()
+
+
+# ── Overview summary (drives the connector grid) ───────────────────────────────
+
+@router.get("/summary")
+async def connectors_summary() -> dict:
+    """Status of every connector for the overview grid. Manageable ones have their own
+    GET/PUT endpoints; env-configured ones are reported read-only."""
+    xero = await _xero_status()
+    retell = await _retell_status()
+    aw = await _appointwise_status()
+    items = [
+        {"key": "xero", "name": "Xero", "group": "integration", "manageable": True,
+         "connected": xero.connected,
+         "desc": "Accounting — P&L revenue, invoices (contract value), Wise reconciliation."},
+        {"key": "retell", "name": "Retell (VERA)", "group": "ai", "manageable": True,
+         "connected": retell.connected,
+         "desc": "AI voice call agent — call sync, recordings, contact matching."},
+        {"key": "appointwise", "name": "Appointwise", "group": "ai", "manageable": True,
+         "connected": aw.connected,
+         "desc": "AI SMS appointment setter (GHL-native). Metrics read from GHL Conversations."},
+        {"key": "ghl", "name": "GoHighLevel", "group": "integration", "manageable": False,
+         "connected": bool(_env.ghl_api_key),
+         "desc": "CRM — deals, contacts, appointments, conversations. Configured via env."},
+        {"key": "stripe", "name": "Stripe", "group": "integration", "manageable": False,
+         "connected": bool(_env.stripe_secret_key),
+         "desc": "Read-only charge/customer lookups for deal payment enrichment."},
+        {"key": "whop", "name": "Whop", "group": "integration", "manageable": False,
+         "connected": bool(_env.whop_api_key),
+         "desc": "Cash-collected payment matching for closed deals."},
+        {"key": "wise", "name": "Wise", "group": "integration", "manageable": False,
+         "connected": bool(_env.wise_api_key),
+         "desc": "Bank-transfer reconciliation against deals."},
+        {"key": "fireflies", "name": "Fireflies", "group": "integration", "manageable": False,
+         "connected": bool(_env.fireflies_api_key),
+         "desc": "Meeting transcripts — appointment status resolver."},
+    ]
+    return {"data": items}

@@ -64,6 +64,12 @@ class Settings(BaseSettings):
     # stored in app_settings); this env var is only a legacy/bootstrap fallback.
     retell_api_key: str = ""
 
+    # Appointwise — optional. Stored in-app (Settings → Connectors). Appointwise is a
+    # GHL-native SMS app with no documented public analytics API, so SMS metrics are read
+    # from GHL Conversations; the key/client-id are kept for any future Appointwise API use.
+    appointwise_api_key: str = ""
+    appointwise_client_id: str = ""
+
     # Scheduler
     daily_sync_hour: int = 2    # 2 AM UTC
     daily_sync_minute: int = 0
