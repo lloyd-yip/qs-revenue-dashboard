@@ -236,6 +236,38 @@ async def get_retell_calls(
     ]
 
 
+async def get_retell_agent_breakdown(
+    session: AsyncSession, start: date, end: date
+) -> list[dict]:
+    """Per-Retell-agent call performance in the range (for comparing agents/goals)."""
+    rows = (await session.execute(
+        select(
+            RetellCall.agent_id,
+            func.count(RetellCall.id).label("calls"),
+            func.count(case((picked_up_expr(), 1))).label("picked_up"),
+            func.coalesce(func.sum(RetellCall.duration_sec), 0).label("secs"),
+            func.count(func.distinct(RetellCall.to_number)).label("contacts"),
+            func.count(case((RetellCall.ghl_contact_id.isnot(None), 1))).label("matched"),
+        )
+        .where(and_(RetellCall.started_at >= start, RetellCall.started_at <= end))
+        .group_by(RetellCall.agent_id)
+        .order_by(func.count(RetellCall.id).desc())
+    )).all()
+    return [
+        {
+            "agent_id": r.agent_id,
+            "calls": r.calls,
+            "contacts": r.contacts,
+            "picked_up": r.picked_up,
+            "pickup_rate": round(r.picked_up / r.calls, 4) if r.calls else None,
+            "minutes": round(r.secs / 60.0, 1),
+            "avg_sec": round(r.secs / r.calls, 1) if r.calls else None,
+            "matched": r.matched,
+        }
+        for r in rows
+    ]
+
+
 async def get_ai_data_quality(session: AsyncSession) -> dict:
     """AI data-quality tiles (all-time, sales pipeline scope)."""
     # Same-contact ≥2 OPEN opps (not won/lost/DQ/cancelled/no-show) — leak alert, expect 0.

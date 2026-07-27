@@ -66,6 +66,19 @@ class RetellClient:
                 if not pagination_key:
                     break
 
+    async def list_agents(self) -> dict[str, str]:
+        """Return {agent_id: agent_name} for naming the per-agent breakdown. {} on failure."""
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            try:
+                resp = await client.get(f"{self._base}/list-agents", headers=self._headers)
+                resp.raise_for_status()
+                data = resp.json()
+                agents = data if isinstance(data, list) else data.get("agents", [])
+                return {a.get("agent_id"): a.get("agent_name") for a in agents if a.get("agent_id")}
+            except httpx.HTTPError as exc:
+                logger.warning("Retell list_agents failed: %s", exc)
+                return {}
+
     async def get_call(self, call_id: str) -> dict | None:
         """Fetch a single call (used to refresh an expired recording URL). None on failure."""
         async with httpx.AsyncClient(timeout=30.0) as client:

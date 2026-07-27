@@ -67,6 +67,7 @@ from db.queries.channel_cost import delete_channel_cost, get_channel_cost, set_c
 from db.queries.ai_channels import (
     get_ai_channel_stats,
     get_ai_data_quality,
+    get_retell_agent_breakdown,
     get_retell_calls,
     get_vera_chat_contacts,
 )
@@ -316,6 +317,24 @@ async def retell_recording(call_id: str, db: AsyncSession = Depends(get_db)):
                     yield chunk
 
     return StreamingResponse(_stream(), media_type="audio/mpeg")
+
+
+@router.get("/retell/agents")
+async def retell_agents(
+    params: tuple = Depends(_date_params),
+    db: AsyncSession = Depends(get_db),
+):
+    """Per-Retell-agent call performance (names resolved via the Retell API when connected)."""
+    start, end, date_by = params
+    data = await get_retell_agent_breakdown(db, start, end)
+    if data:
+        from api.utils.retell_utils import get_retell_config
+        from sync.retell_client import RetellClient
+        cfg = await get_retell_config()
+        names = await RetellClient(cfg.api_key).list_agents() if cfg.api_key else {}
+        for row in data:
+            row["agent_name"] = names.get(row["agent_id"])
+    return {"data": data, "meta": _meta(start, end, date_by)}
 
 
 @router.get("/ai/data-quality")

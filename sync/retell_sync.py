@@ -9,7 +9,7 @@ match as soon as contact_phone is backfilled).
 import logging
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from api.utils.retell_utils import get_retell_config
@@ -94,9 +94,16 @@ def _row_from_call(call: dict, phone_index: dict[str, tuple[str, str]]) -> dict:
     }
 
 
-async def run_retell_sync(max_calls: int | None = None, after_ms: int | None = None) -> dict:
+async def run_retell_sync(
+    max_calls: int | None = None,
+    after_ms: int | None = None,
+    incremental: bool = False,
+) -> dict:
     """Pull Retell calls, match to GHL contacts, upsert. Returns a summary dict.
 
+    incremental=True (used by the 6-hourly schedule) pulls only calls since the most
+    recent stored call (minus a 1-day overlap buffer for late-arriving data), so routine
+    runs are cheap. A manual/full run (incremental=False) re-pulls everything.
     No-op (returns 'skipped') when no API key is configured.
     """
     cfg = await get_retell_config()
@@ -109,6 +116,10 @@ async def run_retell_sync(max_calls: int | None = None, after_ms: int | None = N
     matched = 0
 
     async with AsyncSessionLocal() as session:
+        if incremental and after_ms is None:
+            latest = (await session.execute(select(func.max(RetellCall.started_at)))).scalar()
+            if latest:
+                after_ms = int((latest.timestamp() - 86400) * 1000)  # 1-day overlap buffer
         phone_index = await _build_phone_index(session)
 
         batch: list[dict] = []
