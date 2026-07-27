@@ -105,10 +105,19 @@ async def get_channel_detail(
         "avg_deal_size": round(projected / closed, 2) if closed else None,
     }
 
-    # ROI — only when a cost is set for this exact range.
-    cost = await get_channel_cost(session, channel, start, end)
+    # ROI cost: manual override wins; otherwise auto-pull (Retell billing → Xero "Retellai").
+    manual = await get_channel_cost(session, channel, start, end)
+    cost = manual
+    cost_source = "manual" if manual is not None else None
+    if cost is None:
+        from db.queries.ai_channels import get_auto_channel_cost
+        auto, src = await get_auto_channel_cost(session, channel, start, end)
+        if auto is not None:
+            cost, cost_source = auto, src
     roi = {
         "cost": cost,
+        "manual_set": manual is not None,
+        "cost_source": cost_source,  # manual | retell | xero | None
         "is_set": cost is not None,
         "roi": round(cash / cost, 2) if cost else None,
         "contract_roi": round(projected / cost, 2) if cost else None,

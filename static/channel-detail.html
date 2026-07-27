@@ -183,19 +183,24 @@
       return `<div class="lq-bar">${bar}</div><div class="lq-legend">${legend}</div>`;
     }
 
+    const COST_SRC_LABEL = { retell: 'Retell billing', xero: 'Xero (Retellai)', manual: 'manual entry' };
     function renderRoi(roi) {
-      const set = roi.is_set;
-      const costVal = set ? Math.round(roi.cost) : '';
+      const manualSet = roi.manual_set;
+      const costVal = manualSet ? Math.round(roi.cost) : '';
       const m = (label, val, isX, tip) => statCard(label, val === null || val === undefined ? '—' : (isX ? val + '×' : money(val)), null, null, tip);
+      let hint;
+      if (manualSet) hint = `Manual cost for ${START} → ${END}. Clear to fall back to Retell / Xero.`;
+      else if (roi.is_set) hint = `Auto: ${money(roi.cost)} from ${COST_SRC_LABEL[roi.cost_source] || 'source'}. Enter a value to override.`;
+      else hint = 'Enter the channel cost (ad spend / tool subscription) for this range, or it auto-pulls from Retell / Xero when available.';
       return `
         <div class="roi-card">
           <div class="roi-input-row">
             <label>Channel cost (this range)
-              <input type="number" id="cost-input" placeholder="e.g. 1500" value="${costVal}" min="0" step="1">
+              <input type="number" id="cost-input" placeholder="${roi.is_set ? Math.round(roi.cost) : 'e.g. 1500'}" value="${costVal}" min="0" step="1">
             </label>
             <button class="btn" id="save-cost">Save</button>
-            ${set ? '<button class="btn ghost" id="clear-cost">Clear</button>' : ''}
-            <span class="roi-hint">${set ? 'ROI uses this cost for ' + START + ' → ' + END : 'Enter the channel cost (ad spend / tool subscription) for this range to compute ROI.'}</span>
+            ${manualSet ? '<button class="btn ghost" id="clear-cost">Clear</button>' : ''}
+            <span class="roi-hint">${hint}</span>
           </div>
           <div class="roi-metrics">
             ${m('Cash ROI', roi.roi, true, 'Cash Collected ÷ Channel cost for this range. e.g. 8× = $8 collected per $1 spent.')}
@@ -263,8 +268,8 @@
           'Booked opportunities that reached the Deal Won stage.')}
         ${statCard('Conv. Rate', pct(ai.conv_rate), 'booked ÷ contacts', rateCls(ai.conv_rate, 0.01, 0.003),
           'Booked ÷ unique contacts dialed — top-of-funnel booking conversion (matches the ~1.3% baseline; uses unique contacts, not raw dials, since a contact is retried many times).')}
-        ${statCard('Cost', costStr, hasCost ? 'this range' : 'set in ROI', null,
-          'Manual channel cost for this range (set it in the ROI section below). Drives ROI and cost-per-X.')}
+        ${statCard('Cost', costStr, hasCost ? (COST_SRC_LABEL[roi.cost_source] || 'this range') : 'set in ROI', null,
+          'Channel cost for this range — auto-pulled from Retell billing, else the Xero "Retellai" expense line; a manual value in the ROI section overrides. Drives ROI and cost-per-X.')}
         ${statCard('Held', num(ai.held), 'showed up', null,
           "Booked calls the prospect attended — held-call stages or Call-1 status 'Showed'.")}
         ${statCard('Held Rate', pct(ai.held_rate), null, rateCls(ai.held_rate, 0.5, 0.25), 'Held ÷ Booked.')}

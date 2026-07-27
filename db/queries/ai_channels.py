@@ -12,8 +12,8 @@ from sqlalchemy import and_, case, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import SALES_PIPELINE_ID
-from db.models import DealWhopMatch, Opportunity, RetellCall
-from db.queries.common import base_filter, has_1st_call
+from db.models import DealWhopMatch, ExpenseLineItem, Opportunity, RetellCall
+from db.queries.common import base_filter, has_1st_call, prorated_expense_amount
 from sync.ghl_client import DEAL_WON_STAGE_ID, DISQUALIFIED_STAGE_ID
 
 # "Held call" = the prospect actually turned up. Verified exact set (distinct from the
@@ -67,6 +67,48 @@ def ai_scope_filter():
         Opportunity.pipeline_id == SALES_PIPELINE_ID,
         and_(*[email.notlike(d) for d in _INTERNAL_DOMAINS]),
     )
+
+
+# Channel → Xero expense-vendor keywords (fallback cost source).
+_CHANNEL_COST_VENDORS = {
+    "Retell (VERA)": ["retell"],
+    "AI Bot (Appointwise)": ["appointwise"],
+}
+
+
+async def get_auto_channel_cost(
+    session: AsyncSession, channel: str, start: date, end: date
+) -> tuple[float | None, str | None]:
+    """Auto-resolve a channel's cost for the range. Returns (amount, source).
+
+    Priority: Retell's own per-call cost (Retell channel only) → Xero expense line
+    matched by vendor keyword (e.g. 'Retellai'), prorated to the range. None if neither.
+    """
+    if channel == "Retell (VERA)":
+        cents = (await session.execute(
+            select(func.coalesce(func.sum(RetellCall.cost_cents), 0)).where(
+                and_(RetellCall.started_at >= start, RetellCall.started_at <= end)
+            )
+        )).scalar() or 0
+        if cents and cents > 0:
+            return round(cents / 100.0, 2), "retell"
+
+    keywords = _CHANNEL_COST_VENDORS.get(channel, [])
+    if keywords:
+        vendor_match = or_(*[ExpenseLineItem.vendor.ilike(f"%{k}%") for k in keywords])
+        amount = (await session.execute(
+            select(func.coalesce(func.sum(prorated_expense_amount(start, end)), 0)).where(
+                and_(
+                    vendor_match,
+                    ExpenseLineItem.period_start <= end,
+                    ExpenseLineItem.period_end >= start,
+                )
+            )
+        )).scalar() or 0
+        if amount and float(amount) > 0:
+            return round(float(amount), 2), "xero"
+
+    return None, None
 
 
 async def get_ai_channel_stats(

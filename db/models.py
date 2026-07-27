@@ -214,6 +214,7 @@ class RetellCall(Base):
     duration_sec: Mapped[int | None] = mapped_column(Integer, nullable=True)
     call_status: Mapped[str | None] = mapped_column(String, nullable=True)
     disconnect_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    cost_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)  # Retell combined_cost (cents)
     recording_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     transcript: Mapped[str | None] = mapped_column(Text, nullable=True)
     analysis: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # sentiment, call_successful, custom flags
