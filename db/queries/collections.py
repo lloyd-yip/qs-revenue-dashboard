@@ -48,20 +48,42 @@ def _clamp_paid(d: date, paid: bool, today: date) -> date:
     return today if (paid and d > today) else d
 
 
+def _net_mult(m: DealWhopMatch) -> float:
+    """Fraction of gross cash QS keeps after the payment provider's fee.
+
+    Financed deals (Splitit/ClarityPay) carry a ~15% provider fee; internal plans
+    and pay-in-full carry none. Prefer the stored net/gross ratio so this matches
+    the New Deals tab's net_cash_collected exactly, then fall back to
+    provider_fee_pct, then a 0.85 default. Non-financed → 1.0 (no fee)."""
+    if m.is_splitit or m.is_claritypay:
+        if m.net_cash_collected is not None and m.total_paid and float(m.total_paid) > 0:
+            return float(m.net_cash_collected) / float(m.total_paid)
+        if m.provider_fee_pct is not None:
+            return 1.0 - float(m.provider_fee_pct)
+        return 0.85
+    return 1.0
+
+
 def _deal_schedule(m: DealWhopMatch, today: date) -> list[dict]:
-    """Projected installments for one deal → [{month, amount, paid, date, is_first}]."""
+    """Projected installments for one deal → [{month, amount, paid, date, is_first}].
+
+    Amounts are NET of the payment-provider fee (what QS actually keeps), so the
+    Collections cash figures reconcile with the New Deals tab. Only financed deals
+    are scaled; internal/pay-in-full plans have no fee (mult 1.0), so their amounts
+    are unchanged."""
     total_paid = float(m.total_paid) if m.total_paid else 0.0
     fpd = m.first_payment_date
     if not fpd or total_paid <= 0:
         return []
+    net_total = total_paid * _net_mult(m)
     if m.is_splitit or m.is_claritypay:
         # External financing settles 100% upfront: one installment, no future cash.
         d = _clamp_paid(fpd, True, today)
-        return [{"month": _mk(d), "amount": round(total_paid, 2),
+        return [{"month": _mk(d), "amount": round(net_total, 2),
                  "paid": True, "date": d, "is_first": True}]
     paid_count = m.payment_count or 0
     n = max(m.total_installments or paid_count or 1, paid_count, 1)
-    size = total_paid / paid_count if paid_count else total_paid / n
+    size = net_total / paid_count if paid_count else net_total / n
     out = []
     for k in range(n):
         paid = k < paid_count

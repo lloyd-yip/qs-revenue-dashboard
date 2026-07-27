@@ -515,7 +515,7 @@
         <button class="col-preset" onclick="colPreset(6)">Next 6 mo</button>
         <button class="col-preset" id="colCustomBtn" onclick="pbToggleCustom('col')" data-tip="Filter by exact dates. Note: installment dates are estimates (equal monthly spacing), so mid-month cutoffs are approximate.">📅 Custom dates</button>
       </span>
-      <span class="wl-refreshed">Future cash is a projection (equal monthly installments) · financed deals settle upfront</span>
+      <span class="wl-refreshed">Net of Whop provider fees · future cash is a projection (equal monthly installments) · financed deals settle upfront</span>
     </div>
     <div id="colBody"><div class="wl-empty">Loading…</div></div>
   </section>
@@ -1091,23 +1091,23 @@ function colCard(label, val, cls, tip){
 function colRender(data){
   const t = data.totals||{}, months = data.months||[], plans = data.payment_plans||[];
   let h = '<div class="col-cards">'
-    + colCard('Collected', fmtUSD(t.collected), 'pos', 'Cash already collected in this window (paid installments landed).')
-    + colCard('Outstanding', fmtUSD(t.outstanding), 'warn', 'Projected installments still to land in this window (estimated equal monthly installments).')
-    + colCard('Total Expected', fmtUSD(t.total), '', 'Collected + Outstanding across the selected window.')
+    + colCard('Collected', fmtUSD(t.collected), 'pos', 'Net cash already collected in this window (paid installments landed), after the 15% Whop provider fee on financed deals. Matches the New Deals tab basis.')
+    + colCard('Outstanding', fmtUSD(t.outstanding), 'warn', 'Projected installments still to land in this window (estimated equal monthly installments), net of Whop provider fees.')
+    + colCard('Total Expected', fmtUSD(t.total), '', 'Collected + Outstanding across the selected window (net of Whop provider fees).')
     + colCard('Refunded', fmtUSD(t.refunded), 'neg', 'Cash refunded to customers on these deals (from Whop payment refund status). Populates after the next Run Match.')
-    + colCard('Net Collected', fmtUSD(t.net_collected), '', 'Collected − Refunded.')
+    + colCard('Net Collected', fmtUSD(t.net_collected), '', 'Collected − Refunded (Collected is already net of Whop provider fees).')
     + '</div>';
 
   // Revenue source split: new deals vs ongoing payment plans.
   const nd = t.new_deals || {}, pp = t.payment_plans_revenue || {};
   h += '<div class="col-source">'
     + '<div class="col-source-head">Where the cash comes from</div>'
-    + '<div class="col-source-row" data-tip="Cash from FIRST payments landing in this window — a deal counts here in the month its first payment lands (net-new).">'
+    + '<div class="col-source-row" data-tip="Net cash from FIRST payments landing in this window — a deal counts here in the month its first payment lands (net-new). Net of Whop fees, so this equals the New Deals tab total for the same window.">'
       + '<span class="col-source-dot nd"></span><span class="col-source-label">New Deals</span>'
       + '<span class="col-source-sub">first payments in this window</span>'
       + '<span class="col-source-val">'+fmtUSD(nd.total)+'</span>'
       + '<span class="col-source-note">'+fmtUSD(nd.collected)+' collected</span></div>'
-    + '<div class="col-source-row" data-tip="Cash from LATER installments (2nd, 3rd, …) landing in this window — ongoing payment plans from deals that first paid earlier.">'
+    + '<div class="col-source-row" data-tip="Net cash from LATER installments (2nd, 3rd, …) landing in this window — ongoing payment plans from deals that first paid earlier.">'
       + '<span class="col-source-dot pp"></span><span class="col-source-label">Payment Plans</span>'
       + '<span class="col-source-sub">later installments from earlier deals</span>'
       + '<span class="col-source-val">'+fmtUSD(pp.total)+'</span>'
