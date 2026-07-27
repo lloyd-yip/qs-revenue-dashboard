@@ -431,7 +431,43 @@
       </div></div>`;
     }
 
-    function render(detail, closes, ai, dqTiles, agents) {
+    function renderBars(title, hist) {
+      const entries = Object.entries(hist || {});
+      const max = Math.max(1, ...entries.map(e => e[1]));
+      const bars = entries.map(([k, v]) => `
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+          <span style="width:34px;font-size:12px;color:var(--text2)">${k}</span>
+          <div style="flex:1;background:var(--surface2);border-radius:5px;height:18px;overflow:hidden">
+            <div style="height:100%;width:${(v / max) * 100}%;background:var(--accent);min-width:${v ? 2 : 0}px"></div>
+          </div>
+          <span style="width:34px;text-align:right;font-size:12px">${v}</span>
+        </div>`).join('');
+      return `<div><div class="label" style="font-size:11px;color:var(--text2);text-transform:uppercase;margin-bottom:8px">${title}</div>${bars}</div>`;
+    }
+
+    function renderSmsSection(sms) {
+      if (!sms || !sms.leads) {
+        return `<div class="section"><h2>SMS Engagement</h2><div class="note">SMS engagement populates on the next GHL sync (captured from GHL Conversations for booked Appointwise leads). <a href="/settings">Connectors</a>.</div></div>`;
+      }
+      const hourStr = sms.peak_reply_hour !== null && sms.peak_reply_hour !== undefined
+        ? (sms.peak_reply_hour % 12 || 12) + (sms.peak_reply_hour < 12 ? 'am' : 'pm') : '—';
+      return `<div class="section"><h2>SMS Engagement <span style="font-size:11px;font-weight:400;color:var(--text2)">· booked leads</span></h2>
+        <div class="stat-grid" style="margin-bottom:16px">
+          ${statCard('Booked Leads', num(sms.leads), null, null, 'Appointwise leads that booked and have SMS history captured from GHL Conversations.')}
+          ${statCard('Replied', pct(sms.reply_rate), num(sms.replied) + ' leads', null, 'Share of these leads who sent at least one inbound SMS.')}
+          ${statCard('Avg Msgs / Lead', sms.avg_msgs_per_lead ?? '—', 'outbound', null, 'Average outbound SMS the bot sent per lead.')}
+          ${statCard('Replies After', sms.avg_reply_after_n ? sms.avg_reply_after_n + ' msgs' : '—', 'to first reply', null, 'On average, how many outbound messages before the lead first replied.')}
+          ${statCard('Reply Delay', sms.avg_first_reply_hours !== null ? sms.avg_first_reply_hours + 'h' : '—', 'avg', null, 'Average time from the first outbound SMS to the first reply.')}
+          ${statCard('Opted Out', pct(sms.opt_out_rate), num(sms.opted_out) + ' leads', sms.opt_out_rate > 0.1 ? 'val-bad' : '', 'Share who texted STOP/unsubscribe.')}
+          ${statCard('Peak Reply Hour', hourStr, 'when they reply', null, 'Hour of day most first-replies land (contact local not adjusted).')}
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:24px">
+          ${renderBars('Reply on message #', sms.reply_by_message)}
+          ${renderBars('Opt-out after # msgs', sms.opt_out_by_message)}
+        </div></div>`;
+    }
+
+    function render(detail, closes, ai, dqTiles, agents, sms) {
       const h = detail.headline;
       document.getElementById('ch-name').textContent = detail.channel;
       document.getElementById('ch-subtitle').textContent =
@@ -479,10 +515,11 @@
       const aiHtml = renderAiSection(ai, detail.roi);
       const dqHtml = isAI ? renderDqTiles(dqTiles) : '';
       const agentHtml = detail.channel === RETELL_CHANNEL ? renderAgentTable(agents) : '';
+      const smsHtml = detail.channel === APPOINTWISE_CHANNEL ? renderSmsSection(sms) : '';
       const voiceHtml = detail.channel === RETELL_CHANNEL ? voiceDQSection() : '';
 
       document.getElementById('content').innerHTML =
-        aiHtml + funnel + revenue + roi + agentHtml + quality + reps + voiceHtml + closesHtml + dqHtml;
+        aiHtml + funnel + revenue + roi + agentHtml + smsHtml + quality + reps + voiceHtml + closesHtml + dqHtml;
       wireCost(detail.roi);
       if (detail.channel === RETELL_CHANNEL) loadVoiceCalls();
     }
@@ -517,8 +554,12 @@
           reqs.push(apiFetch(`/api/dashboard/ai/data-quality`));
         }
         if (CHANNEL === RETELL_CHANNEL) reqs.push(apiFetch(`/api/dashboard/retell/agents?${qs()}`));
-        const [detail, closes, ai, dq, agents] = await Promise.all(reqs);
-        render(detail.data, closes.data, ai ? ai.data : null, dq ? dq.data : null, agents ? agents.data : null);
+        if (CHANNEL === APPOINTWISE_CHANNEL) reqs.push(apiFetch(`/api/dashboard/appointwise/sms`));
+        const results = await Promise.all(reqs);
+        const [detail, closes, ai, dq] = results;
+        const extra = results[4] ? results[4].data : null;  // agents (Retell) | sms (Appointwise)
+        render(detail.data, closes.data, ai ? ai.data : null, dq ? dq.data : null,
+          CHANNEL === RETELL_CHANNEL ? extra : null, CHANNEL === APPOINTWISE_CHANNEL ? extra : null);
       } catch (e) {
         document.getElementById('content').innerHTML =
           `<div class="empty">Failed to load. ${e.message} <button class="btn" onclick="load()">Retry</button></div>`;

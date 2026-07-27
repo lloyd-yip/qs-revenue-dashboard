@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
 from db.advisory_lock import SYNC_GUARD_LOCK_KEY
-from db.models import Appointment, Opportunity, SourceNormalization, SyncRun
+from db.models import Appointment, ContactSmsStats, Opportunity, SourceNormalization, SyncRun
 from db.session import AsyncSessionLocal
 from sync.contact_cache import ContactCache
 from sync.ghl_client import (
@@ -34,6 +34,7 @@ from sync.ghl_client import (
 # Pipeline IDs — used to loop over both pipelines in run_sync
 SALES_PIPELINE_ID  = "zbI8YxmB9qhk1h4cInnq"
 UPSELL_PIPELINE_ID = "NjidsHukHHUpYtTcQefX"
+from sync.sms_stats import compute_sms_stats, is_appointwise_contact
 from sync.normalizer import (
     classify_ai_channel,
     compute_compliance_failure,
@@ -279,6 +280,21 @@ async def _build_opportunity_row(
     if ai_channel:
         canonical_channel = ai_channel
 
+    # SMS engagement (Appointwise contacts only) — merged into this sync, not a separate pass.
+    # Reads GHL Conversations; guarded so a failure never breaks the opportunity sync.
+    sms_stats = None
+    if (
+        settings.sms_sync_enabled
+        and contact_id
+        and not is_upsell
+        and is_appointwise_contact(contact_tags)
+    ):
+        try:
+            messages = await ghl_client.get_contact_messages(contact_id)
+            sms_stats = compute_sms_stats(contact_id, messages)
+        except Exception as exc:  # never let SMS fetch break the sync
+            logger.warning("SMS stats failed for contact %s: %s", contact_id, exc)
+
     # close_date: automation-set custom field wonlostabandoned_date (vzU9IqXPuwAYkKrJ3I3F).
     # Written by GHL automation when deal status changes to won/lost/abandoned — stable and precise.
     # Fallback: if the custom field is missing but the deal IS at the won stage, use
@@ -391,6 +407,7 @@ async def _build_opportunity_row(
         "updated_at_ghl": parse_ghl_datetime(opp.get("updatedAt")),
         "synced_at": datetime.now(timezone.utc),
         "_all_appointments": all_appointments,  # passed through for appointments upsert; stripped before DB insert
+        "_sms_stats": sms_stats,  # per-contact SMS engagement; stripped + upserted separately
     }
 
 
@@ -398,6 +415,7 @@ async def _write_opportunity_row(session, row: dict, calendar_names: dict, start
     """Write one built opportunity row: opp upsert + its appointments + compliance
     history. The caller owns commit/rollback. `row` must still hold '_all_appointments'."""
     all_appointments = row.pop("_all_appointments", [])
+    sms_stats = row.pop("_sms_stats", None)
     contact_id_for_appts = row.get("ghl_contact_id")
     history_cols = {"outcome_unfilled_first_flagged_at", "outcome_unfilled_resolved_at"}
     stmt = (
@@ -409,6 +427,17 @@ async def _write_opportunity_row(session, row: dict, calendar_names: dict, start
         )
     )
     await session.execute(stmt)
+
+    if sms_stats:
+        sms_stmt = (
+            pg_insert(ContactSmsStats)
+            .values(**sms_stats)
+            .on_conflict_do_update(
+                index_elements=["ghl_contact_id"],
+                set_={k: v for k, v in sms_stats.items() if k != "ghl_contact_id"},
+            )
+        )
+        await session.execute(sms_stmt)
 
     if contact_id_for_appts and all_appointments:
         for appt in all_appointments:

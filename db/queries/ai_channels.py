@@ -12,7 +12,7 @@ from sqlalchemy import and_, case, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import SALES_PIPELINE_ID
-from db.models import DealWhopMatch, ExpenseLineItem, Opportunity, RetellCall
+from db.models import ContactSmsStats, DealWhopMatch, ExpenseLineItem, Opportunity, RetellCall
 from db.queries.common import base_filter, has_1st_call, prorated_expense_amount
 from sync.ghl_client import DEAL_WON_STAGE_ID, DISQUALIFIED_STAGE_ID
 
@@ -266,6 +266,69 @@ async def get_retell_agent_breakdown(
         }
         for r in rows
     ]
+
+
+async def get_appointwise_sms_stats(session: AsyncSession) -> dict:
+    """SMS engagement for Appointwise booked leads (from GHL Conversations, captured in sync).
+
+    NOTE: opportunity-driven, so this covers contacts who *booked* (have an opp) — the full
+    messaged-but-not-booked audience needs a separate contact-by-tag sweep.
+    """
+    rows = (await session.execute(
+        select(ContactSmsStats)
+        .join(Opportunity, Opportunity.ghl_contact_id == ContactSmsStats.ghl_contact_id)
+        .where(and_(ai_scope_filter(), Opportunity.canonical_channel == "AI Bot (Appointwise)"))
+    )).scalars().all()
+    # Dedupe by contact (pipeline is 1 opp/contact, but be safe).
+    by_contact = {r.ghl_contact_id: r for r in rows}
+    stats = list(by_contact.values())
+    if not stats:
+        return {"leads": 0}
+
+    def _rate(n, d):
+        return round(n / d, 4) if d else None
+
+    replied = [s for s in stats if s.inbound_count > 0]
+    opted = [s for s in stats if s.opted_out]
+    outbounds = [s.outbound_count for s in stats if s.outbound_count]
+
+    # Reply-after-# histogram (on which outbound message they first replied): 1, 2, 3, 4, 5+
+    reply_hist = {"1": 0, "2": 0, "3": 0, "4": 0, "5+": 0}
+    for s in replied:
+        n = s.reply_after_n
+        if not n:
+            continue
+        reply_hist["5+" if n >= 5 else str(n)] += 1
+
+    # Opt-out-after-# histogram (how many messages before they opted out).
+    optout_hist = {"1-2": 0, "3-4": 0, "5-6": 0, "7+": 0}
+    for s in opted:
+        n = s.opt_out_after_n or 0
+        key = "1-2" if n <= 2 else "3-4" if n <= 4 else "5-6" if n <= 6 else "7+"
+        optout_hist[key] += 1
+
+    # Median-ish first-reply delay (hours) and reply hour-of-day.
+    delays, hours = [], {}
+    for s in replied:
+        if s.first_outbound_at and s.first_inbound_at:
+            delays.append((s.first_inbound_at - s.first_outbound_at).total_seconds() / 3600.0)
+        if s.first_inbound_at:
+            h = s.first_inbound_at.hour
+            hours[h] = hours.get(h, 0) + 1
+
+    return {
+        "leads": len(stats),
+        "replied": len(replied),
+        "reply_rate": _rate(len(replied), len(stats)),
+        "avg_msgs_per_lead": round(sum(outbounds) / len(outbounds), 1) if outbounds else None,
+        "avg_reply_after_n": round(sum(s.reply_after_n for s in replied if s.reply_after_n) / len(replied), 1) if replied else None,
+        "reply_by_message": reply_hist,
+        "opted_out": len(opted),
+        "opt_out_rate": _rate(len(opted), len(stats)),
+        "opt_out_by_message": optout_hist,
+        "avg_first_reply_hours": round(sum(delays) / len(delays), 1) if delays else None,
+        "peak_reply_hour": max(hours, key=hours.get) if hours else None,
+    }
 
 
 async def get_ai_data_quality(session: AsyncSession) -> dict:

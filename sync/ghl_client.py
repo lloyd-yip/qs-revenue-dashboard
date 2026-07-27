@@ -243,6 +243,35 @@ class GHLClient:
                 logger.warning("Failed to fetch appointments for contact %s: %s", contact_id, exc)
                 return []
 
+    async def get_contact_messages(self, contact_id: str) -> list[dict]:
+        """Fetch SMS/text messages across a contact's conversations. [] on failure.
+
+        Used during sync (Appointwise contacts only) to compute SMS engagement. Two hops:
+        conversations/search → conversations/{id}/messages.
+        """
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                search = await self._get(
+                    client, "/conversations/search",
+                    {"locationId": self._location_id, "contactId": contact_id},
+                )
+                convos = search.get("conversations", []) if isinstance(search, dict) else []
+                messages: list[dict] = []
+                for convo in convos:
+                    cid = convo.get("id")
+                    if not cid:
+                        continue
+                    data = await self._get(client, f"/conversations/{cid}/messages", {})
+                    msgs = data.get("messages") if isinstance(data, dict) else None
+                    if isinstance(msgs, dict):
+                        msgs = msgs.get("messages", [])
+                    messages.extend(msgs or [])
+                    await asyncio.sleep(self._page_delay_s)
+                return messages
+            except Exception as exc:
+                logger.warning("Failed to fetch messages for contact %s: %s", contact_id, exc)
+                return []
+
     async def get_calendars(self) -> dict[str, str]:
         """Fetch all calendars for this location. Returns {calendar_id: name} map.
 

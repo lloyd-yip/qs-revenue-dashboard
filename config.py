@@ -69,6 +69,9 @@ class Settings(BaseSettings):
     # from GHL Conversations; the key/client-id are kept for any future Appointwise API use.
     appointwise_api_key: str = ""
     appointwise_client_id: str = ""
+    # Fetch GHL Conversation SMS + compute engagement for Appointwise-tagged contacts during
+    # the main sync (merged, not a separate pass). Set false to disable if it strains quota.
+    sms_sync_enabled: bool = True
 
     # Scheduler
     daily_sync_hour: int = 2    # 2 AM UTC

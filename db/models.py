@@ -229,6 +229,32 @@ class RetellCall(Base):
     )
 
 
+class ContactSmsStats(Base):
+    """Per-contact SMS engagement, computed from GHL Conversations during the main sync.
+
+    Populated for Appointwise-tagged contacts (Appointwise sends SMS through GHL, so this is
+    the source of truth). Drives the Appointwise SMS funnel: messaged → replied → booked,
+    avg messages/lead, reply-by-message-#, response timing, and opt-outs. Upserted on
+    ghl_contact_id — safe to re-run.
+    """
+    __tablename__ = "contact_sms_stats"
+
+    ghl_contact_id: Mapped[str] = mapped_column(String, primary_key=True)
+    outbound_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    inbound_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    first_outbound_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    first_inbound_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    last_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # How many outbound messages were sent before the first reply (1st / 2nd / 3rd …).
+    reply_after_n: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    opted_out: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    opt_out_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    opt_out_after_n: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
 class SyncRun(Base):
     __tablename__ = "sync_runs"
 
