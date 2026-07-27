@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script src="/static/theme.js"></script>
+  <title>Channel Detail — QS Analytics</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117; --surface: #1a1d27; --surface2: #22263a; --border: #2e3347;
+      --accent: #6366f1; --accent2: #818cf8; --text: #e2e8f0; --text2: #94a3b8;
+      --green: #22c55e; --red: #ef4444; --yellow: #f59e0b; --orange: #f97316;
+      --radius: 10px; --font: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+
+    body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; min-height: 100vh; }
+
+    .wrap { max-width: 1200px; margin: 0 auto; padding: 24px 28px 60px; }
+
+    /* Header */
+    .ch-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 22px; }
+    .ch-header h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.3px; display: flex; align-items: center; gap: 10px; }
+    .ch-header .subtitle { font-size: 13px; color: var(--text2); margin-top: 6px; }
+    .back-link { color: var(--accent2); text-decoration: none; font-size: 13px; display: inline-flex; align-items: center; gap: 4px; margin-bottom: 6px; }
+    .back-link:hover { text-decoration: underline; }
+    .pill { font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px; background: rgba(99,102,241,0.15); color: var(--accent2); letter-spacing: .2px; }
+
+    /* Controls */
+    .controls { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+    .controls label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--text2); font-weight: 500; }
+    .controls input, .controls select { background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 7px 10px; font-family: inherit; font-size: 13px; }
+    .btn { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 8px 16px; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+    .btn:hover { background: var(--accent2); }
+    .btn.ghost { background: none; border: 1px solid var(--border); color: var(--text2); }
+    .btn.ghost:hover { color: var(--text); border-color: var(--accent); }
+
+    /* Section */
+    .section { margin-top: 26px; }
+    .section > h2 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: var(--text2); margin-bottom: 12px; }
+
+    /* Stat cards */
+    .stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+    .stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; }
+    .stat .label { font-size: 11px; color: var(--text2); font-weight: 500; text-transform: uppercase; letter-spacing: .3px; }
+    .stat .value { font-size: 22px; font-weight: 700; margin-top: 6px; letter-spacing: -0.5px; }
+    .stat .value.pos { color: var(--green); }
+    .stat .sub { font-size: 11px; color: var(--text2); margin-top: 3px; }
+    .val-good { color: var(--green); } .val-warn { color: var(--yellow); } .val-bad { color: var(--red); }
+
+    /* ROI card */
+    .roi-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; }
+    .roi-input-row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 16px; }
+    .roi-input-row label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--text2); font-weight: 500; }
+    .roi-input-row input { background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 8px 12px; font-family: inherit; font-size: 14px; width: 160px; }
+    .roi-hint { font-size: 12px; color: var(--text2); }
+    .roi-metrics { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+
+    /* Quality bar */
+    .lq-bar { display: flex; height: 26px; border-radius: 6px; overflow: hidden; border: 1px solid var(--border); }
+    .lq-seg { display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: #0f1117; min-width: 0; }
+    .lq-legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px; font-size: 12px; color: var(--text2); }
+    .lq-legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .lq-dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+
+    /* Tables */
+    table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    .table-scroll { overflow-x: auto; }
+    th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); font-size: 13px; }
+    th { background: var(--surface2); font-weight: 600; color: var(--text2); font-size: 11px; text-transform: uppercase; letter-spacing: .3px; }
+    td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover { background: var(--surface2); }
+    .money { color: var(--green); }
+    .link { color: var(--accent2); text-decoration: none; }
+    .link:hover { text-decoration: underline; }
+
+    .empty, .loading { color: var(--text2); padding: 24px; text-align: center; font-size: 13px; }
+    .note { background: rgba(99,102,241,0.08); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 18px; font-size: 13px; color: var(--text2); }
+    .note a { color: var(--accent2); }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <div class="ch-header">
+      <div>
+        <a class="back-link" href="/dashboard" id="back-link">← Back to Lead Quality by Channel</a>
+        <h1><span id="ch-name">Channel</span> <span class="pill" id="ch-pill" style="display:none"></span></h1>
+        <div class="subtitle" id="ch-subtitle">Loading…</div>
+      </div>
+      <div class="controls">
+        <label>From<input type="date" id="f-start"></label>
+        <label>To<input type="date" id="f-end"></label>
+        <label>Date by
+          <select id="f-dateby">
+            <option value="appointment">Appointment</option>
+            <option value="booked">Booked</option>
+            <option value="created">Created</option>
+          </select>
+        </label>
+        <button class="btn" id="apply-btn">Apply</button>
+      </div>
+    </div>
+
+    <div id="content"><div class="loading">Loading channel metrics…</div></div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const CHANNEL = params.get('channel') || 'Unknown';
+    const today = () => new Date().toISOString().slice(0, 10);
+    const monthAgo = () => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0, 10); };
+    let START = params.get('start') || monthAgo();
+    let END = params.get('end') || today();
+    let DATE_BY = params.get('date_by') || 'appointment';
+    const RETELL_CHANNEL = 'Retell (VERA)';
+
+    // ── formatting ──
+    const money = v => (v || v === 0) ? '$' + Math.round(v).toLocaleString() : '—';
+    const num = v => (v || v === 0) ? v.toLocaleString() : '0';
+    const pct = r => (r === null || r === undefined) ? '—' : (r * 100).toFixed(1) + '%';
+    const rateCls = (r, good, bad) => r === null ? '' : (r >= good ? 'val-good' : (r <= bad ? 'val-bad' : 'val-warn'));
+
+    function qs() { return `channel=${encodeURIComponent(CHANNEL)}&start=${START}&end=${END}&date_by=${DATE_BY}`; }
+
+    async function apiFetch(path) {
+      const res = await fetch(path);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
+    }
+
+    function statCard(label, value, sub, cls) {
+      return `<div class="stat"><div class="label">${label}</div><div class="value ${cls || ''}">${value}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
+    }
+
+    const LQ_COLORS = { great: '#22c55e', ok: '#84cc16', barely: '#f59e0b', bad: '#ef4444', missing: '#64748b' };
+
+    function renderQualityBar(h) {
+      const segs = [
+        ['Great', h.great_count, LQ_COLORS.great],
+        ['Ok', h.ok_count, LQ_COLORS.ok],
+        ['Barely', h.barely_passable_count, LQ_COLORS.barely],
+        ['Bad', h.bad_count, LQ_COLORS.bad],
+        ['Missing', h.missing_data_count, LQ_COLORS.missing],
+      ];
+      const total = segs.reduce((s, x) => s + (x[1] || 0), 0);
+      if (!total) return '<div class="empty">No graded shows in this period.</div>';
+      const bar = segs.filter(s => s[1] > 0).map(s =>
+        `<div class="lq-seg" style="flex:${s[1]};background:${s[2]}" title="${s[0]}: ${s[1]}">${s[1]}</div>`).join('');
+      const legend = segs.map(s =>
+        `<span><span class="lq-dot" style="background:${s[2]}"></span>${s[0]}: ${s[1] || 0}</span>`).join('');
+      return `<div class="lq-bar">${bar}</div><div class="lq-legend">${legend}</div>`;
+    }
+
+    function renderRoi(roi) {
+      const set = roi.is_set;
+      const costVal = set ? Math.round(roi.cost) : '';
+      const m = (label, val, isX) => statCard(label, val === null || val === undefined ? '—' : (isX ? val + '×' : money(val)));
+      return `
+        <div class="roi-card">
+          <div class="roi-input-row">
+            <label>Channel cost (this range)
+              <input type="number" id="cost-input" placeholder="e.g. 1500" value="${costVal}" min="0" step="1">
+            </label>
+            <button class="btn" id="save-cost">Save</button>
+            ${set ? '<button class="btn ghost" id="clear-cost">Clear</button>' : ''}
+            <span class="roi-hint">${set ? 'ROI uses this cost for ' + START + ' → ' + END : 'Enter the channel cost (ad spend / tool subscription) for this range to compute ROI.'}</span>
+          </div>
+          <div class="roi-metrics">
+            ${m('Cash ROI', roi.roi, true)}
+            ${m('Contract ROI', roi.contract_roi, true)}
+            ${m('Cost / Show', roi.cost_per_show)}
+            ${m('Cost / Qualified', roi.cost_per_qualified)}
+            ${m('Cost / Close', roi.cost_per_close)}
+          </div>
+        </div>`;
+    }
+
+    function renderRepTable(reps) {
+      if (!reps.length) return '<div class="empty">No reps with activity on this channel.</div>';
+      const rows = reps.map(r => `
+        <tr>
+          <td>${r.rep}</td>
+          <td class="num">${num(r.total_ops)}</td>
+          <td class="num">${num(r.shows)}</td>
+          <td class="num">${num(r.qualified)}</td>
+          <td class="num">${num(r.units_closed)}</td>
+          <td class="num money">${money(r.cash_collected)}</td>
+          <td class="num money">${money(r.whop_projected_total)}</td>
+        </tr>`).join('');
+      return `<div class="table-scroll"><table>
+        <thead><tr><th>Rep</th><th class="num">Opps</th><th class="num">Shows</th><th class="num">Qualified</th>
+        <th class="num">Closed</th><th class="num">Cash Collected</th><th class="num">Contracted Total</th></tr></thead>
+        <tbody>${rows}</tbody></table></div>`;
+    }
+
+    function renderCloses(closes) {
+      if (!closes.length) return '<div class="empty">No closed deals for this channel in the selected period.</div>';
+      const rows = closes.map(d => `
+        <tr>
+          <td>${d.name}</td>
+          <td>${d.rep}</td>
+          <td>${d.close_date}</td>
+          <td class="num">${d.value !== null ? money(d.value) : '—'}</td>
+          <td class="num money">${d.cash_paid ? money(d.cash_paid) : '—'}</td>
+          <td class="num money">${d.whop_projected ? money(d.whop_projected) : '—'}</td>
+        </tr>`).join('');
+      return `<div class="table-scroll"><table>
+        <thead><tr><th>Opportunity</th><th>Closer</th><th>Close Date</th>
+        <th class="num">Deal Value (GHL)</th><th class="num">Cash Paid</th><th class="num">Contracted Total</th></tr></thead>
+        <tbody>${rows}</tbody></table></div>`;
+    }
+
+    function retellSection() {
+      // Part 2 wires the live voice/DQ table here. Until the connector exists, show a pointer.
+      return `<div class="section"><h2>Voice Calls / Data Quality</h2>
+        <div class="note">Retell voice-call reconciliation and recordings appear here once the Retell connector is set up.
+        Add your Retell API key in <a href="/settings">Settings → Connectors</a>.</div></div>`;
+    }
+
+    function render(detail, closes) {
+      const h = detail.headline;
+      document.getElementById('ch-name').textContent = detail.channel;
+      document.getElementById('ch-subtitle').textContent =
+        `${START} → ${END} · by ${DATE_BY} · ${num(h.total_ops)} opportunities`;
+      document.title = `${detail.channel} — Channel Detail`;
+      if (detail.channel === RETELL_CHANNEL) {
+        const pill = document.getElementById('ch-pill');
+        pill.textContent = 'AI VOICE'; pill.style.display = 'inline-block';
+      }
+
+      const funnel = `<div class="section"><h2>Funnel</h2><div class="stat-grid">
+        ${statCard('Total Opps', num(h.total_ops))}
+        ${statCard('Shows', num(h.shows))}
+        ${statCard('Show Rate', pct(h.show_rate), null, rateCls(h.show_rate, 0.6, 0.3))}
+        ${statCard('Qualified', num(h.qualified))}
+        ${statCard('Qual Rate', pct(h.qual_rate), null, rateCls(h.qual_rate, 0.6, 0.3))}
+        ${statCard('DQ Rate', pct(h.dq_rate), null, h.dq_rate === null ? '' : (h.dq_rate > 0.3 ? 'val-bad' : ''))}
+        ${statCard('Units Closed', num(h.units_closed))}
+        ${statCard('Close Rate', pct(h.close_rate), 'of shows', rateCls(h.close_rate, 0.2, 0.05))}
+      </div></div>`;
+
+      const revenue = `<div class="section"><h2>Revenue</h2><div class="stat-grid">
+        ${statCard('Contract Value', money(h.contract_value), 'GHL-entered', 'pos')}
+        ${statCard('Contracted Total', money(h.whop_projected_total), 'payment-verified', 'pos')}
+        ${statCard('Cash Collected', money(h.cash_collected), 'to date', 'pos')}
+        ${statCard('Avg Deal Size', h.avg_deal_size ? money(h.avg_deal_size) : '—', 'per close')}
+      </div></div>`;
+
+      const roi = `<div class="section"><h2>ROI &amp; Cost Efficiency</h2>${renderRoi(detail.roi)}</div>`;
+      const quality = `<div class="section"><h2>Lead Quality (1st-call shows)</h2>${renderQualityBar(h)}</div>`;
+      const reps = `<div class="section"><h2>Rep Breakdown</h2>${renderRepTable(detail.reps)}</div>`;
+      const closesHtml = `<div class="section"><h2>Closed Deals</h2>${renderCloses(closes)}</div>`;
+      const retell = detail.channel === RETELL_CHANNEL ? retellSection() : '';
+
+      document.getElementById('content').innerHTML = funnel + revenue + roi + quality + reps + closesHtml + retell;
+      wireCost(detail.roi);
+    }
+
+    function wireCost() {
+      const save = document.getElementById('save-cost');
+      if (save) save.addEventListener('click', () => putCost(parseFloat(document.getElementById('cost-input').value)));
+      const clear = document.getElementById('clear-cost');
+      if (clear) clear.addEventListener('click', () => putCost(null));
+    }
+
+    async function putCost(cost) {
+      try {
+        await fetch(`/api/dashboard/channel-detail/cost?start=${START}&end=${END}&date_by=${DATE_BY}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ channel: CHANNEL, cost: (cost === null || isNaN(cost)) ? null : cost }),
+        });
+        await load();
+      } catch (e) { alert('Failed to save cost: ' + e.message); }
+    }
+
+    async function load() {
+      document.getElementById('content').innerHTML = '<div class="loading">Loading channel metrics…</div>';
+      try {
+        const [detail, closes] = await Promise.all([
+          apiFetch(`/api/dashboard/channel-detail?${qs()}`),
+          apiFetch(`/api/dashboard/channels/closes?${qs()}`),
+        ]);
+        render(detail.data, closes.data);
+      } catch (e) {
+        document.getElementById('content').innerHTML =
+          `<div class="empty">Failed to load. ${e.message} <button class="btn" onclick="load()">Retry</button></div>`;
+      }
+    }
+
+    function initControls() {
+      document.getElementById('f-start').value = START;
+      document.getElementById('f-end').value = END;
+      document.getElementById('f-dateby').value = DATE_BY;
+      // preserve current filter on the back link
+      document.getElementById('back-link').href = `/dashboard?start=${START}&end=${END}&date_by=${DATE_BY}`;
+      document.getElementById('apply-btn').addEventListener('click', () => {
+        START = document.getElementById('f-start').value;
+        END = document.getElementById('f-end').value;
+        DATE_BY = document.getElementById('f-dateby').value;
+        const u = new URL(window.location);
+        u.searchParams.set('start', START); u.searchParams.set('end', END); u.searchParams.set('date_by', DATE_BY);
+        history.replaceState(null, '', u);
+        document.getElementById('back-link').href = `/dashboard?start=${START}&end=${END}&date_by=${DATE_BY}`;
+        load();
+      });
+    }
+
+    initControls();
+    load();
+  </script>
+  <script src="/static/nav.js"></script>
+</body>
+
+</html>

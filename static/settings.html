@@ -171,6 +171,42 @@
       </details>
     </div>
   </div>
+
+  <div class="card" id="retell-card">
+    <div class="card-header">
+      <div>
+        <div class="name">Retell (VERA)</div>
+        <div class="desc">AI voice-call agent — source-check calls &amp; match callers to GHL contacts (voice DQ + recordings)</div>
+      </div>
+      <span class="badge warn" id="retell-badge">Loading…</span>
+    </div>
+    <div class="card-body">
+      <div class="meta-line" id="retell-meta"></div>
+
+      <div class="field">
+        <label>API Key <span class="src" id="src-retell-key"></span></label>
+        <input type="password" id="retell-api-key" autocomplete="new-password" spellcheck="false" />
+        <div class="hint">From your Retell dashboard → API Keys. Stored server-side, never shown again — leave blank to keep the current one.</div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn-secondary" id="btn-retell-save">Save API key</button>
+        <button class="btn-primary" id="btn-retell-test">Test connection</button>
+        <button class="btn-danger" id="btn-retell-disconnect" style="display:none">Disconnect</button>
+        <span class="msg" id="retell-msg"></span>
+      </div>
+
+      <details class="guide">
+        <summary>How to connect Retell — step by step</summary>
+        <ol>
+          <li>Open your <code>Retell dashboard → API Keys</code> and copy an existing key (or create one).</li>
+          <li>Paste it here and press <strong>Save API key</strong>.</li>
+          <li>Press <strong>Test connection</strong> — the badge turns <strong>Connected</strong> once Retell accepts the key.</li>
+          <li>Once connected, the Retell voice-call sync and the voice DQ view on the <strong>Retell (VERA)</strong> channel page light up.</li>
+        </ol>
+      </details>
+    </div>
+  </div>
 </main>
 
 <script>
@@ -296,6 +332,98 @@
   });
 
   load();
+
+  // ── Retell connector ──────────────────────────────────────────────────────
+  let retellState = null;
+
+  function setRetellMsg(text, ok) {
+    const el = $("retell-msg");
+    el.textContent = text;
+    el.className = "msg " + (ok ? "ok" : "err");
+    if (text) setTimeout(() => { if (el.textContent === text) el.textContent = ""; }, 6000);
+  }
+
+  function renderRetell(s) {
+    retellState = s;
+    const badge = $("retell-badge");
+    if (s.connected) {
+      badge.textContent = "Connected";
+      badge.className = "badge ok";
+    } else {
+      badge.textContent = "Not connected";
+      badge.className = "badge err";
+    }
+    $("retell-meta").textContent = s.api_key_set
+      ? (s.updated_at ? `API key saved · ${new Date(s.updated_at).toLocaleString()}` : "API key set.")
+      : "Enter your Retell API key and press Save.";
+    $("retell-api-key").value = "";
+    $("retell-api-key").placeholder = s.api_key_set ? `saved (${s.api_key_hint})` : "paste Retell API key";
+    $("src-retell-key").textContent = `· ${SRC_LABELS[s.api_key_source] || ""}`;
+    $("btn-retell-disconnect").style.display = s.api_key_set ? "" : "none";
+    $("btn-retell-test").disabled = !s.api_key_set;
+  }
+
+  async function loadRetell() {
+    try {
+      const resp = await fetch(`${API}/api/settings/connectors/retell`, { headers: HEADERS });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      renderRetell(await resp.json());
+    } catch (err) {
+      $("retell-badge").textContent = "Error";
+      $("retell-badge").className = "badge err";
+      setRetellMsg(`Failed to load: ${err.message}`, false);
+    }
+  }
+
+  $("btn-retell-save").addEventListener("click", async () => {
+    const key = $("retell-api-key").value.trim();
+    if (!key) { setRetellMsg("Enter an API key first.", false); return; }
+    $("btn-retell-save").disabled = true;
+    try {
+      const resp = await fetch(`${API}/api/settings/connectors/retell`, {
+        method: "PUT", headers: HEADERS, body: JSON.stringify({ api_key: key }),
+      });
+      if (!resp.ok) throw new Error((await resp.json()).detail || `HTTP ${resp.status}`);
+      renderRetell(await resp.json());
+      setRetellMsg("Saved. Press Test connection to verify.", true);
+    } catch (err) {
+      setRetellMsg(`Save failed: ${err.message}`, false);
+    } finally {
+      $("btn-retell-save").disabled = false;
+    }
+  });
+
+  $("btn-retell-test").addEventListener("click", async () => {
+    $("btn-retell-test").disabled = true;
+    setRetellMsg("Testing…", true);
+    try {
+      const resp = await fetch(`${API}/api/settings/connectors/retell/test`, {
+        method: "POST", headers: HEADERS,
+      });
+      const j = await resp.json();
+      setRetellMsg(j.detail || (j.ok ? "Connection OK." : "Test failed."), !!j.ok);
+    } catch (err) {
+      setRetellMsg(`Test failed: ${err.message}`, false);
+    } finally {
+      $("btn-retell-test").disabled = false;
+    }
+  });
+
+  $("btn-retell-disconnect").addEventListener("click", async () => {
+    if (!confirm("Remove the Retell API key? Voice-call sync will stop until you add it again.")) return;
+    try {
+      const resp = await fetch(`${API}/api/settings/connectors/retell/disconnect`, {
+        method: "POST", headers: HEADERS,
+      });
+      if (!resp.ok) throw new Error((await resp.json()).detail || `HTTP ${resp.status}`);
+      renderRetell(await resp.json());
+      setRetellMsg("Disconnected.", true);
+    } catch (err) {
+      setRetellMsg(`Disconnect failed: ${err.message}`, false);
+    }
+  });
+
+  loadRetell();
 </script>
 
 <script src="/static/nav.js"></script>

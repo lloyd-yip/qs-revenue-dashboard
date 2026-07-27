@@ -62,6 +62,8 @@ from db.queries.lead_source import (
     get_lead_source_breakdown,
     get_qualification_breakdown,
 )
+from db.queries.channel_detail import get_channel_detail
+from db.queries.channel_cost import delete_channel_cost, get_channel_cost, set_channel_cost
 from db.queries.data_quality import get_data_quality_issues
 from db.queries.debug_drilldown import get_drilldown_opps
 from db.queries.funnel_economics import get_auto_funnel_economics, get_period_inputs, upsert_marketing_spend, upsert_rep_compensations
@@ -200,6 +202,52 @@ async def channel_closes(
     start, end, date_by = params
     data = await get_channel_closes(db, channel, start, end, date_by)
     return ChannelClosesResponse(data=data)
+
+
+@router.get("/channel-detail")
+async def channel_detail(
+    channel: str = Query(..., description="Channel name (use 'Unknown' for null)"),
+    params: tuple = Depends(_date_params),
+    db: AsyncSession = Depends(get_db),
+):
+    """Full manager view for one channel — funnel, quality, revenue, ROI, per-rep split."""
+    start, end, date_by = params
+    data = await get_channel_detail(db, channel, start, end, date_by)
+    return {"data": data, "meta": _meta(start, end, date_by)}
+
+
+class ChannelCostRequest(BaseModel):
+    channel: str
+    cost: float | None = None  # null/empty clears the stored cost
+
+
+@router.get("/channel-detail/cost")
+async def channel_detail_cost(
+    channel: str = Query(...),
+    params: tuple = Depends(_date_params),
+    db: AsyncSession = Depends(get_db),
+):
+    """Current manual cost for a channel over the exact selected range."""
+    start, end, date_by = params
+    cost = await get_channel_cost(db, channel, start, end)
+    return {"channel": channel, "cost": cost, "is_set": cost is not None}
+
+
+@router.put("/channel-detail/cost")
+async def save_channel_detail_cost(
+    body: ChannelCostRequest,
+    params: tuple = Depends(_date_params),
+    db: AsyncSession = Depends(get_db),
+):
+    """Set (or clear, when cost is null/negative) the manual cost for a channel + range."""
+    start, end, date_by = params
+    if body.cost is None or body.cost < 0:
+        await delete_channel_cost(db, body.channel, start, end)
+        cost = None
+    else:
+        await set_channel_cost(db, body.channel, start, end, body.cost)
+        cost = body.cost
+    return {"channel": body.channel, "cost": cost, "is_set": cost is not None}
 
 
 @router.get("/slwa/weekly", response_model=SLWADashboardResponse)

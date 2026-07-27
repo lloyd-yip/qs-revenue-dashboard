@@ -273,6 +273,13 @@ async def serve_debug():
         headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
     )
 
+@app.get("/channels/detail", include_in_schema=False)
+async def serve_channel_detail():
+    return FileResponse(
+        _STATIC_DIR / "channel-detail.html",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+    )
+
 @app.get("/data-quality", include_in_schema=False)
 async def serve_data_quality():
     return FileResponse(

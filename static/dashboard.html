@@ -910,6 +910,11 @@ function channelDetailUrl(scope) {
   return url;
 }
 
+// Per-channel manager detail page (funnel, quality, revenue, ROI, rep breakdown).
+function channelDetailPageUrl(channel) {
+  return `/channels/detail?channel=${encodeURIComponent(channel)}&start=${AppState.dateStart}&end=${AppState.dateEnd}&date_by=${AppState.dateBy}`;
+}
+
 async function apiFetch(path, opts) {
   const res = await fetch(path, opts);
   if (!res.ok) throw new Error(`API error ${res.status}: ${path}`);
@@ -1644,9 +1649,11 @@ function renderChannelTable(data, groupBy = 'channel') {
     const showRate = d.total_ops > 0 ? d.shows / d.total_ops : null;
     const label = isFunnel ? funnelLabel(d.channel) : d.channel;
     const isSlwa = !isFunnel && d.channel === 'Slack / WhatsApp / SMS';
-    const channelCell = isSlwa
-      ? `<a class="closes-link" href="${channelDetailUrl('overall')}" title="Open Slack / WhatsApp / SMS detail">${label} ↗</a>`
-      : label;
+    const channelCell = isFunnel
+      ? label
+      : (isSlwa
+          ? `<a class="closes-link" href="${channelDetailUrl('overall')}" title="Open Slack / WhatsApp / SMS detail">${label} ↗</a>`
+          : `<a class="closes-link" href="${channelDetailPageUrl(d.channel)}" title="Open ${label} channel detail">${label} ↗</a>`);
     // Drill-downs key off canonical_channel; only wire them in channel mode.
     // Count cells → debug page (opportunity list); money cells → closes modal.
     const dbg = (metric, val) => (!isFunnel && val > 0)

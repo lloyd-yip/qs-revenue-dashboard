@@ -17,7 +17,7 @@
     { key: 'settings', label: 'Settings',     href: '/settings' }
   ];
   // detail views: dropped from the top nav but reachable from within a section → keep PARENT active
-  var DETAIL = { '/expenses': 'pnl', '/channels/slwa': 'sales', '/debug': 'sales' };
+  var DETAIL = { '/expenses': 'pnl', '/channels/slwa': 'sales', '/channels/detail': 'sales', '/debug': 'sales' };
 
   function activeKeyForPath(pathname) {
     var p = (pathname || '/').split('?')[0].split('#')[0];

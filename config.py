@@ -59,6 +59,11 @@ class Settings(BaseSettings):
     # Fireflies
     fireflies_api_key: str
 
+    # Retell — optional, enables AI voice-call sync + contact source-checking.
+    # Preferred path is to save the key in-app (Settings → Connectors → Retell,
+    # stored in app_settings); this env var is only a legacy/bootstrap fallback.
+    retell_api_key: str = ""
+
     # Scheduler
     daily_sync_hour: int = 2    # 2 AM UTC
     daily_sync_minute: int = 0

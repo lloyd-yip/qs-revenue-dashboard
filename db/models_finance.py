@@ -75,6 +75,31 @@ class RepCompSetting(Base):
     )
 
 
+class ChannelPeriodCost(Base):
+    """Manual channel cost (e.g. AI-tool subscription, ad spend) per date range.
+
+    Powers ROI on the per-channel detail page. One row per (channel, period_start,
+    period_end); re-saving the same channel+range overwrites. Stored against the exact
+    selected range the manager is analysing — ROI/cost-per-X only render when a cost
+    row exists for that range, otherwise those cells show "—".
+    """
+
+    __tablename__ = "channel_period_cost"
+    __table_args__ = (
+        UniqueConstraint("channel", "period_start", "period_end"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    channel: Mapped[str] = mapped_column(String(150), nullable=False, index=True)
+    period_start: Mapped[date] = mapped_column(Date, nullable=False)
+    period_end: Mapped[date] = mapped_column(Date, nullable=False)
+    cost: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
 class ExpenseLineItem(Base):
     """Classified expense line items stored from monthly Xero pull.
 

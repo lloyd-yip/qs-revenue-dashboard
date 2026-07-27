@@ -22,6 +22,11 @@ from api.utils.xero_utils import (
     XERO_SETTING_TENANT_ID,
     get_xero_config,
 )
+from api.utils.retell_utils import (
+    RETELL_SETTING_API_KEY,
+    get_retell_config,
+    test_retell_key,
+)
 from db.queries.settings import delete_setting, get_setting, get_setting_meta, set_setting
 from db.session import AsyncSessionLocal
 
@@ -149,3 +154,71 @@ async def disconnect_xero() -> XeroConnectorStatus:
         raise HTTPException(status_code=404, detail="Xero is not connected.")
     logger.info("Xero disconnected — refresh token removed")
     return await _xero_status()
+
+
+# ── Retell (AI voice calls) ────────────────────────────────────────────────────
+
+class RetellConnectorStatus(BaseModel):
+    api_key_set: bool
+    api_key_hint: str       # e.g. "••••7f2a" or ""
+    api_key_source: str     # "app" | "env" | "none"
+    connected: bool         # a usable key is present
+    updated_at: str | None  # when the in-app key was last saved
+
+
+class RetellConnectorUpdate(BaseModel):
+    """api_key: null = leave unchanged; empty string = clear the in-app key
+    (falling back to any env value)."""
+    api_key: str | None = None
+
+
+async def _retell_status() -> RetellConnectorStatus:
+    cfg = await get_retell_config()
+    async with AsyncSessionLocal() as session:
+        meta = await get_setting_meta(session, RETELL_SETTING_API_KEY)
+    return RetellConnectorStatus(
+        api_key_set=bool(cfg.api_key),
+        api_key_hint=_mask(cfg.api_key) if cfg.api_key else "",
+        api_key_source=cfg.api_key_source,
+        connected=bool(cfg.api_key),
+        updated_at=meta[1].isoformat() if meta else None,
+    )
+
+
+@router.get("/retell", response_model=RetellConnectorStatus)
+async def get_retell_connector() -> RetellConnectorStatus:
+    """Current Retell connector status (API key masked)."""
+    return await _retell_status()
+
+
+@router.put("/retell", response_model=RetellConnectorStatus)
+async def update_retell_connector(body: RetellConnectorUpdate) -> RetellConnectorStatus:
+    """Save the Retell API key to app_settings. Null = unchanged; empty = clear."""
+    if body.api_key is not None:
+        value = body.api_key.strip()
+        async with AsyncSessionLocal() as session:
+            if value:
+                await set_setting(session, RETELL_SETTING_API_KEY, value)
+            else:
+                await delete_setting(session, RETELL_SETTING_API_KEY)
+        logger.info("Retell connector API key %s", "saved" if value else "cleared")
+    return await _retell_status()
+
+
+@router.post("/retell/test")
+async def test_retell_connector() -> dict:
+    """Validate the stored Retell API key against the Retell API."""
+    cfg = await get_retell_config()
+    ok, detail = await test_retell_key(cfg.api_key)
+    return {"ok": ok, "detail": detail, "source": cfg.api_key_source}
+
+
+@router.post("/retell/disconnect", response_model=RetellConnectorStatus)
+async def disconnect_retell() -> RetellConnectorStatus:
+    """Remove the stored Retell API key."""
+    async with AsyncSessionLocal() as session:
+        removed = await delete_setting(session, RETELL_SETTING_API_KEY)
+    if not removed:
+        raise HTTPException(status_code=404, detail="Retell is not connected.")
+    logger.info("Retell disconnected — API key removed")
+    return await _retell_status()

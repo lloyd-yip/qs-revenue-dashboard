@@ -19,6 +19,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from db.session import Base
 from db.models_finance import (  # noqa: F401 — re-exported so `from db.models import X` keeps working
+    ChannelPeriodCost,
     ExpenseLineItem,
     PeriodMarketingSpend,
     RepCompensation,
