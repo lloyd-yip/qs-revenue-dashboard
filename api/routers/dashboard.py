@@ -271,12 +271,17 @@ async def channel_detail_ai(
 @router.get("/retell/calls")
 async def retell_calls(
     filter: str = Query("all", description="all | dq"),
+    connection: str = Query("all", description="all | picked_up | no_answer"),
+    min_minutes: float = Query(0.0, ge=0, description="Only calls at least this many minutes"),
     params: tuple = Depends(_date_params),
     db: AsyncSession = Depends(get_db),
 ):
-    """Retell voice-call reconciliation list. filter='dq' → only disqualified-lead calls."""
+    """Retell voice-call reconciliation list. Filter by disqualified, connection, and length."""
     start, end, date_by = params
-    data = await get_retell_calls(db, start, end, "dq" if filter == "dq" else "all")
+    conn = connection if connection in ("picked_up", "no_answer") else "all"
+    data = await get_retell_calls(
+        db, start, end, "dq" if filter == "dq" else "all", conn, min_minutes
+    )
     return {"data": data, "meta": _meta(start, end, date_by)}
 
 

@@ -141,6 +141,8 @@
     const GHL_CONTACT_BASE = 'https://app.gohighlevel.com/v2/location/G7ZOWCq78JrzUjlLMCxt/contacts/detail';
     const RETELL_CALL_BASE = 'https://dashboard.retellai.com/calls';
     let dqMode = 'all';
+    let connMode = 'all';
+    let minMin = '0';
 
     // ── formatting ──
     const money = v => (v || v === 0) ? '$' + Math.round(v).toLocaleString() : '—';
@@ -240,28 +242,47 @@
         <tbody>${rows}</tbody></table></div>`;
     }
 
-    function renderAiSection(ai) {
+    function renderAiSection(ai, roi) {
       if (!ai) return '';
       const c = ai.confidence || {};
       const total = (c.source_confirmed || 0) + (c.tag_inferred || 0);
       const tagPct = total ? Math.round((c.tag_inferred / total) * 100) : 0;
-      const callsTile = ai.calls
-        ? statCard('Voice Calls', num(ai.calls.count), `${ai.calls.minutes} min · ${ai.calls.matched} matched`, null,
-            'Retell voice calls pulled from the Retell API (external to GHL — the only source of call volume). Minutes = total talk time; matched = linked to a GHL contact by phone. Run the Retell sync in Settings if this is 0.')
-        : '';
-      return `<div class="section"><h2>AI Booking Performance</h2><div class="stat-grid">
+      const hasCost = roi && roi.is_set;
+      const costStr = hasCost ? money(roi.cost) : '—';
+      let cards;
+      if (ai.calls) {
+        // Retell voice funnel: Dialed → Picked Up → Booked → Converted → Conv. Rate → Cost.
+        cards = `
+        ${statCard('Dialed', num(ai.dialed), `${num(ai.dialed_contacts)} contacts · ${ai.calls.minutes} min`, null,
+          'Total Retell voice calls placed in this range (from the Retell API — the only source of call volume). Includes retries, so it exceeds the number of unique contacts dialed (shown below).')}
+        ${statCard('Picked Up', num(ai.picked_up), pct(ai.pickup_rate) + ' of dials', null,
+          'Calls a human actually answered — had talk time and a non-no-answer disconnect reason. The rest rang out, hit voicemail, or failed. Rate is per dial (retries included).')}
         ${statCard('Booked', num(ai.booked), null, null,
-          'AI-booked opportunities in this channel — classified by GHL booking tag / source. Scope: Sales pipeline only, internal @quantum-scaling.com / @ig-institute.com contacts excluded.')}
-        ${statCard('Held', num(ai.held), 'showed up', null,
-          "Booked calls the prospect actually attended. Stage in {1st Call Done, 2nd Call Done, Warm List, Hot List, Deal Won, Long Term Nurture, Hot Long Term Nurture}, OR Call-1 status 'Showed'.")}
-        ${statCard('Held Rate', pct(ai.held_rate), null, rateCls(ai.held_rate, 0.5, 0.25),
-          'Held ÷ Booked — how often an AI-booked call actually happens.')}
-        ${statCard('Won', num(ai.won), null, null,
+          'Calls that produced a booked opportunity (Sales pipeline, internal contacts excluded).')}
+        ${statCard('Converted', num(ai.won), 'won', null,
           'Booked opportunities that reached the Deal Won stage.')}
+        ${statCard('Conv. Rate', pct(ai.conv_rate), 'booked ÷ contacts', rateCls(ai.conv_rate, 0.01, 0.003),
+          'Booked ÷ unique contacts dialed — top-of-funnel booking conversion (matches the ~1.3% baseline; uses unique contacts, not raw dials, since a contact is retried many times).')}
+        ${statCard('Cost', costStr, hasCost ? 'this range' : 'set in ROI', null,
+          'Manual channel cost for this range (set it in the ROI section below). Drives ROI and cost-per-X.')}
+        ${statCard('Held', num(ai.held), 'showed up', null,
+          "Booked calls the prospect attended — held-call stages or Call-1 status 'Showed'.")}
+        ${statCard('Held Rate', pct(ai.held_rate), null, rateCls(ai.held_rate, 0.5, 0.25), 'Held ÷ Booked.')}
         ${statCard('Cash', money(ai.cash_collected), null, 'pos',
-          "Cash collected to date on this channel's won deals (all installments, reconciled).")}
-        ${callsTile}
-      </div>
+          "Cash collected to date on this channel's won deals (all installments, reconciled).")}`;
+      } else {
+        // Appointwise (SMS) — no dial funnel.
+        cards = `
+        ${statCard('Booked', num(ai.booked), null, null,
+          'AI-booked opportunities in this channel — classified by GHL booking tag / source. Scope: Sales pipeline only, internal contacts excluded.')}
+        ${statCard('Held', num(ai.held), 'showed up', null,
+          "Booked calls the prospect attended — held-call stages or Call-1 status 'Showed'.")}
+        ${statCard('Held Rate', pct(ai.held_rate), null, rateCls(ai.held_rate, 0.5, 0.25), 'Held ÷ Booked.')}
+        ${statCard('Converted', num(ai.won), 'won', null, 'Booked opportunities that reached the Deal Won stage.')}
+        ${statCard('Cash', money(ai.cash_collected), null, 'pos',
+          "Cash collected to date on this channel's won deals (all installments, reconciled).")}`;
+      }
+      return `<div class="section"><h2>AI Booking Performance</h2><div class="stat-grid">${cards}</div>
       <div class="note" style="margin-top:12px">
         <strong>Attribution confidence:</strong> ${num(c.source_confirmed)} source-confirmed ·
         ${num(c.tag_inferred)} tag-inferred (${tagPct}%). Tag-inferred = bot-worked, booked during
@@ -271,34 +292,68 @@
     }
 
     function voiceDQSection() {
-      // Container + toggle; rows load lazily via loadVoiceCalls().
+      // Container + filters; rows load lazily via loadVoiceCalls().
       return `<div class="section"><h2>Voice Calls / Data Quality</h2>
-        <div style="display:flex;gap:8px;margin-bottom:12px">
-          <button class="btn ghost" id="dq-all" onclick="setDqMode('all')">All calls</button>
-          <button class="btn ghost" id="dq-dq" onclick="setDqMode('dq')">Disqualified only</button>
+        <div style="display:flex;gap:14px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
+          <div style="display:flex;gap:6px">
+            <button class="btn primary" id="dq-all" onclick="setDqMode('all')">All calls</button>
+            <button class="btn ghost" id="dq-dq" onclick="setDqMode('dq')">Disqualified only</button>
+          </div>
+          <div style="width:1px;height:24px;background:var(--border)"></div>
+          <div style="display:flex;gap:6px">
+            <button class="btn primary" id="cn-all" onclick="setConn('all')">All</button>
+            <button class="btn ghost" id="cn-picked_up" onclick="setConn('picked_up')">Picked up</button>
+            <button class="btn ghost" id="cn-no_answer" onclick="setConn('no_answer')">No answer</button>
+          </div>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2)">Min length
+            <select id="min-len" onchange="setMinLen(this.value)"
+              style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 8px;font-family:inherit;font-size:12px">
+              <option value="0">Any</option>
+              <option value="0.5">≥ 30s</option>
+              <option value="1">≥ 1 min</option>
+              <option value="2">≥ 2 min</option>
+              <option value="5">≥ 5 min</option>
+              <option value="10">≥ 10 min</option>
+            </select>
+          </label>
         </div>
         <div id="voice-calls"><div class="loading">Loading calls…</div></div></div>`;
     }
 
+    function _toggleBtns(ids, active) {
+      ids.forEach(id => {
+        const b = document.getElementById(id);
+        if (b) b.className = 'btn ' + (id.endsWith(active) ? 'primary' : 'ghost');
+      });
+    }
+
     window.setDqMode = function (mode) {
       dqMode = mode;
-      document.getElementById('dq-all').className = 'btn ' + (mode === 'all' ? 'primary' : 'ghost');
-      document.getElementById('dq-dq').className = 'btn ' + (mode === 'dq' ? 'primary' : 'ghost');
+      _toggleBtns(['dq-all', 'dq-dq'], mode);
       loadVoiceCalls();
     };
+    window.setConn = function (mode) {
+      connMode = mode;
+      _toggleBtns(['cn-all', 'cn-picked_up', 'cn-no_answer'], mode);
+      loadVoiceCalls();
+    };
+    window.setMinLen = function (v) { minMin = v; loadVoiceCalls(); };
 
     async function loadVoiceCalls() {
       const host = document.getElementById('voice-calls');
       if (!host) return;
       host.innerHTML = '<div class="loading">Loading calls…</div>';
       try {
-        const j = await apiFetch(`/api/dashboard/retell/calls?filter=${dqMode}&start=${START}&end=${END}&date_by=${DATE_BY}`);
+        const j = await apiFetch(`/api/dashboard/retell/calls?filter=${dqMode}&connection=${connMode}&min_minutes=${minMin}&start=${START}&end=${END}&date_by=${DATE_BY}`);
         const calls = j.data;
         if (!calls.length) {
-          host.innerHTML = `<div class="empty">No Retell calls for this range${dqMode === 'dq' ? ' (disqualified filter)' : ''}. ` +
+          host.innerHTML = `<div class="empty">No Retell calls match these filters for this range. ` +
             `If you just added the API key, run a sync from <a class="link" href="/settings">Settings</a>.</div>`;
           return;
         }
+        const upBadge = c => c.picked_up
+          ? '<span class="pill" style="background:rgba(34,197,94,.15);color:var(--green)">picked up</span>'
+          : '<span class="pill" style="background:rgba(148,163,184,.15);color:var(--text2)">no answer</span>';
         const rows = calls.map(c => {
           const when = c.started_at ? new Date(c.started_at).toLocaleString() : '—';
           const mins = c.duration_sec ? (c.duration_sec / 60).toFixed(1) + 'm' : '—';
@@ -317,6 +372,7 @@
             <td>${contact} ${conf}</td>
             <td>${c.to_number || c.from_number || '—'}</td>
             <td class="num">${mins}</td>
+            <td>${upBadge(c)}</td>
             <td>${c.call_status || '—'}${c.sentiment ? ' · ' + c.sentiment : ''}</td>
             <td>${ghlLink} · ${retellLink}</td>
             <td>${player}</td>
@@ -324,7 +380,7 @@
         }).join('');
         host.innerHTML = `<div class="table-scroll"><table>
           <thead><tr><th>When</th><th>Contact</th><th>Number</th><th class="num">Dur</th>
-          <th>Outcome</th><th>Open in</th><th>Recording</th></tr></thead>
+          <th>Connection</th><th>Outcome</th><th>Open in</th><th>Recording</th></tr></thead>
           <tbody>${rows}</tbody></table></div>`;
       } catch (e) {
         host.innerHTML = `<div class="empty">Failed to load calls. ${e.message}</div>`;
@@ -397,7 +453,7 @@
       const quality = `<div class="section"><h2>Lead Quality (1st-call shows)</h2>${renderQualityBar(h)}</div>`;
       const reps = `<div class="section"><h2>Rep Breakdown</h2>${renderRepTable(detail.reps)}</div>`;
       const closesHtml = `<div class="section"><h2>Closed Deals</h2>${renderCloses(closes)}</div>`;
-      const aiHtml = renderAiSection(ai);
+      const aiHtml = renderAiSection(ai, detail.roi);
       const dqHtml = isAI ? renderDqTiles(dqTiles) : '';
       const voiceHtml = detail.channel === RETELL_CHANNEL ? voiceDQSection() : '';
 

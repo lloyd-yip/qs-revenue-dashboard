@@ -32,6 +32,25 @@ HELD_STAGE_IDS = [
 _INTERNAL_DOMAINS = ("%@quantum-scaling.com", "%@ig-institute.com")
 _AI_SOURCE_TOKENS = ("ai-caller", "ai-chat", "ai_bot")
 
+# Retell/telephony disconnect reasons that mean the human never answered.
+NOT_ANSWERED_REASONS = [
+    "dial_no_answer", "dial_busy", "dial_failed", "no_answer", "dial_no_pickup",
+    "voicemail_reached", "voicemail", "machine_detected", "registered_call_timeout",
+    "user_declined",
+]
+
+
+def picked_up_expr():
+    """SQL boolean: the call was answered by a human (had talk time + a non-no-answer reason)."""
+    reason = func.lower(func.coalesce(RetellCall.disconnect_reason, ""))
+    return and_(func.coalesce(RetellCall.duration_sec, 0) > 0, reason.notin_(NOT_ANSWERED_REASONS))
+
+
+def is_picked_up(duration_sec: int | None, disconnect_reason: str | None) -> bool:
+    """Python mirror of picked_up_expr for per-row labelling."""
+    reason = (disconnect_reason or "").lower()
+    return (duration_sec or 0) > 0 and reason not in NOT_ANSWERED_REASONS
+
 
 def held_call_expr():
     """Boolean: the call was held (stage in the held set OR call-1 status 'Showed')."""
@@ -94,21 +113,43 @@ async def get_ai_channel_stats(
                 func.count(RetellCall.id).label("n"),
                 func.coalesce(func.sum(RetellCall.duration_sec), 0).label("secs"),
                 func.count(case((RetellCall.ghl_contact_id.isnot(None), 1))).label("matched"),
+                func.count(case((picked_up_expr(), 1))).label("picked_up"),
+                func.count(func.distinct(RetellCall.to_number)).label("contacts"),
             )
         )).one()
+        dialed = cr.n
+        contacts = cr.contacts or 0
+        stats["dialed"] = dialed
+        stats["dialed_contacts"] = contacts
+        stats["picked_up"] = cr.picked_up
+        stats["pickup_rate"] = round(cr.picked_up / dialed, 4) if dialed else None
+        # Booking conversion per unique contact dialed (matches the ~1.3% baseline; raw dials
+        # include retries so booked ÷ contacts is the meaningful top-of-funnel rate).
+        stats["conv_rate"] = round(booked / contacts, 4) if contacts else None
         stats["calls"] = {
-            "count": cr.n,
+            "count": dialed,
             "minutes": round(cr.secs / 60.0, 1),
             "matched": cr.matched,
+            "picked_up": cr.picked_up,
         }
     return stats
 
 
 async def get_retell_calls(
-    session: AsyncSession, start: date, end: date, filter_mode: str = "all", limit: int = 500
+    session: AsyncSession,
+    start: date,
+    end: date,
+    filter_mode: str = "all",
+    connection: str = "all",
+    min_minutes: float = 0.0,
+    limit: int = 500,
 ) -> list[dict]:
-    """Retell voice calls (reconciliation list). filter_mode 'dq' → only calls whose matched
-    opportunity is Disqualified. Ordered newest first."""
+    """Retell voice calls (reconciliation list). Ordered newest first.
+
+    filter_mode 'dq' → only calls whose matched opportunity is Disqualified.
+    connection 'picked_up' | 'no_answer' → filter on whether a human answered.
+    min_minutes → only calls at least this long.
+    """
     dq_opps = (
         select(Opportunity.ghl_contact_id)
         .where(Opportunity.pipeline_stage_id == DISQUALIFIED_STAGE_ID)
@@ -123,6 +164,12 @@ async def get_retell_calls(
     )
     if filter_mode == "dq":
         q = q.where(RetellCall.ghl_contact_id.in_(dq_opps))
+    if connection == "picked_up":
+        q = q.where(picked_up_expr())
+    elif connection == "no_answer":
+        q = q.where(~picked_up_expr())
+    if min_minutes and min_minutes > 0:
+        q = q.where(func.coalesce(RetellCall.duration_sec, 0) >= int(min_minutes * 60))
 
     rows = (await session.execute(q)).scalars().all()
     return [
@@ -134,6 +181,7 @@ async def get_retell_calls(
             "to_number": c.to_number,
             "call_status": c.call_status,
             "disconnect_reason": c.disconnect_reason,
+            "picked_up": is_picked_up(c.duration_sec, c.disconnect_reason),
             "has_recording": bool(c.recording_url),
             "sentiment": (c.analysis or {}).get("user_sentiment") if c.analysis else None,
             "successful": (c.analysis or {}).get("call_successful") if c.analysis else None,
