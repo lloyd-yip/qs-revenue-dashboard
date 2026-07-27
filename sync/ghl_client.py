@@ -362,6 +362,60 @@ class GHLClient:
         response.raise_for_status()
         return response.json()
 
+    async def _post(self, client: httpx.AsyncClient, path: str, body: dict) -> dict:
+        """Single POST request with 429 retry/backoff (mirror of _get)."""
+        url = f"{self._base_url}{path}"
+        for attempt in range(8):
+            response = await client.post(url, headers=self._headers, json=body)
+            if response.status_code == 429:
+                retry_after = response.headers.get("Retry-After")
+                delay = min(float(retry_after), 300.0) if retry_after else min(2.0 * (2 ** attempt), 120.0)
+                logger.warning("GHL 429 on POST %s (attempt %d/8) — backing off %.0fs", path, attempt + 1, delay)
+                await asyncio.sleep(delay)
+                continue
+            response.raise_for_status()
+            return response.json()
+        response.raise_for_status()
+        return response.json()
+
+    async def get_contacts_by_tag(self, tag: str, max_contacts: int | None = None) -> list[dict]:
+        """Return contacts carrying a given tag, via POST /contacts/search (paginated). [] on failure.
+
+        Used by the Appointwise SMS sweep to reach the full messaged audience (incl. contacts
+        with no opportunity). GHL's search filter schema can vary — logs counts so a wrong
+        filter shape is visible after the first live run.
+        """
+        results: list[dict] = []
+        page = 1
+        search_after: list | None = None
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            while True:
+                body: dict = {
+                    "locationId": self._location_id,
+                    "pageLimit": 100,
+                    "filters": [{"field": "tags", "operator": "contains", "value": tag}],
+                }
+                if search_after:
+                    body["searchAfter"] = search_after
+                else:
+                    body["page"] = page
+                try:
+                    data = await self._post(client, "/contacts/search", body)
+                except Exception as exc:
+                    logger.warning("get_contacts_by_tag(%s) failed on page %d: %s", tag, page, exc)
+                    break
+                contacts = data.get("contacts", []) if isinstance(data, dict) else []
+                if not contacts:
+                    break
+                results.extend(contacts)
+                if max_contacts and len(results) >= max_contacts:
+                    break
+                search_after = contacts[-1].get("searchAfter")
+                page += 1
+                await asyncio.sleep(self._page_delay_s)
+        logger.info("get_contacts_by_tag(%s): %d contacts", tag, len(results))
+        return results
+
     async def stream_opportunity_pages(
         self,
         updated_after: datetime | None = None,

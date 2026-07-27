@@ -451,10 +451,13 @@
       }
       const hourStr = sms.peak_reply_hour !== null && sms.peak_reply_hour !== undefined
         ? (sms.peak_reply_hour % 12 || 12) + (sms.peak_reply_hour < 12 ? 'am' : 'pm') : '—';
-      return `<div class="section"><h2>SMS Engagement <span style="font-size:11px;font-weight:400;color:var(--text2)">· booked leads</span></h2>
+      return `<div class="section"><h2>SMS Engagement</h2>
         <div class="stat-grid" style="margin-bottom:16px">
-          ${statCard('Booked Leads', num(sms.leads), null, null, 'Appointwise leads that booked and have SMS history captured from GHL Conversations.')}
-          ${statCard('Replied', pct(sms.reply_rate), num(sms.replied) + ' leads', null, 'Share of these leads who sent at least one inbound SMS.')}
+          ${statCard('Messaged', num(sms.messaged), num(sms.leads) + ' in audience', null, 'Appointwise-tagged contacts the bot sent at least one SMS. Run the SMS sweep in Settings to include non-booked leads.')}
+          ${statCard('Replied', num(sms.replied), pct(sms.reply_rate) + ' of messaged', null, 'Contacts who sent at least one inbound SMS back.')}
+          ${statCard('Booked', num(sms.booked), pct(sms.book_rate) + ' of messaged', 'pos', 'Messaged contacts who booked (have an Appointwise-channel opportunity).')}
+        </div>
+        <div class="stat-grid" style="margin-bottom:16px">
           ${statCard('Avg Msgs / Lead', sms.avg_msgs_per_lead ?? '—', 'outbound', null, 'Average outbound SMS the bot sent per lead.')}
           ${statCard('Replies After', sms.avg_reply_after_n ? sms.avg_reply_after_n + ' msgs' : '—', 'to first reply', null, 'On average, how many outbound messages before the lead first replied.')}
           ${statCard('Reply Delay', sms.avg_first_reply_hours !== null ? sms.avg_first_reply_hours + 'h' : '—', 'avg', null, 'Average time from the first outbound SMS to the first reply.')}

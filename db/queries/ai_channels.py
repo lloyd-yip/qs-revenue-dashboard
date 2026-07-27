@@ -269,26 +269,31 @@ async def get_retell_agent_breakdown(
 
 
 async def get_appointwise_sms_stats(session: AsyncSession) -> dict:
-    """SMS engagement for Appointwise booked leads (from GHL Conversations, captured in sync).
+    """Appointwise SMS funnel from GHL Conversations. contact_sms_stats holds only
+    Appointwise-tagged contacts (both write paths are tag-gated), so this is the audience:
+    messaged → replied → booked, plus avg msgs, reply timing, reply-#, and opt-outs.
 
-    NOTE: opportunity-driven, so this covers contacts who *booked* (have an opp) — the full
-    messaged-but-not-booked audience needs a separate contact-by-tag sweep.
+    The main sync captures booked leads; the contact-by-tag sweep fills in the non-booked
+    audience (run /api/sync/appointwise-sms). Booked = has an Appointwise-channel opp.
     """
-    rows = (await session.execute(
-        select(ContactSmsStats)
-        .join(Opportunity, Opportunity.ghl_contact_id == ContactSmsStats.ghl_contact_id)
-        .where(and_(ai_scope_filter(), Opportunity.canonical_channel == "AI Bot (Appointwise)"))
-    )).scalars().all()
-    # Dedupe by contact (pipeline is 1 opp/contact, but be safe).
-    by_contact = {r.ghl_contact_id: r for r in rows}
-    stats = list(by_contact.values())
+    stats = (await session.execute(select(ContactSmsStats))).scalars().all()
     if not stats:
-        return {"leads": 0}
+        return {"leads": 0, "messaged": 0, "replied": 0, "booked": 0}
+
+    booked_ids = set((await session.execute(
+        select(Opportunity.ghl_contact_id).where(and_(
+            ai_scope_filter(),
+            Opportunity.canonical_channel == "AI Bot (Appointwise)",
+            Opportunity.ghl_contact_id.isnot(None),
+        ))
+    )).scalars().all())
 
     def _rate(n, d):
         return round(n / d, 4) if d else None
 
+    messaged = [s for s in stats if s.outbound_count > 0]
     replied = [s for s in stats if s.inbound_count > 0]
+    booked = [s for s in stats if s.ghl_contact_id in booked_ids]
     opted = [s for s in stats if s.opted_out]
     outbounds = [s.outbound_count for s in stats if s.outbound_count]
 
@@ -318,8 +323,11 @@ async def get_appointwise_sms_stats(session: AsyncSession) -> dict:
 
     return {
         "leads": len(stats),
+        "messaged": len(messaged),
         "replied": len(replied),
-        "reply_rate": _rate(len(replied), len(stats)),
+        "booked": len(booked),
+        "reply_rate": _rate(len(replied), len(messaged)),
+        "book_rate": _rate(len(booked), len(messaged)),
         "avg_msgs_per_lead": round(sum(outbounds) / len(outbounds), 1) if outbounds else None,
         "avg_reply_after_n": round(sum(s.reply_after_n for s in replied if s.reply_after_n) / len(replied), 1) if replied else None,
         "reply_by_message": reply_hist,

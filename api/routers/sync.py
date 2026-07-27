@@ -127,6 +127,13 @@ async def trigger_retell_sync(background_tasks: BackgroundTasks):
     return {"message": "Retell call sync triggered. Check /api/dashboard/retell/calls after it runs."}
 
 
+@router.post("/appointwise-sms")
+async def trigger_appointwise_sweep(background_tasks: BackgroundTasks):
+    """Sweep SMS for ALL Appointwise-tagged contacts (full funnel audience). Background."""
+    background_tasks.add_task(_run_appointwise_sweep_background)
+    return {"message": "Appointwise SMS sweep triggered. Check the Appointwise channel page after it runs."}
+
+
 @router.post("/backfill-appointment-owners")
 async def backfill_appointment_owners():
     """One-shot: recover rep for owner-less deals via the Call-2 appointment's assigned rep. Idempotent."""
@@ -274,3 +281,12 @@ async def _run_retell_sync_background() -> None:
         logger.info("Retell sync complete: %s", summary)
     except Exception as exc:
         logger.error("Retell sync failed: %s", exc)
+
+
+async def _run_appointwise_sweep_background() -> None:
+    from sync.appointwise_sweep import run_appointwise_sms_sweep
+    try:
+        summary = await run_appointwise_sms_sweep()
+        logger.info("Appointwise SMS sweep complete: %s", summary)
+    except Exception as exc:
+        logger.error("Appointwise SMS sweep failed: %s", exc)

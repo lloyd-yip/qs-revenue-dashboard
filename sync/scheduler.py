@@ -98,6 +98,18 @@ def create_scheduler() -> AsyncIOScheduler:
         max_instances=1,
     )
 
+    # Weekly Appointwise SMS sweep — Saturdays 04:00 UTC. Reaches the full messaged audience
+    # (contacts with no opp), which the opportunity-driven sync misses. GHL-heavy, so weekly.
+    scheduler.add_job(
+        _run_appointwise_sweep,
+        trigger=CronTrigger(day_of_week="sat", hour=4, minute=0, timezone="UTC"),
+        id="weekly_appointwise_sms_sweep",
+        name="Weekly Appointwise SMS sweep",
+        replace_existing=True,
+        misfire_grace_time=1800,
+        max_instances=1,
+    )
+
     # Weekly full sync on Sundays at configured hour — catches any data GHL didn't surface incrementally
     scheduler.add_job(
         _run_full,
@@ -171,6 +183,16 @@ async def _run_retell_sync() -> None:
         logger.info("Scheduler: Retell sync complete — %s", summary)
     except Exception as exc:
         logger.error("Scheduler: Retell sync failed — %s", exc)
+
+
+async def _run_appointwise_sweep() -> None:
+    logger.info("Scheduler: starting weekly Appointwise SMS sweep")
+    try:
+        from sync.appointwise_sweep import run_appointwise_sms_sweep
+        summary = await run_appointwise_sms_sweep()
+        logger.info("Scheduler: Appointwise SMS sweep complete — %s", summary)
+    except Exception as exc:
+        logger.error("Scheduler: Appointwise SMS sweep failed — %s", exc)
 
 
 async def _run_full() -> None:
