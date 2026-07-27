@@ -470,7 +470,22 @@
         </div></div>`;
     }
 
-    function render(detail, closes, ai, dqTiles, agents, sms) {
+    function renderAwAgentTable(agents) {
+      if (!agents || !agents.length) {
+        return `<div class="section"><h2>By Agent</h2><div class="note">Per-agent Appointwise data appears once your agents push events to the webhook. Set it up in <a href="/settings">Settings → Connectors → Appointwise</a>.</div></div>`;
+      }
+      const rows = agents.map(a => `
+        <tr><td>${a.agent_name}</td>
+          <td class="num">${num(a.contacts)}</td>
+          <td class="num">${num(a.booked)}</td>
+          <td class="num ${rateCls(a.book_rate, 0.1, 0.03)}">${pct(a.book_rate)}</td>
+        </tr>`).join('');
+      return `<div class="section"><h2>By Agent</h2><div class="table-scroll"><table>
+        <thead><tr><th>Agent</th><th class="num">Contacts</th><th class="num">Booked</th>
+        <th class="num">Book Rate</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+    }
+
+    function render(detail, closes, ai, dqTiles, agents, sms, awAgents) {
       const h = detail.headline;
       document.getElementById('ch-name').textContent = detail.channel;
       document.getElementById('ch-subtitle').textContent =
@@ -518,7 +533,7 @@
       const aiHtml = renderAiSection(ai, detail.roi);
       const dqHtml = isAI ? renderDqTiles(dqTiles) : '';
       const agentHtml = detail.channel === RETELL_CHANNEL ? renderAgentTable(agents) : '';
-      const smsHtml = detail.channel === APPOINTWISE_CHANNEL ? renderSmsSection(sms) : '';
+      const smsHtml = detail.channel === APPOINTWISE_CHANNEL ? (renderSmsSection(sms) + renderAwAgentTable(awAgents)) : '';
       const voiceHtml = detail.channel === RETELL_CHANNEL ? voiceDQSection() : '';
 
       document.getElementById('content').innerHTML =
@@ -557,12 +572,17 @@
           reqs.push(apiFetch(`/api/dashboard/ai/data-quality`));
         }
         if (CHANNEL === RETELL_CHANNEL) reqs.push(apiFetch(`/api/dashboard/retell/agents?${qs()}`));
-        if (CHANNEL === APPOINTWISE_CHANNEL) reqs.push(apiFetch(`/api/dashboard/appointwise/sms`));
+        if (CHANNEL === APPOINTWISE_CHANNEL) {
+          reqs.push(apiFetch(`/api/dashboard/appointwise/sms`));
+          reqs.push(apiFetch(`/api/dashboard/appointwise/agents`));
+        }
         const results = await Promise.all(reqs);
         const [detail, closes, ai, dq] = results;
-        const extra = results[4] ? results[4].data : null;  // agents (Retell) | sms (Appointwise)
-        render(detail.data, closes.data, ai ? ai.data : null, dq ? dq.data : null,
-          CHANNEL === RETELL_CHANNEL ? extra : null, CHANNEL === APPOINTWISE_CHANNEL ? extra : null);
+        const isRetell = CHANNEL === RETELL_CHANNEL, isAppt = CHANNEL === APPOINTWISE_CHANNEL;
+        const agents = isRetell && results[4] ? results[4].data : null;
+        const sms = isAppt && results[4] ? results[4].data : null;
+        const awAgents = isAppt && results[5] ? results[5].data : null;
+        render(detail.data, closes.data, ai ? ai.data : null, dq ? dq.data : null, agents, sms, awAgents);
       } catch (e) {
         document.getElementById('content').innerHTML =
           `<div class="empty">Failed to load. ${e.message} <button class="btn" onclick="load()">Retry</button></div>`;

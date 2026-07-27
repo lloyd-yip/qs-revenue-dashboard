@@ -229,6 +229,23 @@ class RetellCall(Base):
     )
 
 
+class AppointwiseEvent(Base):
+    """Events pushed from Appointwise agents via a Webhook Node (Appointwise has no read-API,
+    so this is the only source of *which agent* handled a contact). Tolerant schema — stores
+    whatever the webhook sends. Drives per-agent Appointwise attribution."""
+    __tablename__ = "appointwise_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    event_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    agent_name: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    agent_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    ghl_contact_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    phone: Mapped[str | None] = mapped_column(String, nullable=True)
+    email: Mapped[str | None] = mapped_column(String, nullable=True)
+    raw: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
 class ContactSmsStats(Base):
     """Per-contact SMS engagement, computed from GHL Conversations during the main sync.
 

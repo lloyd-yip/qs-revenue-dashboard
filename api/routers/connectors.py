@@ -26,6 +26,7 @@ from api.utils.appointwise_utils import (
     APPOINTWISE_SETTING_API_KEY,
     APPOINTWISE_SETTING_CLIENT_ID,
     get_appointwise_config,
+    get_or_create_webhook_secret,
 )
 from api.utils.retell_utils import (
     RETELL_SETTING_API_KEY,
@@ -240,6 +241,8 @@ class AppointwiseConnectorStatus(BaseModel):
     client_id_source: str
     connected: bool
     updated_at: str | None
+    webhook_url: str        # paste into the Appointwise Webhook Node
+    webhook_secret: str     # goes in the X-Appointwise-Secret header
 
 
 class AppointwiseConnectorUpdate(BaseModel):
@@ -249,6 +252,7 @@ class AppointwiseConnectorUpdate(BaseModel):
 
 async def _appointwise_status() -> AppointwiseConnectorStatus:
     cfg = await get_appointwise_config()
+    secret = await get_or_create_webhook_secret()
     async with AsyncSessionLocal() as session:
         meta = await get_setting_meta(session, APPOINTWISE_SETTING_API_KEY)
     return AppointwiseConnectorStatus(
@@ -259,6 +263,8 @@ async def _appointwise_status() -> AppointwiseConnectorStatus:
         client_id_source=cfg.client_id_source,
         connected=bool(cfg.api_key),
         updated_at=meta[1].isoformat() if meta else None,
+        webhook_url=f"{_env.public_base_url.rstrip('/')}/api/webhooks/appointwise",
+        webhook_secret=secret,
     )
 
 

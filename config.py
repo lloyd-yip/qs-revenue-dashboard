@@ -73,6 +73,9 @@ class Settings(BaseSettings):
     # the main sync (merged, not a separate pass). Set false to disable if it strains quota.
     sms_sync_enabled: bool = True
 
+    # Public base URL of this app — used to show the Appointwise webhook URL in Settings.
+    public_base_url: str = "https://qs-revenue-dashboard-production.up.railway.app"
+
     # Scheduler
     daily_sync_hour: int = 2    # 2 AM UTC
     daily_sync_minute: int = 0

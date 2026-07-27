@@ -5,14 +5,26 @@ analytics API, so the SMS metrics themselves come from GHL Conversations. These 
 are stored for source-checking / any future Appointwise API use. Mirrors retell_utils.
 """
 
+import secrets as _secrets
 from dataclasses import dataclass
 
 from config import settings
-from db.queries.settings import get_setting
+from db.queries.settings import get_setting, set_setting
 from db.session import AsyncSessionLocal
 
 APPOINTWISE_SETTING_API_KEY = "appointwise_api_key"
 APPOINTWISE_SETTING_CLIENT_ID = "appointwise_client_id"
+APPOINTWISE_SETTING_WEBHOOK_SECRET = "appointwise_webhook_secret"
+
+
+async def get_or_create_webhook_secret() -> str:
+    """Return the Appointwise webhook shared secret, generating + storing one if absent."""
+    async with AsyncSessionLocal() as session:
+        secret = await get_setting(session, APPOINTWISE_SETTING_WEBHOOK_SECRET)
+        if not secret:
+            secret = _secrets.token_urlsafe(24)
+            await set_setting(session, APPOINTWISE_SETTING_WEBHOOK_SECRET, secret)
+        return secret
 
 
 @dataclass

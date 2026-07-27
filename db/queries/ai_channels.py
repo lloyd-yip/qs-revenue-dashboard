@@ -12,7 +12,14 @@ from sqlalchemy import and_, case, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import SALES_PIPELINE_ID
-from db.models import ContactSmsStats, DealWhopMatch, ExpenseLineItem, Opportunity, RetellCall
+from db.models import (
+    AppointwiseEvent,
+    ContactSmsStats,
+    DealWhopMatch,
+    ExpenseLineItem,
+    Opportunity,
+    RetellCall,
+)
 from db.queries.common import base_filter, has_1st_call, prorated_expense_amount
 from sync.ghl_client import DEAL_WON_STAGE_ID, DISQUALIFIED_STAGE_ID
 
@@ -266,6 +273,42 @@ async def get_retell_agent_breakdown(
         }
         for r in rows
     ]
+
+
+async def get_appointwise_agent_breakdown(session: AsyncSession) -> list[dict]:
+    """Per-Appointwise-agent performance, from webhook events (the only agent-identity source).
+    Empty until the Appointwise Webhook Node is configured to push events."""
+    pairs = (await session.execute(
+        select(AppointwiseEvent.agent_name, AppointwiseEvent.ghl_contact_id)
+        .where(and_(AppointwiseEvent.agent_name.isnot(None), AppointwiseEvent.ghl_contact_id.isnot(None)))
+        .distinct()
+    )).all()
+    if not pairs:
+        return []
+    booked_ids = set((await session.execute(
+        select(Opportunity.ghl_contact_id).where(and_(
+            ai_scope_filter(),
+            Opportunity.canonical_channel == "AI Bot (Appointwise)",
+            Opportunity.ghl_contact_id.isnot(None),
+        ))
+    )).scalars().all())
+
+    from collections import defaultdict
+    agents: dict[str, set] = defaultdict(set)
+    for name, cid in pairs:
+        agents[name].add(cid)
+
+    out = [
+        {
+            "agent_name": name,
+            "contacts": len(cids),
+            "booked": len(cids & booked_ids),
+            "book_rate": round(len(cids & booked_ids) / len(cids), 4) if cids else None,
+        }
+        for name, cids in agents.items()
+    ]
+    out.sort(key=lambda x: x["contacts"], reverse=True)
+    return out
 
 
 async def get_appointwise_sms_stats(session: AsyncSession) -> dict:

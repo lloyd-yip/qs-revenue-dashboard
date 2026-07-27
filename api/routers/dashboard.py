@@ -67,6 +67,7 @@ from db.queries.channel_cost import delete_channel_cost, get_channel_cost, set_c
 from db.queries.ai_channels import (
     get_ai_channel_stats,
     get_ai_data_quality,
+    get_appointwise_agent_breakdown,
     get_appointwise_sms_stats,
     get_retell_agent_breakdown,
     get_retell_calls,
@@ -340,8 +341,14 @@ async def retell_agents(
 
 @router.get("/appointwise/sms")
 async def appointwise_sms(db: AsyncSession = Depends(get_db)):
-    """Appointwise SMS engagement (from GHL Conversations) — booked-lead cohort."""
+    """Appointwise SMS engagement (from GHL Conversations)."""
     return {"data": await get_appointwise_sms_stats(db)}
+
+
+@router.get("/appointwise/agents")
+async def appointwise_agents(db: AsyncSession = Depends(get_db)):
+    """Per-Appointwise-agent performance (from webhook events). Empty until webhooks flow."""
+    return {"data": await get_appointwise_agent_breakdown(db)}
 
 
 @router.get("/ai/data-quality")
