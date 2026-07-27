@@ -611,10 +611,20 @@ let sortKey = 'first_payment_date';
 let sortDir = -1; // -1 = desc
 
 // ── Boot ───────────────────────────────────────────────────────────────────
-(async () => {
+// Deferred to DOMContentLoaded so the whole script has evaluated first — the
+// initial load path (loadWhopLive → pbRange) reads the `PB`/`pbCustom` consts
+// declared further down, which would be in the temporal dead zone if we ran the
+// boot inline here. Running inline left New Deals stuck on "Loading…" until the
+// user changed the month (the only symptom of the swallowed ReferenceError).
+function boot(){
   wlInitMonths();
-  await Promise.all([loadWhopLive(), loadSuggestedMatches(), loadSummary(), loadDeals()]);
-})();
+  return Promise.all([loadWhopLive(), loadSuggestedMatches(), loadSummary(), loadDeals()]);
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', boot);
+} else {
+  boot();
+}
 
 // ── Confirm Matches (non-exact-email matches with a payment) ─────────────────
 async function loadSuggestedMatches(){
