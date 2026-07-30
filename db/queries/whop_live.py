@@ -65,6 +65,7 @@ async def update_live_payment_metrics(
         "plan_months_flag": metrics.get("plan_months_flag"),
         "total_paid": metrics.get("total_paid"),
         "total_refunded": metrics.get("total_refunded"),
+        "last_refund_date": metrics.get("last_refund_date"),
         "upfront_cash": metrics.get("upfront_cash"),
         "payment_count": metrics.get("payment_count"),
         "remaining_ar": metrics.get("remaining_ar"),

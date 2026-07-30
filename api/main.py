@@ -323,13 +323,31 @@ async def serve_pnl(request: Request):
     )
 
 
-@app.get("/deals", include_in_schema=False)
-async def serve_deals(request: Request):
+# Deals page + its per-tab deep links. Each URL serves the same deals.html but
+# pre-selects a lens via the injected `initial_lens` context var; the page also
+# keeps the URL in sync as you switch tabs (see deals.html).
+_DEALS_LENS_BY_SLUG = {"new-deals": "live", "collections": "coll", "historical": "hist"}
+
+
+def _deals_response(request: Request, initial_lens: str):
     return _templates.TemplateResponse(
         "deals.html",
-        {"request": request, "api_token": settings.api_bearer_token},
+        {"request": request, "api_token": settings.api_bearer_token, "initial_lens": initial_lens},
         headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
     )
+
+
+@app.get("/deals", include_in_schema=False)
+async def serve_deals(request: Request):
+    return _deals_response(request, "live")
+
+
+@app.get("/deals/{lens}", include_in_schema=False)
+async def serve_deals_lens(request: Request, lens: str):
+    initial = _DEALS_LENS_BY_SLUG.get(lens)
+    if initial is None:
+        raise HTTPException(status_code=404, detail=f"Unknown deals view: {lens}")
+    return _deals_response(request, initial)
 
 
 @app.get("/settings", include_in_schema=False)

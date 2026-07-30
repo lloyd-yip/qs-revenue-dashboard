@@ -15,6 +15,7 @@ from db.models import WhopOrphanPayment
 ORPHAN_METRIC_FIELDS = (
     "whop_email", "whop_name", "whop_product_id", "first_payment_date",
     "total_paid", "net_cash_collected", "upfront_cash", "total_refunded",
+    "last_refund_date",
     "payment_count", "total_installments", "is_splitit", "is_claritypay",
     "plan_months_flag", "provider_fee_pct",
 )

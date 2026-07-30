@@ -12,12 +12,14 @@ Everything here is derived from the aggregate columns already on deal_whop_match
 """
 
 import calendar
+from collections import defaultdict
 from datetime import date
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import DealWhopMatch
+from db.queries.rep_comp import DEFAULT_COMMISSION_PCT, get_rep_comp_settings_map
 
 
 def _add_months(d: date, n: int) -> date:
@@ -65,12 +67,13 @@ def _net_mult(m: DealWhopMatch) -> float:
 
 
 def _deal_schedule(m: DealWhopMatch, today: date) -> list[dict]:
-    """Projected installments for one deal → [{month, amount, paid, date, is_first}].
+    """Projected installments for one deal → [{month, amount, gross, paid, date, is_first}].
 
-    Amounts are NET of the payment-provider fee (what QS actually keeps), so the
-    Collections cash figures reconcile with the New Deals tab. Only financed deals
-    are scaled; internal/pay-in-full plans have no fee (mult 1.0), so their amounts
-    are unchanged."""
+    `amount` is NET of the payment-provider fee (what QS actually keeps), so the
+    Collections cash figures reconcile with the New Deals tab. `gross` is the pre-fee
+    installment (== amount for internal/pay-in-full plans, which carry no fee) —
+    it's the commission basis, matching how the Sales Reps tab commissions on
+    total_paid. Only financed deals differ (gross = total_paid, amount = net)."""
     total_paid = float(m.total_paid) if m.total_paid else 0.0
     fpd = m.first_payment_date
     if not fpd or total_paid <= 0:
@@ -79,44 +82,60 @@ def _deal_schedule(m: DealWhopMatch, today: date) -> list[dict]:
     if m.is_splitit or m.is_claritypay:
         # External financing settles 100% upfront: one installment, no future cash.
         d = _clamp_paid(fpd, True, today)
-        return [{"month": _mk(d), "amount": round(net_total, 2),
+        return [{"month": _mk(d), "amount": round(net_total, 2), "gross": round(total_paid, 2),
                  "paid": True, "date": d, "is_first": True}]
     paid_count = m.payment_count or 0
     n = max(m.total_installments or paid_count or 1, paid_count, 1)
     size = net_total / paid_count if paid_count else net_total / n
+    gross_size = total_paid / paid_count if paid_count else total_paid / n
     out = []
     for k in range(n):
         paid = k < paid_count
         d = _clamp_paid(_add_months(fpd, k), paid, today)
-        out.append({"month": _mk(d), "amount": round(size, 2),
+        out.append({"month": _mk(d), "amount": round(size, 2), "gross": round(gross_size, 2),
                     "paid": paid, "date": d, "is_first": k == 0})
     return out
 
 
-async def get_collections_for_range(session: AsyncSession, start: date, end: date) -> dict:
+async def get_collections_for_range(
+    session: AsyncSession, start: date, end: date, rep: str | None = None
+) -> dict:
     """Aggregate projected collections for the window [start, end].
 
     Bounds are dates, so custom day-level windows work: installments are filtered
     by their (estimated, day-clamped) date. For month-aligned bounds this is
     identical to the original whole-month behaviour.
 
-    Returns per-month collected/outstanding/total, window totals (incl. refunds),
-    and the outstanding payment-plan breakdown (which accounts, how much left).
+    rep: when set, restrict to deals owned by this rep (matched on the deal's
+    denormalized owner name; "Unassigned" selects owner-less deals).
+
+    Returns per-month collected/outstanding/refunded/total, window totals (incl.
+    refunds), the outstanding payment-plan breakdown, and a per-rep commission
+    worksheet (gross cash collected − refunds this period × the rep's commission %).
     """
     start_key, end_key = _mk(start), _mk(end)
     today = date.today()  # paid installments never project past today
-    rows = (await session.execute(
-        select(DealWhopMatch).where(DealWhopMatch.is_excluded.isnot(True))
-    )).scalars().all()
+    q = select(DealWhopMatch).where(DealWhopMatch.is_excluded.isnot(True))
+    if rep:
+        # Match on the owner name, tolerant of whitespace/case differences between
+        # the /reps dropdown value and the deal's denormalized owner name (some GHL
+        # names carry doubled spaces). "Unassigned" selects owner-less deals.
+        owner_col = func.coalesce(DealWhopMatch.ghl_owner_name, "Unassigned")
+        owner_norm = func.lower(func.trim(func.regexp_replace(owner_col, r"\s+", " ", "g")))
+        q = q.where(owner_norm == " ".join(rep.split()).lower())
+    rows = (await session.execute(q)).scalars().all()
 
     months: dict[str, dict] = {
-        mk: {"month": mk, "collected": 0.0, "outstanding": 0.0,
+        mk: {"month": mk, "collected": 0.0, "outstanding": 0.0, "refunded": 0.0,
              "new_deals": 0.0, "payment_plans": 0.0, "deal_ids": set()}
         for mk in _months_between(start, end)
     }
     plans: list[dict] = []
     refunded_total = 0.0
     window_deal_ids: set[str] = set()
+    # Per-rep commission worksheet: gross cash collected this period, refunds this
+    # period (by refund month), → commission on the net of the two.
+    rep_agg: dict[str, dict] = defaultdict(lambda: {"collected": 0.0, "refunded": 0.0})
     # Revenue source split, per installment: a deal's FIRST payment = New Deals
     # (net-new that month); its 2nd/3rd/… installments = Payment Plans (ongoing).
     src = {
@@ -125,6 +144,7 @@ async def get_collections_for_range(session: AsyncSession, start: date, end: dat
     }
 
     for r in rows:
+        owner = r.ghl_owner_name or "Unassigned"
         sched = _deal_schedule(r, today)
         if not sched:
             continue
@@ -138,10 +158,19 @@ async def get_collections_for_range(session: AsyncSession, start: date, end: dat
             b["deal_ids"].add(r.ghl_opportunity_id)
             window_deal_ids.add(r.ghl_opportunity_id)
             src[cohort][paidkey] += s["amount"]
+            if s["paid"]:  # commission accrues on gross cash actually collected
+                rep_agg[owner]["collected"] += s["gross"]
 
+        # Refunds are attributed to the month the refund was INITIATED
+        # (last_refund_date), falling back to the deal's first-payment month when the
+        # refund date hasn't been captured yet. This decouples a refund from the
+        # deal's installment schedule so a later refund lands in its own month.
         refunded = float(r.total_refunded) if r.total_refunded else 0.0
-        if in_window and refunded:
+        refund_day = r.last_refund_date or r.first_payment_date
+        if refunded and refund_day and start <= refund_day <= end:
+            months[_mk(refund_day)]["refunded"] += refunded
             refunded_total += refunded
+            rep_agg[owner]["refunded"] += refunded
 
         # Outstanding payment plan (internal multi-installment plan not fully paid).
         is_financed = bool(r.is_splitit or r.is_claritypay)
@@ -171,10 +200,13 @@ async def get_collections_for_range(session: AsyncSession, start: date, end: dat
     for mk in _months_between(start, end):
         b = months[mk]
         collected, outstanding = round(b["collected"], 2), round(b["outstanding"], 2)
+        refunded = round(b["refunded"], 2)
         month_list.append({
             "month": mk,
             "collected": collected,
             "outstanding": outstanding,
+            "refunded": refunded,
+            "net_collected": round(collected - refunded, 2),
             "total": round(collected + outstanding, 2),
             "new_deals": round(b["new_deals"], 2),
             "payment_plans": round(b["payment_plans"], 2),
@@ -185,12 +217,39 @@ async def get_collections_for_range(session: AsyncSession, start: date, end: dat
     outstanding_sum = round(sum(m["outstanding"] for m in month_list), 2)
     plans.sort(key=lambda p: p["outstanding"], reverse=True)
 
+    # Per-rep commission worksheet: commission = commission% × (gross cash collected
+    # − refunds this period). Refunds reduce commission in the month they're
+    # initiated (a clawback), consistent with the refund-by-refund-date model above.
+    # Commission % comes from rep_comp_settings (matched by name); reps with no
+    # stored row use the default and are flagged so the UI can label them.
+    comp_map = await get_rep_comp_settings_map(session)
+    comp_by_name = {v["rep_name"]: v["commission_pct"] for v in comp_map.values()}
+    reps_list = []
+    for owner, agg in rep_agg.items():
+        collected = round(agg["collected"], 2)
+        refunded = round(agg["refunded"], 2)
+        net = round(collected - refunded, 2)
+        pct = comp_by_name.get(owner, DEFAULT_COMMISSION_PCT)
+        reps_list.append({
+            "rep": owner,
+            "cash_collected": collected,
+            "refunded": refunded,
+            "net_collected": net,
+            "commission_pct": pct,
+            "commission": round(net * pct / 100.0, 2),
+            "is_default_pct": owner not in comp_by_name,
+        })
+    reps_list = [r for r in reps_list if r["cash_collected"] or r["refunded"]]
+    reps_list.sort(key=lambda r: r["cash_collected"], reverse=True)
+    commission_total = round(sum(r["commission"] for r in reps_list), 2)
+
     def _src(k):
         c, o = round(src[k]["collected"], 2), round(src[k]["outstanding"], 2)
         return {"collected": c, "outstanding": o, "total": round(c + o, 2)}
 
     return {
         "range": {"start": start_key, "end": end_key},
+        "rep": rep,
         "months": month_list,
         "totals": {
             "collected": collected_sum,
@@ -198,10 +257,12 @@ async def get_collections_for_range(session: AsyncSession, start: date, end: dat
             "total": round(collected_sum + outstanding_sum, 2),
             "refunded": round(refunded_total, 2),
             "net_collected": round(collected_sum - refunded_total, 2),
+            "commission": commission_total,
             "deal_count": len(window_deal_ids),
             "plan_count": len(plans),
             "new_deals": _src("new_deals"),
             "payment_plans_revenue": _src("payment_plans"),
         },
+        "reps": reps_list,
         "payment_plans": plans,
     }

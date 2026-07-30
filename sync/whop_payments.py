@@ -263,6 +263,24 @@ def _payment_date(p: dict):
         return None
 
 
+def _refund_date(p: dict):
+    """Date this payment's refund was initiated, or None. Whop stamps a refunded
+    payment with refunded_at (unix ts or ISO); accept a few aliases. Deliberately
+    does NOT fall back to the charge date — a missing refund date must stay None so
+    Collections falls back to the deal's first-payment month rather than mislabel
+    the refund as having happened at charge time."""
+    raw = (p.get("refunded_at") or p.get("refund_at")
+           or p.get("refunded_at_ts") or p.get("refund_created_at"))
+    if not raw:
+        return None
+    try:
+        if isinstance(raw, (int, float)):
+            return datetime.fromtimestamp(raw, tz=timezone.utc).date()
+        return datetime.fromisoformat(str(raw).replace("Z", "+00:00")).date()
+    except (ValueError, AttributeError, OSError):
+        return None
+
+
 def _is_deal_payment(p: dict) -> bool:
     return (
         p.get("status") in ("paid", "complete", "completed")
@@ -383,6 +401,11 @@ def _compute_payment_metrics(
         return 0.0
 
     total_refunded = round(sum(_refund_amount(p) for p in payments), 2)
+    # last_refund_date: when the most recent refund on this deal was initiated, so
+    # Collections can attribute it to the month it happened. None if unavailable.
+    _refund_dates = [d for p in payments if _refund_amount(p) > 0
+                     and (d := _refund_date(p)) is not None]
+    last_refund_date = max(_refund_dates) if _refund_dates else None
     contract_value = ghl_monetary_value or 0.0
     remaining_ar = max(contract_value - total_paid, 0.0) if contract_value else None
     # is_financing = any deal with remaining AR outstanding, regardless of
@@ -490,6 +513,7 @@ def _compute_payment_metrics(
         "upfront_cash": round(upfront_cash, 2) if upfront_cash else None,
         "total_paid": round(total_paid, 2),
         "total_refunded": total_refunded or None,
+        "last_refund_date": last_refund_date,
         "payment_count": payment_count,
         "is_financing": is_financing,
         "total_contract_value": round(contract_value, 2) if contract_value else None,

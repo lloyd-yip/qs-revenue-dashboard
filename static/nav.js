@@ -24,7 +24,7 @@
     if (p.length > 1 && p.charAt(p.length - 1) === '/') p = p.slice(0, -1);
     if (p === '' || p === '/' || p === '/dashboard') return 'sales';
     if (p === '/pnl') return 'pnl';
-    if (p === '/deals') return 'deals';
+    if (p === '/deals' || p.indexOf('/deals/') === 0) return 'deals';  // /deals + per-tab deep links
     if (p === '/data-quality') return 'dq';
     if (p === '/sync-history') return 'sync';
     if (p === '/settings') return 'settings';

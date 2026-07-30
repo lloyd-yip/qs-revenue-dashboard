@@ -364,6 +364,10 @@ class DealWhopMatch(Base):
     # total_refunded: cash refunded to the customer across this deal's Whop payments
     # (status='refunded' / refunded amount). Net collected = total_paid - total_refunded.
     total_refunded: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    # last_refund_date: date the refund was initiated (latest refunded payment's
+    # refunded_at). NULL when no refund or not yet backfilled. Collections buckets a
+    # refund into this month; falls back to first_payment_date's month when NULL.
+    last_refund_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     total_contract_value: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
     remaining_ar: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
     is_financing: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
@@ -421,6 +425,7 @@ class WhopOrphanPayment(Base):
     net_cash_collected: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
     upfront_cash: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
     total_refunded: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    last_refund_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     payment_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     total_installments: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_splitit: Mapped[bool | None] = mapped_column(Boolean, nullable=True)

@@ -171,13 +171,14 @@ async def whop_live_months(db: AsyncSession = Depends(get_db)) -> list[str]:
 async def pnl_collections(
     start: str = Query(..., pattern=_BOUND_PATTERN, description="Range start — month (YYYY-MM) or exact day (YYYY-MM-DD)"),
     end: str | None = Query(None, pattern=_BOUND_PATTERN, description="Range end — month (YYYY-MM) or exact day (YYYY-MM-DD); defaults to start"),
+    rep: str | None = Query(None, description="Restrict to one rep by owner name ('Unassigned' for owner-less deals)"),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Projected collections across ALL payment plans for a month range — how much
-    lands each month (collected vs still-outstanding), refunds, and the plan
-    breakdown. Day-level bounds filter installments by their (estimated) dates.
-    Future cash is estimated (equal monthly installments); financed
-    deals settle upfront. See db/queries/collections.py."""
+    lands each month (collected vs still-outstanding), refunds (by refund month),
+    the plan breakdown, and a per-rep commission worksheet. Day-level bounds filter
+    installments by their (estimated) dates. Future cash is estimated (equal monthly
+    installments); financed deals settle upfront. See db/queries/collections.py."""
     try:
         range_start = _parse_bound(start, is_end=False)
         range_end = _parse_bound(end or start, is_end=True)
@@ -185,7 +186,7 @@ async def pnl_collections(
         raise HTTPException(status_code=422, detail=f"Invalid range: {start}..{end}")
     if range_end < range_start:
         raise HTTPException(status_code=422, detail="Range end is before start")
-    return await get_collections_for_range(db, range_start, range_end)
+    return await get_collections_for_range(db, range_start, range_end, rep=(rep or None))
 
 
 class OrphanReviewInput(BaseModel):
@@ -267,7 +268,7 @@ async def review_live_deal(body: ReviewDealInput, db: AsyncSession = Depends(get
         row.match_method = "manual_link_removed"
         for col in ("whop_membership_id", "whop_email", "whop_name", "whop_product_id",
                     "whop_plan_name", "whop_created_at", "total_paid", "upfront_cash",
-                    "net_cash_collected", "total_refunded", "remaining_ar", "payment_count",
+                    "net_cash_collected", "total_refunded", "last_refund_date", "remaining_ar", "payment_count",
                     "total_installments", "first_payment_date", "total_contract_value",
                     "provider_fee_pct", "is_splitit", "is_claritypay", "plan_months_flag",
                     "is_financing"):

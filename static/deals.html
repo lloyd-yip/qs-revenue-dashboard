@@ -376,6 +376,12 @@
     .col-preset { background:var(--surface2); border:1px solid var(--border); color:var(--muted); font-size:12px; padding:6px 11px; border-radius:7px; cursor:pointer; font-family:inherit; }
     .col-preset:hover { color:var(--text); border-color:var(--accent); }
     .col-preset.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+    .col-repbar { display:flex; align-items:center; gap:10px; margin:-4px 0 18px 2px; flex-wrap:wrap; }
+    .col-replabel { font-size:12px; color:var(--muted); }
+    #colRep { background:var(--surface2); border:1px solid var(--border); color:var(--text); padding:6px 12px; border-radius:7px; font-size:13px; font-weight:600; font-family:inherit; cursor:pointer; max-width:260px; }
+    .col-rephint { font-size:12px; color:var(--muted); }
+    .col-commission { color:var(--accent2); font-weight:700; }
+    .col-badge-default { font-size:10px; color:var(--muted); border:1px solid var(--border); border-radius:5px; padding:1px 5px; margin-left:5px; vertical-align:middle; }
 
     .col-cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:14px; margin-bottom:20px; }
     .col-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px 18px; }
@@ -517,6 +523,11 @@
       </span>
       <span class="wl-refreshed">Net of Whop provider fees · future cash is a projection (equal monthly installments) · financed deals settle upfront</span>
     </div>
+    <div class="col-repbar">
+      <span class="col-replabel">Filter by rep</span>
+      <select id="colRep" onchange="colRepChange(this.value)"><option value="">All reps</option></select>
+      <span id="colRepHint" class="col-rephint"></span>
+    </div>
     <div id="colBody"><div class="wl-empty">Loading…</div></div>
   </section>
 
@@ -618,8 +629,10 @@ let sortDir = -1; // -1 = desc
 // user changed the month (the only symptom of the swallowed ReferenceError).
 function boot(){
   wlInitMonths();
+  wlSetLens(lensFromPath(), false);   // pre-select the tab named in /deals/<slug>
   return Promise.all([loadWhopLive(), loadSuggestedMatches(), loadSummary(), loadDeals()]);
 }
+window.addEventListener('popstate', () => wlSetLens(lensFromPath(), false));  // back/forward
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', boot);
 } else {
@@ -1034,7 +1047,16 @@ async function wlReviewDeal(oppId, action, ev){
   } catch (e) { showToast('❌ ' + e.message, 'error'); }
 }
 let colLoaded = false;
-function wlSetLens(which){
+// Deep-linkable tabs: each lens maps to a /deals/<slug> URL so views are shareable
+// and the browser back/forward buttons work.
+const LENS_BY_SLUG = { 'new-deals':'live', 'collections':'coll', 'historical':'hist' };
+const SLUG_BY_LENS = { live:'new-deals', coll:'collections', hist:'historical' };
+function lensFromPath(){
+  const m = (location.pathname || '').match(/^\/deals\/([^/?#]+)/);
+  return (m && LENS_BY_SLUG[m[1]]) || 'live';
+}
+function wlSetLens(which, push){
+  if (push === undefined) push = true;
   el('wl-tab-live').classList.toggle('active', which==='live');
   el('wl-tab-coll').classList.toggle('active', which==='coll');
   el('wl-tab-hist').classList.toggle('active', which==='hist');
@@ -1042,6 +1064,9 @@ function wlSetLens(which){
   el('lens-collections').classList.toggle('wl-hidden', which!=='coll');
   el('lens-historical').classList.toggle('wl-hidden', which!=='hist');
   if (which==='coll' && !colLoaded){ colLoaded = true; colInit(); }
+  // Keep the URL in sync (/deals/<slug>) without reloading; skip on initial/popstate.
+  const target = '/deals/' + (SLUG_BY_LENS[which] || 'new-deals');
+  if (push && location.pathname !== target){ history.pushState(null, '', target + location.search); }
 }
 
 // ── Collections lens (projected cash across all payment plans) ────────────────
@@ -1050,6 +1075,7 @@ function colMonthLabel(mk){ const p=mk.split('-'); return new Date(+p[0], +p[1]-
 function colShift(mk, n){ const p=mk.split('-'); const d=new Date(+p[0], +p[1]-1+n, 1); return colYm(d); }
 function colCmp(a,b){ return a<b?-1:a>b?1:0; }
 
+let colRep = '';  // '' = all reps; otherwise the rep's owner name
 function colInit(){
   const now = new Date();
   const opts = [];
@@ -1058,8 +1084,28 @@ function colInit(){
   const optHtml = sel => opts.map(m=>`<option value="${m}"${m===sel?' selected':''}>${colMonthLabel(m)}</option>`).join('');
   el('colFrom').innerHTML = optHtml(cur);
   el('colTo').innerHTML = optHtml(to);
+  colLoadReps();
   loadCollections();
 }
+async function colLoadReps(){
+  try {
+    const { data } = await (await fetch(`${API}/reps`)).json();
+    const groups = { active: [], inactive: [], other: [] };
+    (data||[]).forEach(r => { (groups[r.category] || groups.other).push(r); });
+    const labels = { active:'Active reps', inactive:'Inactive reps', other:'Other' };
+    const sel = el('colRep');
+    let html = '<option value="">All reps</option>';
+    for (const cat of ['active','inactive','other']){
+      if (!groups[cat].length) continue;
+      html += `<optgroup label="${labels[cat]}">` +
+        groups[cat].map(r => `<option value="${esc(r.rep_name)}">${esc(r.rep_name)}</option>`).join('') +
+        '</optgroup>';
+    }
+    sel.innerHTML = html;
+    sel.value = colRep;
+  } catch(e){ /* keep the All-reps default on failure */ }
+}
+function colRepChange(v){ colRep = v || ''; loadCollections(); }
 function colClampAndLoad(which){
   let f = el('colFrom').value, t = el('colTo').value;
   if (colCmp(f,t) > 0){ if (which==='from') el('colTo').value = f; else el('colFrom').value = t; }
@@ -1088,8 +1134,9 @@ function colMonthsBetween(from, to){ const out=[]; let m=from; while(colCmp(m,to
 async function loadCollections(){
   const [s, e] = pbRange('col');
   const body = el('colBody'); body.innerHTML = '<div class="wl-empty">Loading…</div>';
+  const repParam = colRep ? `&rep=${encodeURIComponent(colRep)}` : '';
   try {
-    const r = await fetch(`${API}/pnl/collections?start=${s}&end=${e}`);
+    const r = await fetch(`${API}/pnl/collections?start=${s}&end=${e}${repParam}`);
     if (!r.ok) throw new Error('HTTP '+r.status);
     colRender(await r.json());
   } catch(err){ body.innerHTML = '<div class="wl-empty">Could not load collections ('+err.message+')</div>'; }
@@ -1098,15 +1145,53 @@ function colCard(label, val, cls, tip){
   return '<div class="col-card'+(cls?' '+cls:'')+'"'+(tip?' data-tip="'+esc(tip)+'"':'')
     +'><div class="col-card-label">'+label+'</div><div class="col-card-val">'+val+'</div></div>';
 }
+// Per-rep commission worksheet. Cash Collected is GROSS (pre-fee) — the commission
+// basis, matching how the Sales Reps tab commissions on total_paid; that's why it can
+// differ from the net "Collected" card above. Commission = % × (gross collected −
+// refunds initiated this window).
+function colRepTable(reps){
+  if (!reps || !reps.length) return '';
+  const rows = reps.map(r => {
+    const pctCell = r.commission_pct + '%' + (r.is_default_pct ? '<span class="col-badge-default" title="No comp set — using the 10% default. Set it on the Sales Reps tab.">default</span>' : '');
+    return '<tr><td class="deal-name">'+esc(r.rep)+'</td>'
+      + '<td class="num pos">'+fmtUSD(r.cash_collected)+'</td>'
+      + '<td class="num neg">'+(r.refunded ? '−'+fmtUSD(r.refunded) : '—')+'</td>'
+      + '<td class="num">'+fmtUSD(r.net_collected)+'</td>'
+      + '<td class="num dim">'+pctCell+'</td>'
+      + '<td class="num col-commission">'+fmtUSD(r.commission)+'</td></tr>';
+  }).join('');
+  const total = reps.reduce((a,r)=>a+(r.commission||0),0);
+  const foot = reps.length > 1
+    ? '<tfoot><tr><td>Total</td><td class="num pos">'+fmtUSD(reps.reduce((a,r)=>a+r.cash_collected,0))
+      + '</td><td class="num neg">'+fmtUSD(reps.reduce((a,r)=>a+r.refunded,0))
+      + '</td><td class="num">'+fmtUSD(reps.reduce((a,r)=>a+r.net_collected,0))
+      + '</td><td></td><td class="num col-commission">'+fmtUSD(total)+'</td></tr></tfoot>' : '';
+  return '<div class="col-plans-title">Rep Commissions <span>commission = rate × (cash collected − refunds) for this window</span></div>'
+    + '<div class="table-wrap"><table class="col-plans"><thead><tr>'
+    + '<th>Rep</th>'
+    + '<th style="text-align:right" data-tip="Gross cash collected in this window (paid installments, before Whop provider fees) — the commission basis. This is why it can exceed the net Collected card above.">Cash Collected</th>'
+    + '<th style="text-align:right" data-tip="Refunds initiated in this window (by refund date; falls back to the deal\'s first-payment month until the next Whop refresh backfills the refund date). Reduces the commission base.">Refunded</th>'
+    + '<th style="text-align:right">Net</th>'
+    + '<th style="text-align:right" data-tip="Commission rate from the Sales Reps tab (default 10% when unset).">Rate</th>'
+    + '<th style="text-align:right" data-tip="Rate × Net (cash collected − refunds this window).">Commission</th>'
+    + '</tr></thead><tbody>'+rows+'</tbody>'+foot+'</table></div>';
+}
 function colRender(data){
   const t = data.totals||{}, months = data.months||[], plans = data.payment_plans||[];
   let h = '<div class="col-cards">'
     + colCard('Collected', fmtUSD(t.collected), 'pos', 'Net cash already collected in this window (paid installments landed), after the 15% Whop provider fee on financed deals. Matches the New Deals tab basis.')
     + colCard('Outstanding', fmtUSD(t.outstanding), 'warn', 'Projected installments still to land in this window (estimated equal monthly installments), net of Whop provider fees.')
     + colCard('Total Expected', fmtUSD(t.total), '', 'Collected + Outstanding across the selected window (net of Whop provider fees).')
-    + colCard('Refunded', fmtUSD(t.refunded), 'neg', 'Cash refunded to customers on these deals (from Whop payment refund status). Populates after the next Run Match.')
+    + colCard('Refunded', fmtUSD(t.refunded), 'neg', 'Cash refunded to customers, counted in the month the refund was initiated (refund date). Until the next Whop refresh backfills refund dates, a refund falls back to the deal’s first-payment month.')
     + colCard('Net Collected', fmtUSD(t.net_collected), '', 'Collected − Refunded (Collected is already net of Whop provider fees).')
     + '</div>';
+
+  // Rep commission worksheet (the user's headline ask) — sits up top under the cards.
+  h += colRepTable(data.reps || []);
+  const repHint = el('colRepHint');
+  if (repHint) repHint.textContent = colRep
+    ? ('Commission: ' + fmtUSD((t.commission)||0))
+    : ((data.reps||[]).length + ' rep' + (((data.reps||[]).length)!==1?'s':'') + ' · total commission ' + fmtUSD((t.commission)||0));
 
   // Revenue source split: new deals vs ongoing payment plans.
   const nd = t.new_deals || {}, pp = t.payment_plans_revenue || {};
@@ -1135,6 +1220,7 @@ function colRender(data){
         + '<div class="col-mrow" data-tip="'+esc('Cash in '+lbl+' from LATER installments (2nd, 3rd, …) of deals that first paid in an earlier month — ongoing payment plans.')+'"><span><span class="col-dot pp"></span>Payment Plans</span><span>'+fmtUSD(m.payment_plans)+'</span></div>'
       + '</div>'
       + '<div class="col-mrow col-mtotal" data-tip="'+esc('Total expected in '+lbl+' = Collected + Outstanding (equivalently New Deals + Payment Plans).')+'"><span>Total</span><span>'+fmtUSD(m.total)+'</span></div>'
+      + (m.refunded ? '<div class="col-mrow" data-tip="'+esc('Refunds initiated in '+lbl+' (by refund date). Shown as a reduction; not part of the Total above.')+'"><span>Refunded</span><span class="neg">−'+fmtUSD(m.refunded)+'</span></div>' : '')
       + '<div class="col-mcount">'+m.deal_count+' deal'+(m.deal_count!==1?'s':'')+'</div></div>';
   });
   h += '</div></div>';
