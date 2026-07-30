@@ -146,6 +146,11 @@
 
     // ── formatting ──
     const money = v => (v || v === 0) ? '$' + Math.round(v).toLocaleString() : '—';
+    // Cents-precise money for cost-efficiency figures (a $0.95/booked cost must not round to $1).
+    // Whole amounts stay clean ($291, $1,500); fractional amounts show proper cents ($0.95, $1.70).
+    const money2 = v => (v || v === 0)
+      ? '$' + Number(v).toLocaleString(undefined, { minimumFractionDigits: Number.isInteger(v) ? 0 : 2, maximumFractionDigits: 2 })
+      : '—';
     const num = v => (v || v === 0) ? v.toLocaleString() : '0';
     const pct = r => (r === null || r === undefined) ? '—' : (r * 100).toFixed(1) + '%';
     const rateCls = (r, good, bad) => r === null ? '' : (r >= good ? 'val-good' : (r <= bad ? 'val-bad' : 'val-warn'));
@@ -183,11 +188,11 @@
       return `<div class="lq-bar">${bar}</div><div class="lq-legend">${legend}</div>`;
     }
 
-    const COST_SRC_LABEL = { retell: 'Retell billing', xero: 'Xero (Retellai)', manual: 'manual entry' };
+    const COST_SRC_LABEL = { retell: 'Retell billing', xero: 'Xero expense', manual: 'manual entry' };
     function renderRoi(roi) {
       const manualSet = roi.manual_set;
       const costVal = manualSet ? Math.round(roi.cost) : '';
-      const m = (label, val, isX, tip) => statCard(label, val === null || val === undefined ? '—' : (isX ? val + '×' : money(val)), null, null, tip);
+      const m = (label, val, isX, tip) => statCard(label, val === null || val === undefined ? '—' : (isX ? val + '×' : money2(val)), null, null, tip);
       let hint;
       if (manualSet) hint = `Manual cost for ${START} → ${END}. Clear to fall back to Retell / Xero.`;
       else if (roi.is_set) hint = `Auto: ${money(roi.cost)} from ${COST_SRC_LABEL[roi.cost_source] || 'source'}. Enter a value to override.`;
@@ -203,6 +208,10 @@
             <span class="roi-hint">${hint}</span>
           </div>
           <div class="roi-metrics">
+            ${statCard('Total Cost', roi.is_set ? money2(roi.cost) : '—',
+              roi.is_set ? (COST_SRC_LABEL[roi.cost_source] || 'this range') : 'not set', null,
+              'Total cost for this channel over the selected date range. A manual value (entered above) wins; otherwise it auto-pulls from Retell per-call billing, else the matching Xero expense line. Everything below divides by this.')}
+            ${m('Cost / Booked Call', roi.cost_per_booked, false, 'Channel cost ÷ Total Opps — every booked call/opportunity attributed to this channel in range. What it costs to book one call.')}
             ${m('Cash ROI', roi.roi, true, 'Cash Collected ÷ Channel cost for this range. e.g. 8× = $8 collected per $1 spent.')}
             ${m('Contract ROI', roi.contract_roi, true, 'Contracted Total ÷ Channel cost (forward-looking — counts projected full contract, not just cash in yet).')}
             ${m('Cost / Show', roi.cost_per_show, false, 'Channel cost ÷ Shows — what it costs to get one prospect to show up.')}

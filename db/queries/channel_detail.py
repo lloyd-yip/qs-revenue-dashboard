@@ -91,6 +91,7 @@ async def get_channel_detail(
             "projected_contract_value": 0.0,
         }
 
+    booked = row["total_ops"]
     shows = row["shows"]
     closed = row["units_closed"]
     qualified = row["great_count"] + row["ok_count"] + row["barely_passable_count"]
@@ -121,6 +122,7 @@ async def get_channel_detail(
         "is_set": cost is not None,
         "roi": round(cash / cost, 2) if cost else None,
         "contract_roi": round(projected / cost, 2) if cost else None,
+        "cost_per_booked": round(cost / booked, 2) if cost and booked else None,
         "cost_per_show": round(cost / shows, 2) if cost and shows else None,
         "cost_per_qualified": round(cost / qualified, 2) if cost and qualified else None,
         "cost_per_close": round(cost / closed, 2) if cost and closed else None,
