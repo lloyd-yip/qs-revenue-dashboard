@@ -9,7 +9,7 @@ match as soon as contact_phone is backfilled).
 import logging
 from datetime import datetime, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from api.utils.retell_utils import get_retell_config
@@ -139,6 +139,52 @@ async def run_retell_sync(
 
     logger.info("Retell sync: %d calls processed, %d matched to GHL contacts", processed, matched)
     return {"status": "completed", "calls": processed, "matched": matched}
+
+
+async def match_unmatched_by_ghl_lookup(delay_s: float = 0.12, max_lookups: int | None = None) -> dict:
+    """Link still-unmatched Retell calls to their GHL contact via phone lookup.
+
+    For Retell numbers that have no opportunity (so weren't in the phone index), look the
+    contact up directly in GHL (~1 call per distinct number) and stamp contact id + name.
+    Small quota (≈ number of distinct unmatched numbers). Idempotent.
+    """
+    from sync.ghl_client import GHLClient
+    ghl = GHLClient()
+    stats = {"looked_up": 0, "matched": 0, "not_found": 0}
+
+    async with AsyncSessionLocal() as session:
+        numbers = (await session.execute(
+            select(RetellCall.to_number)
+            .where(and_(RetellCall.ghl_contact_id.is_(None), RetellCall.to_number.isnot(None)))
+            .distinct()
+        )).scalars().all()
+        logger.info("Retell contact lookup: %d distinct unmatched numbers", len(numbers))
+
+        for i, num in enumerate(numbers):
+            if max_lookups and i >= max_lookups:
+                break
+            contact = await ghl.get_contact_by_phone(num)
+            stats["looked_up"] += 1
+            if contact and contact.get("id"):
+                name = (contact.get("contactName")
+                        or f"{contact.get('firstName', '')} {contact.get('lastName', '')}".strip()
+                        or None)
+                await session.execute(
+                    update(RetellCall)
+                    .where(RetellCall.to_number == num, RetellCall.ghl_contact_id.is_(None))
+                    .values(ghl_contact_id=contact["id"], ghl_contact_name=name,
+                            match_method="phone_lookup", match_confidence="HIGH")
+                )
+                stats["matched"] += 1
+            else:
+                stats["not_found"] += 1
+            if stats["looked_up"] % 100 == 0:
+                await session.commit()
+                logger.info("Retell contact lookup: %s", stats)
+        await session.commit()
+
+    logger.info("Retell contact lookup done: %s", stats)
+    return stats
 
 
 async def _upsert_calls(session, rows: list[dict]) -> None:

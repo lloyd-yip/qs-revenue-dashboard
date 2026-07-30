@@ -127,6 +127,13 @@ async def trigger_retell_sync(background_tasks: BackgroundTasks):
     return {"message": "Retell call sync triggered. Check /api/dashboard/retell/calls after it runs."}
 
 
+@router.post("/retell/match-contacts")
+async def trigger_retell_contact_match(background_tasks: BackgroundTasks):
+    """Link still-unmatched Retell calls to their GHL contact via phone lookup (no opp needed)."""
+    background_tasks.add_task(_run_retell_contact_match_background)
+    return {"message": "Retell contact lookup triggered (~1 GHL call per unmatched number)."}
+
+
 @router.post("/appointwise-sms")
 async def trigger_appointwise_sweep(background_tasks: BackgroundTasks):
     """Sweep SMS for ALL Appointwise-tagged contacts (full funnel audience). Background."""
@@ -281,6 +288,15 @@ async def _run_retell_sync_background() -> None:
         logger.info("Retell sync complete: %s", summary)
     except Exception as exc:
         logger.error("Retell sync failed: %s", exc)
+
+
+async def _run_retell_contact_match_background() -> None:
+    from sync.retell_sync import match_unmatched_by_ghl_lookup
+    try:
+        summary = await match_unmatched_by_ghl_lookup()
+        logger.info("Retell contact lookup complete: %s", summary)
+    except Exception as exc:
+        logger.error("Retell contact lookup failed: %s", exc)
 
 
 async def _run_appointwise_sweep_background() -> None:

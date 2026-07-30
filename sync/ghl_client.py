@@ -243,6 +243,24 @@ class GHLClient:
                 logger.warning("Failed to fetch appointments for contact %s: %s", contact_id, exc)
                 return []
 
+    async def get_contact_by_phone(self, phone: str) -> dict | None:
+        """Exact contact lookup by phone via /contacts/search/duplicate. None if not found.
+
+        One GHL call per number — used to link Retell calls to their GHL contact even when
+        the contact has no opportunity in the dashboard.
+        """
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            try:
+                data = await self._get(
+                    client, "/contacts/search/duplicate",
+                    {"locationId": self._location_id, "number": phone},
+                )
+                await asyncio.sleep(self._page_delay_s)
+                return data.get("contact") if isinstance(data, dict) else None
+            except Exception as exc:
+                logger.warning("get_contact_by_phone(%s) failed: %s", phone, exc)
+                return None
+
     async def get_contact_messages(self, contact_id: str) -> list[dict]:
         """Fetch SMS/text messages across a contact's conversations. [] on failure.
 
