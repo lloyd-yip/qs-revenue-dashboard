@@ -266,8 +266,8 @@
       </div>
 
       <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--border)">
-        <div style="font-weight:600;font-size:13px;margin-bottom:4px">Per-agent attribution — Webhook</div>
-        <div class="hint" style="margin-bottom:12px">Appointwise has no read-API, so agent identity only exists inside Appointwise. Add a <strong>Webhook Node</strong> near the start of each agent (or clone from a template so new agents inherit it) pointing at the URL below.</div>
+        <div style="font-weight:600;font-size:13px;margin-bottom:4px">Per-agent attribution — Custom Webhook</div>
+        <div class="hint" style="margin-bottom:12px">Appointwise has no analytics read-API, so agent identity only leaves it via a push. In Appointwise → <strong>Settings → Integrations → Custom Webhooks</strong>, add an outbound webhook pointing at the URL below (POST). Then per-agent numbers fill the "By Agent" table on the Appointwise channel page.</div>
         <div class="field">
           <label>Webhook URL</label>
           <input type="text" id="aw-webhook-url" readonly onclick="this.select()" />
@@ -276,7 +276,7 @@
           <label>Secret <span class="src">· header X-Appointwise-Secret</span></label>
           <input type="text" id="aw-webhook-secret" readonly onclick="this.select()" />
         </div>
-        <div class="hint">In the Webhook Node: method <code>POST</code> · header <code>X-Appointwise-Secret</code> = the secret · JSON payload with <code>agent_name</code>, <code>contact_id</code> (GHL contact id), <code>phone</code>, and <code>event</code>. Use the node's "Copy as curl" to test — events show up on the Appointwise channel's "By Agent" table.</div>
+        <div class="hint">Method <code>POST</code> · header <code>X-Appointwise-Secret</code> = the secret · include the <strong>agent name</strong> and one contact identifier (<code>phone</code>, <code>email</code>, or GHL <code>contact_id</code>) — the receiver reads many field names, so whatever the payload offers works. (Note: your API key goes in an <code>x-api-key</code> header, not <code>Authorization</code>.)</div>
       </div>
 
       <div class="hint" style="margin-top:14px">SMS metrics (sent, replies, timing, opt-outs) come from <strong>GHL Conversations</strong> for Appointwise-tagged contacts — no Appointwise API needed.</div>

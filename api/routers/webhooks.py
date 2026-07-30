@@ -52,13 +52,13 @@ async def appointwise_webhook(
         payload = {"value": payload}
 
     row = {
-        "event_type": _first(payload, "event", "event_type", "type", "outcome"),
-        "agent_name": _first(payload, "agent_name", "agent", "agentName"),
+        "event_type": _first(payload, "event", "event_type", "type", "outcome", "status"),
+        "agent_name": _first(payload, "agent_name", "agent", "agentName", "agent_title"),
         "agent_id": _first(payload, "agent_id", "agentId"),
         "ghl_contact_id": _first(payload, "contact_id", "ghl_contact_id", "contactId", "ghlContactId"),
-        "phone": _first(payload, "phone", "contact_phone", "phoneNumber"),
-        "email": _first(payload, "email", "contact_email"),
-        "raw": payload,
+        "phone": _first(payload, "phone", "contact_phone", "phoneNumber", "lead_phone"),
+        "email": _first(payload, "email", "contact_email", "lead_email"),
+        "raw": payload,  # keeps external_lead_id / external_client_id and anything else Appointwise sends
     }
     async with AsyncSessionLocal() as session:
         await session.execute(pg_insert(AppointwiseEvent).values(**row))
