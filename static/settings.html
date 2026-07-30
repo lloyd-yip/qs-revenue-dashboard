@@ -283,6 +283,36 @@
     </div>
   </div>
 
+  <div class="card conn-panel" id="wise-card" style="display:none">
+    <div class="card-header">
+      <div>
+        <div class="name">Wise</div>
+        <div class="desc">Bank-transfer reconciliation against deals — matches incoming Wise transfers to closed deals.</div>
+      </div>
+      <span class="badge warn" id="wise-badge">Loading…</span>
+    </div>
+    <div class="card-body">
+      <div class="meta-line" id="wise-meta"></div>
+      <div class="field">
+        <label>API Key <span class="src" id="src-wise-key"></span></label>
+        <input type="password" id="wise-api-key" autocomplete="new-password" spellcheck="false" />
+        <div class="hint">Wise → Settings → API tokens. Stored server-side — leave blank to keep the current one.</div>
+      </div>
+      <div class="field">
+        <label>Private Key (PEM) <span class="src" id="src-wise-pk"></span></label>
+        <textarea id="wise-private-key" rows="5" autocomplete="off" spellcheck="false"
+          style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:6px;font-size:12px;font-family:ui-monospace,monospace;resize:vertical"
+          placeholder="-----BEGIN PRIVATE KEY-----"></textarea>
+        <div class="hint">The RSA private key PEM for Wise Strong-Customer-Auth (SCA). Its public key must be registered in Wise → Developer → SCA. Leave blank to keep the current one.</div>
+      </div>
+      <div class="btn-row">
+        <button class="btn-secondary" id="btn-wise-save">Save</button>
+        <button class="btn-danger" id="btn-wise-disconnect" style="display:none">Disconnect</button>
+        <span class="msg" id="wise-msg"></span>
+      </div>
+    </div>
+  </div>
+
   <div class="card conn-panel" id="generic-card" style="display:none">
     <div class="card-header">
       <div><div class="name"></div><div class="desc"></div></div>
@@ -564,6 +594,7 @@
     if (c && c.manageable && panel) {
       panel.style.display = "";
       if (key === "appointwise") loadAppointwise();
+      if (key === "wise") loadWise();
     } else if (c) {
       const g = $("generic-card");
       g.querySelector(".name").textContent = c.name;
@@ -641,6 +672,72 @@
       setAwMsg("Disconnected.", true);
     } catch (err) {
       setAwMsg(`Disconnect failed: ${err.message}`, false);
+    }
+  });
+
+  // ── Wise connector ────────────────────────────────────────────────────────
+  function setWiseMsg(text, ok) {
+    const el = $("wise-msg");
+    el.textContent = text;
+    el.className = "msg " + (ok ? "ok" : "err");
+    if (text) setTimeout(() => { if (el.textContent === text) el.textContent = ""; }, 6000);
+  }
+  function renderWise(s) {
+    const badge = $("wise-badge");
+    badge.className = "badge " + (s.connected ? "ok" : (s.api_key_set || s.private_key_set ? "warn" : "err"));
+    badge.textContent = s.connected ? "Connected" : (s.api_key_set || s.private_key_set ? "Incomplete" : "Not configured");
+    $("wise-meta").textContent = s.connected
+      ? (s.updated_at ? `Saved · ${new Date(s.updated_at).toLocaleString()}` : "Credentials set.")
+      : "Enter the Wise API key and RSA private key.";
+    $("wise-api-key").value = "";
+    $("wise-api-key").placeholder = s.api_key_set ? `saved (${s.api_key_hint})` : "paste Wise API key";
+    $("wise-private-key").value = "";
+    $("wise-private-key").placeholder = s.private_key_set ? "saved — leave blank to keep" : "-----BEGIN PRIVATE KEY-----";
+    $("src-wise-key").textContent = `· ${SRC_LABELS[s.api_key_source] || ""}`;
+    $("src-wise-pk").textContent = `· ${SRC_LABELS[s.private_key_source] || ""}`;
+    $("btn-wise-disconnect").style.display = (s.api_key_set || s.private_key_set) ? "" : "none";
+  }
+  async function loadWise() {
+    try {
+      const resp = await fetch(`${API}/api/settings/connectors/wise`, { headers: HEADERS });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      renderWise(await resp.json());
+    } catch (err) {
+      $("wise-badge").textContent = "Error";
+      $("wise-badge").className = "badge err";
+      setWiseMsg(`Failed to load: ${err.message}`, false);
+    }
+  }
+  $("btn-wise-save").addEventListener("click", async () => {
+    const body = {};
+    const k = $("wise-api-key").value.trim();
+    const pk = $("wise-private-key").value.trim();
+    if (k) body.api_key = k;
+    if (pk) body.private_key = pk;
+    if (!Object.keys(body).length) { setWiseMsg("Nothing changed.", true); return; }
+    $("btn-wise-save").disabled = true;
+    try {
+      const resp = await fetch(`${API}/api/settings/connectors/wise`, {
+        method: "PUT", headers: HEADERS, body: JSON.stringify(body),
+      });
+      if (!resp.ok) throw new Error((await resp.json()).detail || `HTTP ${resp.status}`);
+      renderWise(await resp.json());
+      setWiseMsg("Saved.", true);
+    } catch (err) {
+      setWiseMsg(`Save failed: ${err.message}`, false);
+    } finally {
+      $("btn-wise-save").disabled = false;
+    }
+  });
+  $("btn-wise-disconnect").addEventListener("click", async () => {
+    if (!confirm("Remove the in-app Wise credentials?")) return;
+    try {
+      const resp = await fetch(`${API}/api/settings/connectors/wise/disconnect`, { method: "POST", headers: HEADERS });
+      if (!resp.ok) throw new Error((await resp.json()).detail || `HTTP ${resp.status}`);
+      renderWise(await resp.json());
+      setWiseMsg("Disconnected.", true);
+    } catch (err) {
+      setWiseMsg(`Disconnect failed: ${err.message}`, false);
     }
   });
 

@@ -139,6 +139,16 @@ async def fetch_wise_transactions(
     """
     balance_id = WISE_USD_BALANCE_ID if currency == "USD" else WISE_EUR_BALANCE_ID
 
+    # Resolve credentials from the in-app connector store (Settings → Connectors), falling
+    # back to env. Applied onto the settings singleton so the unchanged _wise_headers /
+    # _load_private_key helpers pick them up — Wise creds are used nowhere else.
+    from api.utils.wise_utils import get_wise_config
+    _cfg = await get_wise_config()
+    if _cfg.api_key:
+        settings.wise_api_key = _cfg.api_key
+    if _cfg.private_key:
+        settings.wise_private_key = _cfg.private_key
+
     try:
         private_key = _load_private_key()
     except RuntimeError as e:

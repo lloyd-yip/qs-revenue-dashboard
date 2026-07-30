@@ -33,6 +33,12 @@ from api.utils.retell_utils import (
     get_retell_config,
     test_retell_key,
 )
+from api.utils.wise_utils import (
+    WISE_SETTING_API_KEY,
+    WISE_SETTING_PRIVATE_KEY,
+    get_wise_config,
+    pre_migrate_wise_from_env,
+)
 from config import settings as _env
 from db.queries.settings import delete_setting, get_setting, get_setting_meta, set_setting
 from db.session import AsyncSessionLocal
@@ -301,6 +307,74 @@ async def disconnect_appointwise() -> AppointwiseConnectorStatus:
     return await _appointwise_status()
 
 
+# ── Wise (bank-transfer reconciliation) ────────────────────────────────────────
+
+class WiseConnectorStatus(BaseModel):
+    api_key_set: bool
+    api_key_hint: str
+    api_key_source: str
+    private_key_set: bool
+    private_key_source: str
+    connected: bool
+    updated_at: str | None
+
+
+class WiseConnectorUpdate(BaseModel):
+    api_key: str | None = None
+    private_key: str | None = None
+
+
+async def _wise_status() -> WiseConnectorStatus:
+    cfg = await get_wise_config()
+    async with AsyncSessionLocal() as session:
+        meta = await get_setting_meta(session, WISE_SETTING_API_KEY)
+    return WiseConnectorStatus(
+        api_key_set=bool(cfg.api_key),
+        api_key_hint=_mask(cfg.api_key) if cfg.api_key else "",
+        api_key_source=cfg.api_key_source,
+        private_key_set=bool(cfg.private_key),
+        private_key_source=cfg.private_key_source,
+        connected=bool(cfg.api_key and cfg.private_key),
+        updated_at=meta[1].isoformat() if meta else None,
+    )
+
+
+@router.get("/wise", response_model=WiseConnectorStatus)
+async def get_wise_connector() -> WiseConnectorStatus:
+    """Current Wise connector status. Pre-migrates any env value into app_settings so the
+    field is pre-saved on first open."""
+    await pre_migrate_wise_from_env()
+    return await _wise_status()
+
+
+@router.put("/wise", response_model=WiseConnectorStatus)
+async def update_wise_connector(body: WiseConnectorUpdate) -> WiseConnectorStatus:
+    """Save the Wise API key + RSA private key to app_settings. Null = unchanged; empty = clear."""
+    fields = {WISE_SETTING_API_KEY: body.api_key, WISE_SETTING_PRIVATE_KEY: body.private_key}
+    async with AsyncSessionLocal() as session:
+        for key, value in fields.items():
+            if value is None:
+                continue
+            value = value.strip()
+            if value:
+                await set_setting(session, key, value)
+            else:
+                await delete_setting(session, key)
+    logger.info("Wise connector updated")
+    return await _wise_status()
+
+
+@router.post("/wise/disconnect", response_model=WiseConnectorStatus)
+async def disconnect_wise() -> WiseConnectorStatus:
+    async with AsyncSessionLocal() as session:
+        removed = await delete_setting(session, WISE_SETTING_API_KEY)
+        await delete_setting(session, WISE_SETTING_PRIVATE_KEY)
+    if not removed:
+        raise HTTPException(status_code=404, detail="Wise is not configured in-app.")
+    logger.info("Wise disconnected (in-app credentials removed)")
+    return await _wise_status()
+
+
 # ── Overview summary (drives the connector grid) ───────────────────────────────
 
 @router.get("/summary")
@@ -310,6 +384,7 @@ async def connectors_summary() -> dict:
     xero = await _xero_status()
     retell = await _retell_status()
     aw = await _appointwise_status()
+    wise = await _wise_status()
     items = [
         {"key": "xero", "name": "Xero", "group": "integration", "manageable": True,
          "connected": xero.connected,
@@ -329,8 +404,8 @@ async def connectors_summary() -> dict:
         {"key": "whop", "name": "Whop", "group": "integration", "manageable": False,
          "connected": bool(_env.whop_api_key),
          "desc": "Cash-collected payment matching for closed deals."},
-        {"key": "wise", "name": "Wise", "group": "integration", "manageable": False,
-         "connected": bool(_env.wise_api_key),
+        {"key": "wise", "name": "Wise", "group": "integration", "manageable": True,
+         "connected": wise.connected,
          "desc": "Bank-transfer reconciliation against deals."},
         {"key": "fireflies", "name": "Fireflies", "group": "integration", "manageable": False,
          "connected": bool(_env.fireflies_api_key),
