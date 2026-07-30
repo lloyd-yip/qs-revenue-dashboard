@@ -1186,8 +1186,8 @@ function colRender(data){
     + colCard('Net Collected', fmtUSD(t.net_collected), '', 'Collected − Refunded (Collected is already net of Whop provider fees).')
     + '</div>';
 
-  // Rep commission worksheet (the user's headline ask) — sits up top under the cards.
-  h += colRepTable(data.reps || []);
+  // Rep-filter hint next to the dropdown (the worksheet table renders below the
+  // monthly breakdown — see colRepTable append further down).
   const repHint = el('colRepHint');
   if (repHint) repHint.textContent = colRep
     ? ('Commission: ' + fmtUSD((t.commission)||0))
@@ -1224,6 +1224,9 @@ function colRender(data){
       + '<div class="col-mcount">'+m.deal_count+' deal'+(m.deal_count!==1?'s':'')+'</div></div>';
   });
   h += '</div></div>';
+
+  // Rep commission worksheet — sits under the monthly breakdown.
+  h += colRepTable(data.reps || []);
 
   if (plans.length){
     h += '<div class="col-plans-title">Outstanding Payment Plans <span>'+plans.length+' account'+(plans.length!==1?'s':'')+' with cash still to collect</span></div>';
