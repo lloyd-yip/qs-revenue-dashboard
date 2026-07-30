@@ -139,7 +139,7 @@
     const AI_CHANNELS = new Set([RETELL_CHANNEL, APPOINTWISE_CHANNEL]);
     const isAI = AI_CHANNELS.has(CHANNEL);
     const GHL_CONTACT_BASE = 'https://app.gohighlevel.com/v2/location/G7ZOWCq78JrzUjlLMCxt/contacts/detail';
-    const RETELL_CALL_BASE = 'https://dashboard.retellai.com/calls';
+    const RETELL_CALL_BASE = 'https://dashboard.retellai.com/call-history';
     let dqMode = 'all';
     let connMode = 'all';
     let minMin = '0';
@@ -386,7 +386,7 @@
             : '<span class="pill" style="background:rgba(148,163,184,.15);color:var(--text2)">unmatched</span>';
           const ghlLink = c.ghl_contact_id
             ? `<a class="link" href="${GHL_CONTACT_BASE}/${c.ghl_contact_id}" target="_blank">GHL ↗</a>` : '—';
-          const retellLink = `<a class="link" href="${RETELL_CALL_BASE}/${c.retell_call_id}" target="_blank">Retell ↗</a>`;
+          const retellLink = `<a class="link" href="${RETELL_CALL_BASE}?history=${encodeURIComponent(c.retell_call_id)}" target="_blank">Retell ↗</a>`;
           const player = c.has_recording
             ? `<audio controls preload="none" style="height:32px;max-width:220px" src="/api/dashboard/retell/recording/${encodeURIComponent(c.retell_call_id)}"></audio>`
             : '<span style="color:var(--text2)">no recording</span>';
