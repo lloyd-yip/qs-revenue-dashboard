@@ -12,7 +12,7 @@ import json
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select, text
+from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -595,6 +595,34 @@ async def cancel_active_syncs(timeout: float = 10.0) -> int:
     return len(tasks)
 
 
+async def _heal_owner_names_if_needed(threshold: int = 100) -> None:
+    """If many opps have a GHL user ID but no resolved owner name, re-resolve them.
+
+    Safety net against a mass owner-name wipe from any cause (a get_users() blip on
+    old code, a bad manual op, etc.). The backfill is cheap (one get_users() + a
+    set-based update) and no-ops when get_users() itself is failing.
+    """
+    async with AsyncSessionLocal() as session:
+        n = (await session.execute(
+            select(func.count()).select_from(Opportunity).where(and_(
+                Opportunity.opportunity_owner_id.isnot(None),
+                or_(Opportunity.opportunity_owner_name.is_(None),
+                    Opportunity.opportunity_owner_name == ""),
+            ))
+        )).scalar() or 0
+    if n < threshold:
+        return
+    logger.error(
+        "Owner-name guardrail: %d opps have a user ID but no name — auto-healing via "
+        "attribution backfill", n,
+    )
+    try:
+        from sync.attribution_backfill import backfill_rep_attribution
+        logger.info("Owner-name guardrail heal: %s", await backfill_rep_attribution())
+    except Exception as exc:
+        logger.error("Owner-name guardrail heal failed: %s", exc)
+
+
 async def run_sync(sync_type: str = "incremental", resume_run_id: str | None = None) -> dict:
     """Public entry point — registers the running task (so a graceful shutdown can
     cancel it) then delegates to the implementation below."""
@@ -808,6 +836,19 @@ async def _run_sync_impl(sync_type: str = "incremental", resume_run_id: str | No
             """Build a chunk concurrently, then write it in one fresh session. Returns
             (n_synced, n_errors)."""
             await _raise_if_cancelled(sync_run_id)  # user cancel → abort within one chunk
+            # TRUE incremental: GHL's opportunity list is cheap, but the per-opportunity
+            # contact/appointment/notes/SMS fetches inside _build_opportunity_row are the
+            # quota cost. Skip opps not updated since the cutoff so an incremental only does
+            # heavy work for genuinely-changed opps (unchanged opps keep their DB state
+            # untouched). Full syncs (updated_after is None) still process everything.
+            if sync_type == "incremental" and updated_after:
+                fresh = [
+                    o for o in opps
+                    if (parse_ghl_datetime(o.get("updatedAt")) or datetime.max.replace(tzinfo=timezone.utc)) > updated_after
+                ]
+                opps = fresh
+            if not opps:
+                return 0, 0
             n_synced = 0
             n_err = 0
             built = await asyncio.gather(
@@ -899,6 +940,11 @@ async def _run_sync_impl(sync_type: str = "incremental", resume_run_id: str | No
                 await _reconcile_pipeline(pid, seen_ids)
 
         logger.info("Contact cache dedup stats: %s", contact_cache.stats())
+
+        # Owner-name guardrail: if this run (or anything else) left a large share of opps with
+        # a GHL user ID but no resolved NAME, auto-heal via the attribution backfill so the
+        # dashboard can never silently zero out again (base_filter drops NULL-owner rows).
+        await _heal_owner_names_if_needed()
 
     # --- Run the sync body under an overall timeout, catching ANY failure. -----------
     # The whole point: the sync_run row must ALWAYS be moved off 'running'. Previously a
