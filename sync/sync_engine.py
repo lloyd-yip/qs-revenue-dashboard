@@ -12,7 +12,7 @@ import json
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -418,14 +418,20 @@ async def _write_opportunity_row(session, row: dict, calendar_names: dict, start
     sms_stats = row.pop("_sms_stats", None)
     contact_id_for_appts = row.get("ghl_contact_id")
     history_cols = {"outcome_unfilled_first_flagged_at", "outcome_unfilled_resolved_at"}
-    stmt = (
-        pg_insert(Opportunity)
-        .values(**row)
-        .on_conflict_do_update(
-            index_elements=["ghl_opportunity_id"],
-            set_={k: v for k, v in row.items() if k not in {"ghl_opportunity_id"} | history_cols},
-        )
-    )
+    # Never overwrite an existing owner with NULL: a transient get_users() failure returns an
+    # empty user map, which would otherwise wipe every opp's owner name and zero the whole
+    # dashboard (base_filter drops NULL-owner rows). COALESCE keeps the stored value on NULL.
+    sticky_null_safe = {"opportunity_owner_name", "opportunity_owner_id"}
+    stmt = pg_insert(Opportunity).values(**row)
+    set_ = {}
+    for k in row:
+        if k in {"ghl_opportunity_id"} | history_cols:
+            continue
+        if k in sticky_null_safe:
+            set_[k] = func.coalesce(getattr(stmt.excluded, k), getattr(Opportunity, k))
+        else:
+            set_[k] = getattr(stmt.excluded, k)
+    stmt = stmt.on_conflict_do_update(index_elements=["ghl_opportunity_id"], set_=set_)
     await session.execute(stmt)
 
     if sms_stats:
@@ -761,7 +767,15 @@ async def _run_sync_impl(sync_type: str = "incremental", resume_run_id: str | No
         contact_cache = ContactCache(ghl_client)
 
         user_map = await ghl_client.get_users()
-        logger.info("Loaded %d users for rep name resolution", len(user_map))
+        if not user_map:
+            # Empty map = get_users() failed (transient GHL error). Owner names can't be
+            # resolved this run; the COALESCE upsert keeps existing names, but flag it loudly.
+            logger.error(
+                "get_users() returned 0 users — owner names will not resolve this run "
+                "(existing names preserved via COALESCE). Run /api/sync/backfill-attribution if needed."
+            )
+        else:
+            logger.info("Loaded %d users for rep name resolution", len(user_map))
 
         # Calendar id→name map — drives name-based appointment classification (F1 fix).
         calendar_names = await ghl_client.get_calendars()
