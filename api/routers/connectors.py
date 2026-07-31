@@ -426,7 +426,7 @@ async def test_wise_connection() -> WiseTestResult:
 
     from datetime import datetime, timedelta, timezone
 
-    from sync.wise_client import fetch_wise_transactions
+    from sync.wise_client import WiseSCARejected, fetch_wise_transactions
 
     now = datetime.now(timezone.utc)
     start = (now - timedelta(days=90)).strftime("%Y-%m-%dT00:00:00.000Z")
@@ -435,14 +435,21 @@ async def test_wise_connection() -> WiseTestResult:
     try:
         usd = await fetch_wise_transactions(start, end, currency="USD")
         eur = await fetch_wise_transactions(start, end, currency="EUR")
+    except WiseSCARejected:
+        return WiseTestResult(
+            ok=False,
+            message=(
+                "Wise rejected the SCA signature (result=REJECTED). The public key "
+                "registered in Wise → Developer → SCA doesn't match this app's key. "
+                "Click Generate key, Download .pem, then in Wise remove any existing keys "
+                "and upload the new one — then test again."
+            ),
+        )
     except Exception as exc:  # noqa: BLE001 — surface any client/network error to the UI
         logger.warning("Wise test connection failed: %s", exc)
         return WiseTestResult(
             ok=False,
-            message=(
-                "Wise rejected the request — if this is a 403, the public key likely isn't "
-                "registered yet in Wise → Developer → SCA → Manage public keys."
-            ),
+            message=f"Wise request failed: {str(exc)[:200]}",
         )
 
     txns = usd + eur

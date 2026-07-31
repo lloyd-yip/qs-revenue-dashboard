@@ -43,6 +43,15 @@ WISE_EUR_BALANCE_ID = 15299185  # Primary EUR balance
 WISE_ACCOUNT_ID = 7668590       # Borderless account ID
 
 
+class WiseSCARejected(Exception):
+    """Raised when Wise rejects the SCA signature (x-2fa-approval-result: REJECTED).
+
+    Means the public key registered in Wise → Developer → SCA does not match the
+    private key we signed with (or none is registered) — distinct from a valid call
+    that simply returns no transactions.
+    """
+
+
 def _load_private_key():
     """Load the RSA private key from env var WISE_PRIVATE_KEY.
 
@@ -109,11 +118,17 @@ async def _sca_get(
         if r2.status_code == 200:
             logger.debug("SCA challenge passed ✓")
             return r2
+        result = r2.headers.get("x-2fa-approval-result", "")
         logger.error(
-            f"SCA step 2 failed {r2.status_code}: {r2.text[:200]}. "
+            f"SCA step 2 failed {r2.status_code} (result={result or 'n/a'}): {r2.text[:200]}. "
             "Check that the public key is registered in Wise → Settings → "
             "Developer → Strong Customer Authentication."
         )
+        if result.upper() == "REJECTED" or r2.status_code == 403:
+            raise WiseSCARejected(
+                "Wise rejected the SCA signature — the registered public key does not "
+                "match the app's private key (or none is registered)."
+            )
         r2.raise_for_status()
 
     r1.raise_for_status()
@@ -156,14 +171,14 @@ async def fetch_wise_transactions(
         return []
 
     async with httpx.AsyncClient(timeout=30.0) as client:
-        # Try v4 balance statement first (preferred)
-        url_v4 = (
-            f"{WISE_API_BASE}/v4/profiles/{WISE_PROFILE_ID}"
-            f"/balances/{balance_id}/statement.json"
+        # Primary: v1 balance-statements (the /v4/balances/{id}/statement.json path 404s).
+        url_primary = (
+            f"{WISE_API_BASE}/v1/profiles/{WISE_PROFILE_ID}"
+            f"/balance-statements/{balance_id}/statement.json"
         )
         try:
             resp = await _sca_get(
-                client, url_v4, private_key,
+                client, url_primary, private_key,
                 params={
                     "intervalStart": interval_start,
                     "intervalEnd": interval_end,
@@ -173,12 +188,16 @@ async def fetch_wise_transactions(
             data = resp.json()
             transactions = data.get("transactions", [])
             logger.info(
-                f"Wise v4 {currency} statement: {len(transactions)} transactions "
+                f"Wise v1 {currency} statement: {len(transactions)} transactions "
                 f"({interval_start[:10]} → {interval_end[:10]})"
             )
+        except WiseSCARejected:
+            # A rejected signature is a setup problem, not a transient/endpoint issue —
+            # the v3 fallback would reject too. Surface it so callers can report clearly.
+            raise
         except Exception as exc:
             # Fall back to v3 borderless statement
-            logger.warning(f"v4 statement failed ({exc}), trying v3 borderless…")
+            logger.warning(f"v1 statement failed ({exc}), trying v3 borderless…")
             url_v3 = (
                 f"{WISE_API_BASE}/v3/profiles/{WISE_PROFILE_ID}"
                 f"/borderless-accounts/{WISE_ACCOUNT_ID}/statement.json"
@@ -197,6 +216,8 @@ async def fetch_wise_transactions(
                 logger.info(
                     f"Wise v3 {currency} statement: {len(transactions)} transactions"
                 )
+            except WiseSCARejected:
+                raise
             except Exception as exc2:
                 logger.error(f"Both Wise statement endpoints failed: {exc2}")
                 return []
