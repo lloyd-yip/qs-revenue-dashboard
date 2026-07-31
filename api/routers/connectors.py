@@ -367,12 +367,15 @@ async def update_wise_connector(body: WiseConnectorUpdate) -> WiseConnectorStatu
 
 @router.post("/wise/disconnect", response_model=WiseConnectorStatus)
 async def disconnect_wise() -> WiseConnectorStatus:
+    """Wipe every stored Wise credential from app_settings — API key and private key
+    (the public key is derived, never stored). Clears both regardless of which was set so
+    no stale value can linger."""
     async with AsyncSessionLocal() as session:
-        removed = await delete_setting(session, WISE_SETTING_API_KEY)
-        await delete_setting(session, WISE_SETTING_PRIVATE_KEY)
-    if not removed:
+        removed_api = await delete_setting(session, WISE_SETTING_API_KEY)
+        removed_pk = await delete_setting(session, WISE_SETTING_PRIVATE_KEY)
+    if not (removed_api or removed_pk):
         raise HTTPException(status_code=404, detail="Wise is not configured in-app.")
-    logger.info("Wise disconnected (in-app credentials removed)")
+    logger.info("Wise disconnected (removed api_key=%s private_key=%s)", removed_api, removed_pk)
     return await _wise_status()
 
 

@@ -710,6 +710,12 @@
     $("src-wise-key").textContent = `· ${SRC_LABELS[s.api_key_source] || ""}`;
     $("src-wise-pk").textContent = `· ${SRC_LABELS[s.private_key_source] || ""}`;
     $("btn-wise-disconnect").style.display = (s.api_key_set || s.private_key_set) ? "" : "none";
+    // No saved private key → no valid public key to show; hide + clear the box so a stale
+    // key from a previous generate can never linger on screen.
+    if (!s.private_key_set) {
+      $("wise-public-key").value = "";
+      $("wise-pubkey-field").style.display = "none";
+    }
   }
   async function loadWise() {
     try {
@@ -744,12 +750,17 @@
     }
   });
   $("btn-wise-disconnect").addEventListener("click", async () => {
-    if (!confirm("Remove the in-app Wise credentials?")) return;
+    if (!confirm("Remove ALL in-app Wise credentials (API key + private key)? The on-screen public key is cleared too.")) return;
     try {
       const resp = await fetch(`${API}/api/settings/connectors/wise/disconnect`, { method: "POST", headers: HEADERS });
       if (!resp.ok) throw new Error((await resp.json()).detail || `HTTP ${resp.status}`);
+      // Wipe every on-screen field so nothing stale is left behind.
+      $("wise-api-key").value = "";
+      $("wise-private-key").value = "";
+      $("wise-public-key").value = "";
+      $("wise-pubkey-field").style.display = "none";
       renderWise(await resp.json());
-      setWiseMsg("Disconnected.", true);
+      setWiseMsg("Disconnected — API key, private key, and public key all cleared.", true);
     } catch (err) {
       setWiseMsg(`Disconnect failed: ${err.message}`, false);
     }
