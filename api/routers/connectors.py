@@ -36,6 +36,7 @@ from api.utils.retell_utils import (
 from api.utils.wise_utils import (
     WISE_SETTING_API_KEY,
     WISE_SETTING_PRIVATE_KEY,
+    generate_wise_keypair,
     get_wise_config,
     pre_migrate_wise_from_env,
 )
@@ -373,6 +374,105 @@ async def disconnect_wise() -> WiseConnectorStatus:
         raise HTTPException(status_code=404, detail="Wise is not configured in-app.")
     logger.info("Wise disconnected (in-app credentials removed)")
     return await _wise_status()
+
+
+class WiseKeypairResult(BaseModel):
+    private_key_pem: str      # returned once so the user can copy/back it up
+    public_key_pem: str       # register this in Wise → Developer → SCA
+    status: WiseConnectorStatus
+
+
+@router.post("/wise/generate-keypair", response_model=WiseKeypairResult)
+async def generate_wise_keypair_endpoint() -> WiseKeypairResult:
+    """Generate a fresh RSA keypair for Wise SCA, save the private key to app_settings, and
+    return both PEMs. The public key still has to be registered manually in Wise (there is no
+    API to upload SCA public keys)."""
+    private_pem, public_pem = generate_wise_keypair()
+    async with AsyncSessionLocal() as session:
+        await set_setting(session, WISE_SETTING_PRIVATE_KEY, private_pem)
+    logger.info("Wise RSA keypair generated and private key saved to app_settings")
+    return WiseKeypairResult(
+        private_key_pem=private_pem,
+        public_key_pem=public_pem,
+        status=await _wise_status(),
+    )
+
+
+class WiseTestSample(BaseModel):
+    date: str | None
+    amount: float
+    currency: str
+    sender_name: str
+
+
+class WiseTestResult(BaseModel):
+    ok: bool
+    message: str
+    usd_count: int = 0
+    eur_count: int = 0
+    sample: list[WiseTestSample] = []
+
+
+@router.post("/wise/test", response_model=WiseTestResult)
+async def test_wise_connection() -> WiseTestResult:
+    """Live check that the saved Wise credentials can pull transactions via the API.
+
+    Calls the existing sync/wise_client.fetch_wise_transactions over the last 90 days for both
+    USD and EUR. Surfaces a clear message on the common failure (public key not registered →
+    SCA 403) instead of the client's silent empty-list fallback."""
+    cfg = await get_wise_config()
+    if not cfg.api_key or not cfg.private_key:
+        return WiseTestResult(ok=False, message="Set both the API key and private key first.")
+
+    from datetime import datetime, timedelta, timezone
+
+    from sync.wise_client import fetch_wise_transactions
+
+    now = datetime.now(timezone.utc)
+    start = (now - timedelta(days=90)).strftime("%Y-%m-%dT00:00:00.000Z")
+    end = now.strftime("%Y-%m-%dT23:59:59.000Z")
+
+    try:
+        usd = await fetch_wise_transactions(start, end, currency="USD")
+        eur = await fetch_wise_transactions(start, end, currency="EUR")
+    except Exception as exc:  # noqa: BLE001 — surface any client/network error to the UI
+        logger.warning("Wise test connection failed: %s", exc)
+        return WiseTestResult(
+            ok=False,
+            message=(
+                "Wise rejected the request — if this is a 403, the public key likely isn't "
+                "registered yet in Wise → Developer → SCA → Manage public keys."
+            ),
+        )
+
+    txns = usd + eur
+    sample = [
+        WiseTestSample(
+            date=str(t.get("date")) if t.get("date") else None,
+            amount=float(t.get("amount") or 0.0),
+            currency=str(t.get("currency") or ""),
+            sender_name=str(t.get("sender_name") or ""),
+        )
+        for t in txns[:5]
+    ]
+    if not txns:
+        return WiseTestResult(
+            ok=True,
+            message=(
+                "Connected — Wise accepted the request but returned 0 incoming transactions "
+                "for the last 90 days. If you expected some, confirm the public key is "
+                "registered in Wise → Developer → SCA."
+            ),
+            usd_count=0,
+            eur_count=0,
+        )
+    return WiseTestResult(
+        ok=True,
+        message=f"Pulled {len(usd)} USD + {len(eur)} EUR incoming transactions (last 90 days).",
+        usd_count=len(usd),
+        eur_count=len(eur),
+        sample=sample,
+    )
 
 
 # ── Overview summary (drives the connector grid) ───────────────────────────────

@@ -303,10 +303,23 @@
         <textarea id="wise-private-key" rows="5" autocomplete="off" spellcheck="false"
           style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:6px;font-size:12px;font-family:ui-monospace,monospace;resize:vertical"
           placeholder="-----BEGIN PRIVATE KEY-----"></textarea>
-        <div class="hint">The RSA private key PEM for Wise Strong-Customer-Auth (SCA). Its public key must be registered in Wise → Developer → SCA. Leave blank to keep the current one.</div>
+        <div class="hint">The RSA private key PEM for Wise Strong-Customer-Auth (SCA). Its public key must be registered in Wise → Developer → SCA. Leave blank to keep the current one, or click <strong>Generate key</strong> to create a new one in-app.</div>
+        <div style="margin-top:6px">
+          <button class="btn-secondary" id="btn-wise-generate">Generate key</button>
+        </div>
+      </div>
+      <div class="field" id="wise-pubkey-field" style="display:none">
+        <label>Public Key — register in Wise</label>
+        <textarea id="wise-public-key" rows="5" readonly spellcheck="false"
+          style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:6px;font-size:12px;font-family:ui-monospace,monospace;resize:vertical"></textarea>
+        <div class="hint">Copy this and register it in <strong>Wise → Settings → Developer → Strong Customer Authentication → Manage public keys</strong>. Wise has no API to upload it — this step is manual. Until it's registered, Test connection will fail with a 403.</div>
+        <div style="margin-top:6px">
+          <button class="btn-secondary" id="btn-wise-copy-pub">Copy public key</button>
+        </div>
       </div>
       <div class="btn-row">
         <button class="btn-secondary" id="btn-wise-save">Save</button>
+        <button class="btn-secondary" id="btn-wise-test">Test connection</button>
         <button class="btn-danger" id="btn-wise-disconnect" style="display:none">Disconnect</button>
         <span class="msg" id="wise-msg"></span>
       </div>
@@ -738,6 +751,47 @@
       setWiseMsg("Disconnected.", true);
     } catch (err) {
       setWiseMsg(`Disconnect failed: ${err.message}`, false);
+    }
+  });
+  $("btn-wise-generate").addEventListener("click", async () => {
+    if (!confirm("Generate a new RSA keypair? This replaces any existing private key. You'll need to register the new public key in Wise.")) return;
+    $("btn-wise-generate").disabled = true;
+    try {
+      const resp = await fetch(`${API}/api/settings/connectors/wise/generate-keypair`, { method: "POST", headers: HEADERS });
+      if (!resp.ok) throw new Error((await resp.json()).detail || `HTTP ${resp.status}`);
+      const data = await resp.json();
+      renderWise(data.status);
+      $("wise-private-key").value = data.private_key_pem;
+      $("wise-public-key").value = data.public_key_pem;
+      $("wise-pubkey-field").style.display = "";
+      setWiseMsg("Key generated & saved — now register the public key in Wise.", true);
+    } catch (err) {
+      setWiseMsg(`Generate failed: ${err.message}`, false);
+    } finally {
+      $("btn-wise-generate").disabled = false;
+    }
+  });
+  $("btn-wise-copy-pub").addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText($("wise-public-key").value);
+      setWiseMsg("Public key copied.", true);
+    } catch (err) {
+      $("wise-public-key").select();
+      setWiseMsg("Select the text and copy manually.", false);
+    }
+  });
+  $("btn-wise-test").addEventListener("click", async () => {
+    $("btn-wise-test").disabled = true;
+    setWiseMsg("Testing…", true);
+    try {
+      const resp = await fetch(`${API}/api/settings/connectors/wise/test`, { method: "POST", headers: HEADERS });
+      if (!resp.ok) throw new Error((await resp.json()).detail || `HTTP ${resp.status}`);
+      const data = await resp.json();
+      setWiseMsg(data.message, data.ok);
+    } catch (err) {
+      setWiseMsg(`Test failed: ${err.message}`, false);
+    } finally {
+      $("btn-wise-test").disabled = false;
     }
   });
 

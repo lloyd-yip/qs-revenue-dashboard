@@ -8,12 +8,49 @@ into app_settings once so they're pre-saved. Mirrors retell_utils / appointwise_
 
 from dataclasses import dataclass
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+
 from config import settings
 from db.queries.settings import get_setting, set_setting
 from db.session import AsyncSessionLocal
 
 WISE_SETTING_API_KEY = "wise_api_key"
 WISE_SETTING_PRIVATE_KEY = "wise_private_key"
+
+
+def generate_wise_keypair() -> tuple[str, str]:
+    """Generate a fresh RSA-2048 keypair for Wise SCA and return (private_pem, public_pem).
+
+    The private key is PKCS8 PEM, unencrypted — the exact shape sync/wise_client.py's
+    _load_private_key() expects (load_pem_private_key(..., password=None)). The public key
+    is SubjectPublicKeyInfo PEM, which the user registers in Wise → Developer → SCA.
+    """
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    private_pem = private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).decode("utf-8")
+    public_pem = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode("utf-8")
+    return private_pem, public_pem
+
+
+def derive_public_key_pem(private_pem: str) -> str:
+    """Derive the SubjectPublicKeyInfo PEM from a stored private-key PEM.
+
+    Normalises escaped newlines the same way sync/wise_client.py does so a key stored via
+    Railway env (literal \\n) still loads.
+    """
+    pem = private_pem.replace("\\n", "\n").encode("utf-8")
+    private_key = serialization.load_pem_private_key(pem, password=None)
+    return private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode("utf-8")
 
 
 @dataclass
