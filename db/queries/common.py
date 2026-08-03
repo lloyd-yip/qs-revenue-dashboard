@@ -12,6 +12,35 @@ from sync.ghl_client import (
     SHOWED_STAGE_IDS,
 )
 
+
+def payment_sources_for(r, wise_opp_ids=frozenset()) -> list[str]:
+    """Which payment rails a deal actually collected through — for a UI badge.
+
+    Derives the source(s) from a DealWhopMatch row plus the set of GHL opportunity ids
+    that have a matched incoming Wise transfer (from db.queries.wise_transfers.
+    get_matched_wise_opp_ids). A deal can have more than one (e.g. Whop + Wise).
+
+      - "Stripe": paid via a stripe_* match method (whop_membership_id is NULL for those).
+      - "Whop":   paid against a Whop membership match.
+      - "Wise":   has ≥1 matched incoming Wise wire.
+      - "Other":  cash landed but the rail isn't identifiable as Whop/Stripe/Wise.
+
+    Returns [] when no payment has landed (e.g. a won deal awaiting a wire).
+    """
+    sources: list[str] = []
+    total_paid = float(r.total_paid or 0) if r.total_paid is not None else 0.0
+    method = (r.match_method or "").lower()
+    if total_paid > 0:
+        if method.startswith("stripe"):
+            sources.append("Stripe")
+        elif r.whop_membership_id:
+            sources.append("Whop")
+    if r.ghl_opportunity_id and r.ghl_opportunity_id in wise_opp_ids:
+        sources.append("Wise")
+    if total_paid > 0 and not sources:
+        sources.append("Other")
+    return sources
+
 def whop_projected_total_expr():
     """Payment-verified projected full contract value for one matched deal.
 

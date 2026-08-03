@@ -839,6 +839,16 @@ const CONTRACT_TIP = 'Deal value entered by the rep in GoHighLevel (monetary_val
 const NET_CASH_TIP = 'Cash QS actually keeps, after the 15% Splitit/ClarityPay (Whop) provider fee. Equals Cash for non-financed deals (no fee).';
 const ENTERED_TIP = 'Entered Pipeline — the date of the FIRST business-evaluation call (Call 1) for this deal: when the prospect (or someone from their company) first booked/attended a call and entered our pipeline.';
 const CYCLE_TIP = 'Sales Cycle — whole days from Entered Pipeline (first call) to First Pay / Closed. e.g. first call Jul 1 → first pay Jul 16 = 15 days.';
+// Payment-source pills (Whop / Wise / Stripe / Other) — where a deal's cash came in.
+function psBadges(sources){
+  if(!sources || !sources.length) return '';
+  const C = { Whop:['#6c63ff','rgba(108,99,255,0.16)'], Wise:['#16a34a','rgba(22,163,74,0.16)'],
+              Stripe:['#635bff','rgba(99,91,255,0.16)'], Other:['#64748b','rgba(100,116,139,0.16)'] };
+  return sources.map(s=>{ const c=C[s]||C.Other;
+    return ' <span class="ps-badge" title="Paid via '+esc(s)+'" style="display:inline-block;font-size:10px;font-weight:600;'
+      +'padding:1px 7px;border-radius:999px;color:'+c[0]+';background:'+c[1]+';vertical-align:middle">'+esc(s)+'</span>';
+  }).join('');
+}
 function wlBadges(d){
   if (d.is_orphan) {
     let b = '<span class="wl-badge" style="color:var(--accent);background:rgba(108,99,255,0.16)">Whop-only · no GHL</span>';
@@ -849,9 +859,10 @@ function wlBadges(d){
     return b;
   }
   if (d.needs_review) {
-    return d.is_confirmed
+    return (d.is_confirmed
       ? '<span class="wl-badge counted">✓ Counted (manual)</span>'
-      : '<span class="wl-badge review" data-tip="Won this month but no Whop payment found (e.g. wire transfer). Not counted in the totals until you confirm the cash landed.">⚠ No Whop payment · review</span>';
+      : '<span class="wl-badge review" data-tip="Won this month but no Whop payment found (e.g. wire transfer). Not counted in the totals until you confirm the cash landed.">⚠ No Whop payment · review</span>')
+      + psBadges(d.payment_source);
   }
   let b = '<span class="wl-badge '+(d.match_confidence==='high'?'high':'medium')+'">'+d.match_confidence+'</span>';
   if (d.is_splitit) b += ' <span class="wl-badge fee">Splitit −15%</span>';
@@ -859,7 +870,7 @@ function wlBadges(d){
   else if (d.total_installments && d.total_installments >= 2) b += ' <span class="wl-badge pay">'+(d.payment_count||0)+'/'+d.total_installments+' paid</span>';
   else b += ' <span class="wl-badge plan">Pay in full</span>';
   if (d.plan_months_flag) b += ' <span class="wl-badge fee">⚠ '+(d.total_installments||'')+'-pmt plan</span>';
-  return b;
+  return b + psBadges(d.payment_source);
 }
 function wlStat(v, label, cls, tip){
   const t = tip ? ' data-tip="'+esc(tip)+'"' : '';
@@ -1265,7 +1276,7 @@ function openRepDeals(repName){
         ? d.installments_in_window+' installment'+(d.installments_in_window!==1?'s':'')+' this window'
         : '';
       const sub = [d.email ? esc(d.email) : '', inWin].filter(Boolean).join(' · ');
-      return '<tr><td><div class="rd-deal-name">'+nameHtml+planBadge+'</div>'
+      return '<tr><td><div class="rd-deal-name">'+nameHtml+planBadge+psBadges(d.payment_source)+'</div>'
         + (sub ? '<div class="rd-deal-sub">'+sub+'</div>' : '') + '</td>'
         + '<td class="num">'+(d.close_date?fmtDate(d.close_date):'—')+'</td>'
         + '<td class="num">'+(d.first_payment_date?fmtDate(d.first_payment_date):'—')+'</td>'
@@ -1360,7 +1371,7 @@ function colRender(data){
       const acctHtml = p.ghl_opportunity_id
         ? '<a class="wl-opplink" href="'+GHL_OPP_BASE+'/'+p.ghl_opportunity_id+'?tab=Opportunity+Details" target="_blank" rel="noopener">'+esc(acct)+'</a>'
         : esc(acct);
-      h += '<tr><td class="deal-name">'+acctHtml
+      h += '<tr><td class="deal-name">'+acctHtml+psBadges(p.payment_source)
         + (p.account?'<div class="col-acct-sub">'+esc(p.account)+'</div>':'')+'</td>'
         + '<td class="dim">'+esc(p.owner||'—')+'</td>'
         + '<td><span class="badge-fin">'+(p.paid_count||0)+'/'+p.total_installments+' paid</span></td>'

@@ -19,7 +19,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import DealWhopMatch
+from db.queries.common import payment_sources_for
 from db.queries.rep_comp import DEFAULT_COMMISSION_PCT, get_rep_comp_settings_map
+from db.queries.wise_transfers import get_matched_wise_opp_ids
 
 
 def _add_months(d: date, n: int) -> date:
@@ -124,6 +126,7 @@ async def get_collections_for_range(
         owner_norm = func.lower(func.trim(func.regexp_replace(owner_col, r"\s+", " ", "g")))
         q = q.where(owner_norm == " ".join(rep.split()).lower())
     rows = (await session.execute(q)).scalars().all()
+    wise_opp_ids = await get_matched_wise_opp_ids(session)  # deals with a matched Wise wire
 
     months: dict[str, dict] = {
         mk: {"month": mk, "collected": 0.0, "outstanding": 0.0, "refunded": 0.0,
@@ -199,6 +202,7 @@ async def get_collections_for_range(
                 "paid_count": r.payment_count or 0,
                 "total_installments": total_n_deal,
                 "is_financed": bool(r.is_splitit or r.is_claritypay),
+                "payment_source": payment_sources_for(r, wise_opp_ids),
             }
 
         # Outstanding payment plan (internal multi-installment plan not fully paid).
@@ -223,6 +227,7 @@ async def get_collections_for_range(
                     "projected_total": round(sum(s["amount"] for s in sched), 2),
                     "next_date": str(nxt["date"]) if nxt else None,
                     "refunded": round(refunded, 2) if refunded else None,
+                    "payment_source": payment_sources_for(r, wise_opp_ids),
                 })
 
     month_list = []

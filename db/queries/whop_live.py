@@ -16,6 +16,8 @@ from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import DealWhopMatch, Opportunity
+from db.queries.common import payment_sources_for
+from db.queries.wise_transfers import get_matched_wise_opp_ids
 
 LIVE_CONFIDENCE_TIERS = ("high", "medium")
 
@@ -124,7 +126,7 @@ def _non_whop_cash(r: DealWhopMatch) -> float:
     return float(g) if g is not None else 0.0
 
 
-def _deal_to_live_item(r: DealWhopMatch, call1_appt=None) -> dict:
+def _deal_to_live_item(r: DealWhopMatch, call1_appt=None, wise_opp_ids=frozenset()) -> dict:
     """Shape one DealWhopMatch row into a live-revenue deal item dict.
 
     needs_review = the deal was won this month but has NO Whop payment (wire/other).
@@ -176,6 +178,7 @@ def _deal_to_live_item(r: DealWhopMatch, call1_appt=None) -> dict:
         "total_installments": r.total_installments,
         "needs_review": needs_review,
         "is_confirmed": bool(r.is_confirmed),
+        "payment_source": payment_sources_for(r, wise_opp_ids),
     }
 
 
@@ -224,6 +227,7 @@ def _orphan_to_item(o) -> dict:
         "is_confirmed": (o.status == "confirmed"),
         "is_orphan": True,
         "whop_membership_id": o.whop_membership_id,
+        "payment_source": ["Whop"],  # orphans are Whop payments with no GHL deal
     }
 
 
@@ -304,13 +308,15 @@ async def get_whop_live_summary_for_month(
         dom_min = domain_min.get(dom) if (dom and dom not in PERSONAL_DOMAINS) else None
         return _earliest(own_call1, contact_min.get(r.ghl_contact_id), dom_min)
 
+    wise_opp_ids = await get_matched_wise_opp_ids(session)  # deals with a matched Wise wire
+
     rep_buckets: dict[str, dict] = {}
     last_refreshed: datetime | None = None
 
     for r, call1_appt in rows:
         rep = r.ghl_owner_name or "Unassigned"
         bucket = rep_buckets.setdefault(rep, _new_rep_bucket(rep))
-        item = _deal_to_live_item(r, _entered(r, call1_appt))
+        item = _deal_to_live_item(r, _entered(r, call1_appt), wise_opp_ids)
         counts = (not item["needs_review"]) or item["is_confirmed"]
         if counts:
             bucket["deal_count"] += 1

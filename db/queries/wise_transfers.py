@@ -61,6 +61,20 @@ async def get_all_wise_transfers(
     return [_row_to_dict(r) for r in rows]
 
 
+async def get_matched_wise_opp_ids(session: AsyncSession) -> set[str]:
+    """Return the set of GHL opportunity ids that have ≥1 matched incoming Wise transfer.
+
+    Used to badge deals with a "Wise" payment source. Excludes unmatched transfers.
+    """
+    rows = (await session.execute(
+        select(XeroBankTransfer.ghl_opportunity_id)
+        .where(XeroBankTransfer.ghl_opportunity_id.isnot(None))
+        .where(XeroBankTransfer.match_confidence != "unmatched")
+        .distinct()
+    )).scalars().all()
+    return {r for r in rows if r}
+
+
 def _row_to_dict(r: XeroBankTransfer) -> dict:
     """Serialize one XeroBankTransfer row to a JSON-safe dict."""
     return {
