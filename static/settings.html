@@ -288,12 +288,15 @@
   <div class="card conn-panel" id="wise-card" style="display:none">
     <div class="card-header">
       <div>
-        <div class="name">Wise</div>
-        <div class="desc">Bank-transfer reconciliation against deals — matches incoming Wise transfers to closed deals.</div>
+        <div class="name">Wise <span class="badge" style="background:rgba(100,116,139,0.16);color:#64748b;font-size:11px;vertical-align:middle">Not in use</span></div>
+        <div class="desc">Not used at the moment. Wise bank transfers are fetched from <strong>Xero</strong> (Xero connector → Sync bank transfers). Credentials below are kept but inactive.</div>
       </div>
       <span class="badge warn" id="wise-badge">Loading…</span>
     </div>
     <div class="card-body">
+      <div style="margin-bottom:14px;padding:10px 12px;border-radius:8px;background:rgba(100,116,139,0.10);border:1px solid var(--border);font-size:13px;color:var(--text-dim)">
+        ⓘ <strong>This connector is not currently used.</strong> Wise (and Payoneer) transfers are reconciled via the <strong>Xero</strong> connector's <strong>Sync bank transfers</strong> button. The direct Wise API isn't used because Wise SCA is unavailable on this account. The saved credentials stay here for the future but do nothing right now.
+      </div>
       <div class="meta-line" id="wise-meta"></div>
       <div class="field">
         <label>API Key <span class="src" id="src-wise-key"></span></label>
@@ -716,12 +719,16 @@
     if (text) setTimeout(() => { if (el.textContent === text) el.textContent = ""; }, 6000);
   }
   function renderWise(s) {
+    // This connector is not in active use — bank transfers come from Xero. Show a neutral
+    // "Not in use" badge rather than a green "Connected" that would imply it's doing work.
     const badge = $("wise-badge");
-    badge.className = "badge " + (s.connected ? "ok" : (s.api_key_set || s.private_key_set ? "warn" : "err"));
-    badge.textContent = s.connected ? "Connected" : (s.api_key_set || s.private_key_set ? "Incomplete" : "Not configured");
+    badge.className = "badge";
+    badge.style.background = "rgba(100,116,139,0.16)";
+    badge.style.color = "#64748b";
+    badge.textContent = "Not in use";
     $("wise-meta").textContent = s.connected
-      ? (s.updated_at ? `Saved · ${new Date(s.updated_at).toLocaleString()}` : "Credentials set.")
-      : "Enter the Wise API key and RSA private key.";
+      ? (s.updated_at ? `Credentials saved · ${new Date(s.updated_at).toLocaleString()} (inactive)` : "Credentials saved (inactive).")
+      : "No credentials saved.";
     $("wise-api-key").value = "";
     $("wise-api-key").placeholder = s.api_key_set ? `saved (${s.api_key_hint})` : "paste Wise API key";
     $("wise-private-key").value = "";

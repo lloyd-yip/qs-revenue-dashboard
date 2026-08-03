@@ -507,7 +507,7 @@ async def connectors_summary() -> dict:
          "desc": "Cash-collected payment matching for closed deals."},
         {"key": "wise", "name": "Wise", "group": "integration", "manageable": True,
          "connected": wise.connected,
-         "desc": "Bank-transfer reconciliation against deals."},
+         "desc": "Not in use — Wise transfers are reconciled via Xero (Sync bank transfers)."},
         {"key": "fireflies", "name": "Fireflies", "group": "integration", "manageable": False,
          "connected": bool(_env.fireflies_api_key),
          "desc": "Meeting transcripts — appointment status resolver."},
