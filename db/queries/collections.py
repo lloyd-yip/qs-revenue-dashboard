@@ -136,6 +136,10 @@ async def get_collections_for_range(
     # Per-rep commission worksheet: gross cash collected this period, refunds this
     # period (by refund month), → commission on the net of the two.
     rep_agg: dict[str, dict] = defaultdict(lambda: {"collected": 0.0, "refunded": 0.0})
+    # Per-rep, per-deal audit trail behind the worksheet numbers — one entry per deal
+    # that contributed cash or a refund this window, so the UI can show exactly which
+    # deals a rep's Cash Collected / Refunded / Commission were computed from.
+    rep_deals: dict[str, dict[str, dict]] = defaultdict(dict)
     # Revenue source split, per installment: a deal's FIRST payment = New Deals
     # (net-new that month); its 2nd/3rd/… installments = Payment Plans (ongoing).
     src = {
@@ -149,6 +153,7 @@ async def get_collections_for_range(
         if not sched:
             continue
         in_window = [s for s in sched if start <= s["date"] <= end]
+        deal_gross = 0.0  # gross cash collected by this deal in-window (commission basis)
         for s in in_window:
             b = months[s["month"]]
             paidkey = "collected" if s["paid"] else "outstanding"
@@ -160,6 +165,8 @@ async def get_collections_for_range(
             src[cohort][paidkey] += s["amount"]
             if s["paid"]:  # commission accrues on gross cash actually collected
                 rep_agg[owner]["collected"] += s["gross"]
+                deal_gross += s["gross"]
+        installments_in_window = sum(1 for s in in_window if s["paid"])
 
         # Refunds are attributed to the month the refund was INITIATED
         # (last_refund_date), falling back to the deal's first-payment month when the
@@ -167,10 +174,32 @@ async def get_collections_for_range(
         # deal's installment schedule so a later refund lands in its own month.
         refunded = float(r.total_refunded) if r.total_refunded else 0.0
         refund_day = r.last_refund_date or r.first_payment_date
+        deal_refund = 0.0  # this deal's refund counted in-window (by refund date)
         if refunded and refund_day and start <= refund_day <= end:
             months[_mk(refund_day)]["refunded"] += refunded
             refunded_total += refunded
             rep_agg[owner]["refunded"] += refunded
+            deal_refund = refunded
+
+        # Deal-level audit entry for the commission worksheet drill-down: keep a deal
+        # only if it moved cash or refunded this window (net commission basis = gross − refund).
+        if deal_gross or deal_refund:
+            total_n_deal = max(r.total_installments or 0, r.payment_count or 0, 1)
+            rep_deals[owner][r.ghl_opportunity_id] = {
+                "ghl_opportunity_id": r.ghl_opportunity_id,
+                "deal_name": r.ghl_opportunity_name,
+                "email": r.whop_email or r.ghl_contact_email,
+                "close_date": str(r.ghl_close_date) if r.ghl_close_date else None,
+                "first_payment_date": str(r.first_payment_date) if r.first_payment_date else None,
+                "refund_date": str(r.last_refund_date) if r.last_refund_date else None,
+                "cash_collected": round(deal_gross, 2),
+                "refunded": round(deal_refund, 2),
+                "net_collected": round(deal_gross - deal_refund, 2),
+                "installments_in_window": installments_in_window,
+                "paid_count": r.payment_count or 0,
+                "total_installments": total_n_deal,
+                "is_financed": bool(r.is_splitit or r.is_claritypay),
+            }
 
         # Outstanding payment plan (internal multi-installment plan not fully paid).
         is_financed = bool(r.is_splitit or r.is_claritypay)
@@ -230,6 +259,12 @@ async def get_collections_for_range(
         refunded = round(agg["refunded"], 2)
         net = round(collected - refunded, 2)
         pct = comp_by_name.get(owner, DEFAULT_COMMISSION_PCT)
+        # Deal-level breakdown, richest-collecting first, each with its own commission
+        # contribution (rate × the deal's net) so the modal reconciles to the rep total.
+        deals = sorted(rep_deals.get(owner, {}).values(),
+                       key=lambda d: d["cash_collected"], reverse=True)
+        for d in deals:
+            d["commission"] = round(d["net_collected"] * pct / 100.0, 2)
         reps_list.append({
             "rep": owner,
             "cash_collected": collected,
@@ -238,6 +273,7 @@ async def get_collections_for_range(
             "commission_pct": pct,
             "commission": round(net * pct / 100.0, 2),
             "is_default_pct": owner not in comp_by_name,
+            "deals": deals,
         })
     reps_list = [r for r in reps_list if r["cash_collected"] or r["refunded"]]
     reps_list.sort(key=lambda r: r["cash_collected"], reverse=True)

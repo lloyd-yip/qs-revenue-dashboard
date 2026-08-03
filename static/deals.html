@@ -446,6 +446,40 @@
     table.col-plans { min-width:1000px; }
     .col-acct-sub { font-size:11px; color:var(--muted); margin-top:2px; }
     td.num.warn { color:var(--yellow); }
+
+    /* Rep names in the commission worksheet are clickable → deals modal */
+    td.col-rep-link { color:var(--text); font-weight:600; cursor:pointer; text-decoration:underline; text-decoration-color:var(--border); text-underline-offset:3px; }
+    td.col-rep-link:hover { color:var(--accent); text-decoration-color:var(--accent); }
+
+    /* ── Rep-deals audit modal ───────────────────────────────────────────── */
+    .rd-scrim { position:fixed; inset:0; background:rgba(0,0,0,0.62); backdrop-filter:blur(2px); z-index:1000; display:none; align-items:flex-start; justify-content:center; padding:48px 20px; overflow-y:auto; }
+    .rd-scrim.show { display:flex; }
+    .rd-modal { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); width:min(1100px, 96vw); max-height:calc(100vh - 96px); display:flex; flex-direction:column; box-shadow:0 24px 70px rgba(0,0,0,0.55); }
+    .rd-head { display:flex; align-items:flex-start; gap:14px; padding:20px 24px 16px; border-bottom:1px solid var(--border); }
+    .rd-title { font-size:20px; font-weight:700; letter-spacing:-.3px; }
+    .rd-sub { font-size:12px; color:var(--muted); margin-top:4px; }
+    .rd-close { margin-left:auto; background:var(--surface2); border:1px solid var(--border); color:var(--muted); width:32px; height:32px; border-radius:8px; cursor:pointer; font-size:18px; line-height:1; flex-shrink:0; }
+    .rd-close:hover { color:var(--text); border-color:var(--accent); }
+    .rd-cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px,1fr)); gap:12px; padding:16px 24px; }
+    .rd-card { background:var(--surface2); border:1px solid var(--border); border-radius:10px; padding:12px 14px; }
+    .rd-card-lbl { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
+    .rd-card-val { font-size:20px; font-weight:700; margin-top:5px; letter-spacing:-.4px; }
+    .rd-card.pos .rd-card-val { color:var(--green); }
+    .rd-card.neg .rd-card-val { color:var(--red); }
+    .rd-card.acc .rd-card-val { color:var(--accent2); }
+    .rd-body { padding:0 24px 22px; overflow-y:auto; }
+    table.rd-table { width:100%; min-width:820px; border-collapse:collapse; }
+    .rd-table thead th { position:sticky; top:0; background:var(--surface); font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); font-weight:600; text-align:right; padding:9px 10px; border-bottom:1px solid var(--border); white-space:nowrap; }
+    .rd-table thead th:first-child { text-align:left; }
+    .rd-table td { padding:11px 10px; border-bottom:1px solid rgba(42,45,62,0.5); font-size:13px; vertical-align:top; }
+    .rd-table td.num { text-align:right; font-variant-numeric:tabular-nums; }
+    .rd-table td.num.pos { color:var(--green); } .rd-table td.num.neg { color:var(--red); }
+    .rd-table td.num.acc { color:var(--accent2); font-weight:700; }
+    .rd-deal-name { font-weight:600; }
+    .rd-deal-sub { font-size:11px; color:var(--muted); margin-top:3px; }
+    .rd-badge { display:inline-block; font-size:10px; color:var(--muted); border:1px solid var(--border); border-radius:5px; padding:1px 6px; margin-left:6px; vertical-align:middle; }
+    .rd-table tfoot td { padding:12px 10px; font-weight:700; border-top:2px solid var(--border); }
+    .rd-empty { color:var(--muted); padding:26px 0; text-align:center; }
   </style>
 </head>
 <body>
@@ -530,6 +564,21 @@
     </div>
     <div id="colBody"><div class="wl-empty">Loading…</div></div>
   </section>
+
+  <!-- Rep-deals audit modal (Rep Commissions drill-down) -->
+  <div id="rdScrim" class="rd-scrim" onclick="if(event.target===this)closeRepDeals()">
+    <div class="rd-modal" role="dialog" aria-modal="true" aria-labelledby="rdTitle">
+      <div class="rd-head">
+        <div>
+          <div class="rd-title" id="rdTitle">—</div>
+          <div class="rd-sub" id="rdSub"></div>
+        </div>
+        <button class="rd-close" onclick="closeRepDeals()" aria-label="Close">×</button>
+      </div>
+      <div class="rd-cards" id="rdCards"></div>
+      <div class="rd-body" id="rdBody"></div>
+    </div>
+  </div>
 
   <!-- HISTORICAL lens (existing reconciliation) -->
   <section id="lens-historical" class="wl-hidden">
@@ -1076,6 +1125,7 @@ function colShift(mk, n){ const p=mk.split('-'); const d=new Date(+p[0], +p[1]-1
 function colCmp(a,b){ return a<b?-1:a>b?1:0; }
 
 let colRep = '';  // '' = all reps; otherwise the rep's owner name
+let colRepsByName = {};  // rep name → worksheet row (incl. per-deal breakdown), for the audit modal
 function colInit(){
   const now = new Date();
   const opts = [];
@@ -1151,9 +1201,13 @@ function colCard(label, val, cls, tip){
 // refunds initiated this window).
 function colRepTable(reps){
   if (!reps || !reps.length) return '';
+  colRepsByName = {};
+  reps.forEach(r => { colRepsByName[r.rep] = r; });
   const rows = reps.map(r => {
     const pctCell = r.commission_pct + '%' + (r.is_default_pct ? '<span class="col-badge-default" title="No comp set — using the 10% default. Set it on the Sales Reps tab.">default</span>' : '');
-    return '<tr><td class="deal-name">'+esc(r.rep)+'</td>'
+    const nCount = (r.deals || []).length;
+    const repCell = '<td class="deal-name col-rep-link" onclick="openRepDeals(this.dataset.rep)" data-rep="'+esc(r.rep)+'" data-tip="'+esc('Click to audit the '+nCount+' deal'+(nCount!==1?'s':'')+' behind '+r.rep+'’s numbers')+'">'+esc(r.rep)+'</td>';
+    return '<tr>'+repCell
       + '<td class="num pos">'+fmtUSD(r.cash_collected)+'</td>'
       + '<td class="num neg">'+(r.refunded ? '−'+fmtUSD(r.refunded) : '—')+'</td>'
       + '<td class="num">'+fmtUSD(r.net_collected)+'</td>'
@@ -1176,6 +1230,72 @@ function colRepTable(reps){
     + '<th style="text-align:right" data-tip="Rate × Net (cash collected − refunds this window).">Commission</th>'
     + '</tr></thead><tbody>'+rows+'</tbody>'+foot+'</table></div>';
 }
+
+// ── Rep Commissions drill-down modal ─────────────────────────────────────────
+// Opens the per-deal audit trail behind one rep's Cash Collected / Refunded /
+// Commission for the current Collections window. Data is the `deals` array the
+// backend attaches to each worksheet row, so the modal reconciles to the table.
+function openRepDeals(repName){
+  const r = colRepsByName[repName];
+  if (!r) return;
+  const [s, e] = pbRange('col');
+  const window = colMonthLabel(s) + (s===e ? '' : ' – ' + colMonthLabel(e));
+  el('rdTitle').textContent = r.rep;
+  el('rdSub').textContent = 'Rep Commissions audit · ' + window
+    + ' · ' + (r.commission_pct + '% rate' + (r.is_default_pct ? ' (default)' : ''));
+
+  el('rdCards').innerHTML =
+      rdCard('Cash Collected', fmtUSD(r.cash_collected), 'pos')
+    + rdCard('Refunded', r.refunded ? '−'+fmtUSD(r.refunded) : '—', 'neg')
+    + rdCard('Net', fmtUSD(r.net_collected), '')
+    + rdCard('Commission', fmtUSD(r.commission), 'acc');
+
+  const deals = r.deals || [];
+  if (!deals.length){
+    el('rdBody').innerHTML = '<div class="rd-empty">No individual deals moved cash or refunded in this window.</div>';
+  } else {
+    const rows = deals.map(d => {
+      const nameHtml = d.ghl_opportunity_id
+        ? '<a class="wl-opplink" href="'+GHL_OPP_BASE+'/'+d.ghl_opportunity_id+'?tab=Opportunity+Details" target="_blank" rel="noopener">'+esc(d.deal_name||'GHL deal')+'</a>'
+        : esc(d.deal_name||'—');
+      const planBadge = d.is_financed
+        ? '<span class="rd-badge">financed · upfront</span>'
+        : (d.total_installments>1 ? '<span class="rd-badge">'+d.paid_count+'/'+d.total_installments+' paid</span>' : '');
+      const inWin = d.installments_in_window>0
+        ? d.installments_in_window+' installment'+(d.installments_in_window!==1?'s':'')+' this window'
+        : '';
+      const sub = [d.email ? esc(d.email) : '', inWin].filter(Boolean).join(' · ');
+      return '<tr><td><div class="rd-deal-name">'+nameHtml+planBadge+'</div>'
+        + (sub ? '<div class="rd-deal-sub">'+sub+'</div>' : '') + '</td>'
+        + '<td class="num">'+(d.close_date?fmtDate(d.close_date):'—')+'</td>'
+        + '<td class="num">'+(d.first_payment_date?fmtDate(d.first_payment_date):'—')+'</td>'
+        + '<td class="num pos">'+fmtUSD(d.cash_collected)+'</td>'
+        + '<td class="num neg">'+(d.refunded?'−'+fmtUSD(d.refunded)+(d.refund_date?'<div class="rd-deal-sub">'+fmtDate(d.refund_date)+'</div>':''):'—')+'</td>'
+        + '<td class="num">'+fmtUSD(d.net_collected)+'</td>'
+        + '<td class="num acc">'+fmtUSD(d.commission)+'</td></tr>';
+    }).join('');
+    const foot = '<tfoot><tr><td>Total · '+deals.length+' deal'+(deals.length!==1?'s':'')+'</td><td></td><td></td>'
+      + '<td class="num pos">'+fmtUSD(r.cash_collected)+'</td>'
+      + '<td class="num neg">'+(r.refunded?'−'+fmtUSD(r.refunded):'—')+'</td>'
+      + '<td class="num">'+fmtUSD(r.net_collected)+'</td>'
+      + '<td class="num acc">'+fmtUSD(r.commission)+'</td></tr></tfoot>';
+    el('rdBody').innerHTML = '<div class="table-wrap"><table class="rd-table"><thead><tr>'
+      + '<th>Deal</th><th>Closed</th><th>First Payment</th>'
+      + '<th>Cash Collected</th><th>Refunded</th><th>Net</th><th>Commission</th>'
+      + '</tr></thead><tbody>'+rows+'</tbody>'+foot+'</table></div>';
+  }
+  el('rdScrim').classList.add('show');
+  document.body.style.overflow = 'hidden';
+}
+function rdCard(lbl, val, cls){
+  return '<div class="rd-card'+(cls?' '+cls:'')+'"><div class="rd-card-lbl">'+lbl+'</div><div class="rd-card-val">'+val+'</div></div>';
+}
+function closeRepDeals(){
+  el('rdScrim').classList.remove('show');
+  document.body.style.overflow = '';
+}
+document.addEventListener('keydown', e => { if (e.key==='Escape') closeRepDeals(); });
+
 function colRender(data){
   const t = data.totals||{}, months = data.months||[], plans = data.payment_plans||[];
   let h = '<div class="col-cards">'
