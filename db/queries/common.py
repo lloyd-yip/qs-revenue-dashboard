@@ -13,20 +13,22 @@ from sync.ghl_client import (
 )
 
 
-def payment_sources_for(r, wise_opp_ids=frozenset()) -> list[str]:
+def payment_sources_for(r, bank_sources_by_opp=None) -> list[str]:
     """Which payment rails a deal actually collected through — for a UI badge.
 
-    Derives the source(s) from a DealWhopMatch row plus the set of GHL opportunity ids
-    that have a matched incoming Wise transfer (from db.queries.wise_transfers.
-    get_matched_wise_opp_ids). A deal can have more than one (e.g. Whop + Wise).
+    Derives the source(s) from a DealWhopMatch row plus a mapping of GHL opportunity id →
+    set of bank-transfer source labels (Wise / Payoneer / …) from matched
+    xero_bank_transfers rows (db.queries.wise_transfers.get_matched_bank_sources_by_opp).
+    A deal can have more than one (e.g. Whop + Wise).
 
-      - "Stripe": paid via a stripe_* match method (whop_membership_id is NULL for those).
-      - "Whop":   paid against a Whop membership match.
-      - "Wise":   has ≥1 matched incoming Wise wire.
-      - "Other":  cash landed but the rail isn't identifiable as Whop/Stripe/Wise.
+      - "Stripe":            paid via a stripe_* match method (whop_membership_id NULL).
+      - "Whop":              paid against a Whop membership match.
+      - "Wise"/"Payoneer"/…: has ≥1 matched incoming bank transfer on that account.
+      - "Other":             cash landed but the rail isn't otherwise identifiable.
 
     Returns [] when no payment has landed (e.g. a won deal awaiting a wire).
     """
+    bank_sources_by_opp = bank_sources_by_opp or {}
     sources: list[str] = []
     total_paid = float(r.total_paid or 0) if r.total_paid is not None else 0.0
     method = (r.match_method or "").lower()
@@ -35,8 +37,9 @@ def payment_sources_for(r, wise_opp_ids=frozenset()) -> list[str]:
             sources.append("Stripe")
         elif r.whop_membership_id:
             sources.append("Whop")
-    if r.ghl_opportunity_id and r.ghl_opportunity_id in wise_opp_ids:
-        sources.append("Wise")
+    for label in sorted(bank_sources_by_opp.get(r.ghl_opportunity_id, ())):
+        if label not in sources:
+            sources.append(label)
     if total_paid > 0 and not sources:
         sources.append("Other")
     return sources

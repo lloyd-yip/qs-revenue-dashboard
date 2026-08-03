@@ -61,9 +61,13 @@ router = APIRouter(tags=["xero"])
 XERO_REPORTS_URL = "https://api.xero.com/api.xro/2.0/Reports/ProfitAndLoss"
 XERO_BANK_TXN_URL = "https://api.xero.com/api.xro/2.0/BankTransactions"
 
-# Wise account IDs in Xero (from Bank Accounts → URL accountId param)
+# Bank account IDs in Xero (from Bank Accounts → URL accountId param).
+# Incoming (RECEIVE) transfers on these are reconciled to deals; account_name drives the
+# payment-source badge (Wise / Payoneer).
 WISE_USD_XERO_ID = "6E143B3701FF412EA200F5FD8EFCA5F0"
 WISE_EUR_XERO_ID = "F58E3D6C41EE4F65B9D9CBB4B5C19214"
+PAYONEER_USD_XERO_ID = "4D9EDECCA5074FDB997D0BB25C00BC93"
+PAYONEER_EUR_XERO_ID = "B01DFC32600B41BF8AA8AA5EE4F8CE01"
 
 # ── Xero account name → internal product_type slug ───────────────────────────
 NAME_TO_TYPE: dict[str, str] = {
@@ -663,7 +667,8 @@ async def xero_sync_wise_transfers(
     # 1+2. Resolve access token from stored refresh token (rotated token persisted inside)
     access_token = await xero_access_token_from_stored_refresh()
 
-    # 3. Fetch from both Wise accounts
+    # 3. Fetch incoming transfers from the reconciled bank accounts (Wise + Payoneer).
+    #    account_name is what the payment-source badge reads, so keep it clean per bank.
     cfg = await get_xero_config()
     usd_txns = await _fetch_xero_bank_transactions(
         access_token, cfg.tenant_id, WISE_USD_XERO_ID, "Wise USD", date_from, date_to
@@ -671,7 +676,13 @@ async def xero_sync_wise_transfers(
     eur_txns = await _fetch_xero_bank_transactions(
         access_token, cfg.tenant_id, WISE_EUR_XERO_ID, "Wise EUR", date_from, date_to
     )
-    all_txns = usd_txns + eur_txns
+    payoneer_usd = await _fetch_xero_bank_transactions(
+        access_token, cfg.tenant_id, PAYONEER_USD_XERO_ID, "Payoneer USD", date_from, date_to
+    )
+    payoneer_eur = await _fetch_xero_bank_transactions(
+        access_token, cfg.tenant_id, PAYONEER_EUR_XERO_ID, "Payoneer EUR", date_from, date_to
+    )
+    all_txns = usd_txns + eur_txns + payoneer_usd + payoneer_eur
 
     if not all_txns:
         logger.info("No Wise transfers found for %s → %s", date_from, date_to)

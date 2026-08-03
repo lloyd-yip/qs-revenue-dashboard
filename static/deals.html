@@ -843,7 +843,8 @@ const CYCLE_TIP = 'Sales Cycle — whole days from Entered Pipeline (first call)
 function psBadges(sources){
   if(!sources || !sources.length) return '';
   const C = { Whop:['#6c63ff','rgba(108,99,255,0.16)'], Wise:['#16a34a','rgba(22,163,74,0.16)'],
-              Stripe:['#635bff','rgba(99,91,255,0.16)'], Other:['#64748b','rgba(100,116,139,0.16)'] };
+              Stripe:['#635bff','rgba(99,91,255,0.16)'], Payoneer:['#ea580c','rgba(234,88,12,0.16)'],
+              Other:['#64748b','rgba(100,116,139,0.16)'] };
   return sources.map(s=>{ const c=C[s]||C.Other;
     return ' <span class="ps-badge" title="Paid via '+esc(s)+'" style="display:inline-block;font-size:10px;font-weight:600;'
       +'padding:1px 7px;border-radius:999px;color:'+c[0]+';background:'+c[1]+';vertical-align:middle">'+esc(s)+'</span>';

@@ -61,18 +61,41 @@ async def get_all_wise_transfers(
     return [_row_to_dict(r) for r in rows]
 
 
-async def get_matched_wise_opp_ids(session: AsyncSession) -> set[str]:
-    """Return the set of GHL opportunity ids that have ≥1 matched incoming Wise transfer.
+def bank_source_label(account_name: str | None) -> str:
+    """Map an xero_bank_transfers account_name to a payment-source badge label.
 
-    Used to badge deals with a "Wise" payment source. Excludes unmatched transfers.
+    account_name is e.g. "Wise USD", "Payoneer EUR" — collapse the currency suffix to a
+    single bank label. Unknown names fall back to the raw name (or "Bank").
+    """
+    n = (account_name or "").strip().lower()
+    if n.startswith("wise"):
+        return "Wise"
+    if n.startswith("payoneer"):
+        return "Payoneer"
+    if n.startswith("stripe"):
+        return "Stripe"
+    if n.startswith("whop"):
+        return "Whop"
+    return (account_name or "Bank").strip()
+
+
+async def get_matched_bank_sources_by_opp(session: AsyncSession) -> dict[str, set[str]]:
+    """Map each deal (ghl_opportunity_id) → set of bank-transfer source labels it has.
+
+    e.g. {"opp123": {"Wise"}, "opp456": {"Payoneer", "Wise"}}. Derived from matched
+    xero_bank_transfers rows (any bank Xero/Wise syncs into that table); excludes unmatched.
+    Used to badge deals with their bank payment rail(s).
     """
     rows = (await session.execute(
-        select(XeroBankTransfer.ghl_opportunity_id)
+        select(XeroBankTransfer.ghl_opportunity_id, XeroBankTransfer.account_name)
         .where(XeroBankTransfer.ghl_opportunity_id.isnot(None))
         .where(XeroBankTransfer.match_confidence != "unmatched")
-        .distinct()
-    )).scalars().all()
-    return {r for r in rows if r}
+    )).all()
+    out: dict[str, set[str]] = {}
+    for opp_id, account_name in rows:
+        if opp_id:
+            out.setdefault(opp_id, set()).add(bank_source_label(account_name))
+    return out
 
 
 def _row_to_dict(r: XeroBankTransfer) -> dict:
