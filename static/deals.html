@@ -857,7 +857,7 @@ function wlBadges(d){
     else if (d.is_claritypay) b += ' <span class="wl-badge fee">ClarityPay −15%</span>';
     else if (d.total_installments && d.total_installments >= 2) b += ' <span class="wl-badge pay">'+(d.payment_count||0)+'/'+d.total_installments+' paid</span>';
     else b += ' <span class="wl-badge plan">Pay in full</span>';
-    return b;
+    return b + psBadges(d.payment_source);
   }
   if (d.needs_review) {
     return (d.is_confirmed

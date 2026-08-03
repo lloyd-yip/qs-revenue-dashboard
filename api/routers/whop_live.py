@@ -75,6 +75,7 @@ class WhopLiveDealItem(BaseModel):
     is_confirmed: bool = False
     is_orphan: bool = False
     whop_membership_id: str | None = None
+    payment_source: list[str] = []  # Whop / Wise / Stripe / Payoneer — drives the source badge
 
 
 class WhopLiveRepRow(BaseModel):
