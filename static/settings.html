@@ -312,7 +312,7 @@
         <label>Public Key — register in Wise</label>
         <textarea id="wise-public-key" rows="5" readonly spellcheck="false"
           style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:6px;font-size:12px;font-family:ui-monospace,monospace;resize:vertical"></textarea>
-        <div class="hint">Register this in <strong>Wise → Settings → Developer → Strong Customer Authentication → Manage public keys</strong>. Wise's uploader takes a file — use <strong>Download .pem</strong> then drag it in (or select the file). Wise has no API to upload it, so this step is manual. Until it's registered, Test connection will fail with a 403.</div>
+        <div class="hint">This is the public key for the private key <strong>currently saved</strong> — the exact one to register in Wise. <strong>Don't click Generate again</strong> unless you want a new key (that changes this one). Register it in <strong>Wise → Manage public keys</strong>: use <strong>Download .pem</strong> then drag it in. Wise has no API to upload it, so this step is manual. In Wise, this must be the <strong>only</strong> key registered. Until it matches, Test connection fails with a 403.</div>
         <div style="margin-top:6px">
           <button class="btn-secondary" id="btn-wise-download-pub">Download .pem</button>
           <button class="btn-secondary" id="btn-wise-copy-pub">Copy public key</button>
@@ -710,9 +710,13 @@
     $("src-wise-key").textContent = `· ${SRC_LABELS[s.api_key_source] || ""}`;
     $("src-wise-pk").textContent = `· ${SRC_LABELS[s.private_key_source] || ""}`;
     $("btn-wise-disconnect").style.display = (s.api_key_set || s.private_key_set) ? "" : "none";
-    // No saved private key → no valid public key to show; hide + clear the box so a stale
-    // key from a previous generate can never linger on screen.
-    if (!s.private_key_set) {
+    // Always show the public key that matches the CURRENTLY SAVED private key (derived
+    // server-side). This is the exact key to register in Wise — so you never have to click
+    // Generate again just to see it, and the app key + Wise key can't drift apart.
+    if (s.public_key_pem) {
+      $("wise-public-key").value = s.public_key_pem;
+      $("wise-pubkey-field").style.display = "";
+    } else {
       $("wise-public-key").value = "";
       $("wise-pubkey-field").style.display = "none";
     }

@@ -36,6 +36,7 @@ from api.utils.retell_utils import (
 from api.utils.wise_utils import (
     WISE_SETTING_API_KEY,
     WISE_SETTING_PRIVATE_KEY,
+    derive_public_key_pem,
     generate_wise_keypair,
     get_wise_config,
     pre_migrate_wise_from_env,
@@ -316,6 +317,7 @@ class WiseConnectorStatus(BaseModel):
     api_key_source: str
     private_key_set: bool
     private_key_source: str
+    public_key_pem: str | None   # derived from the SAVED private key — the exact key to register in Wise
     connected: bool
     updated_at: str | None
 
@@ -329,12 +331,19 @@ async def _wise_status() -> WiseConnectorStatus:
     cfg = await get_wise_config()
     async with AsyncSessionLocal() as session:
         meta = await get_setting_meta(session, WISE_SETTING_API_KEY)
+    public_key_pem = None
+    if cfg.private_key:
+        try:
+            public_key_pem = derive_public_key_pem(cfg.private_key)
+        except Exception:  # noqa: BLE001 — a malformed stored key shouldn't break status
+            public_key_pem = None
     return WiseConnectorStatus(
         api_key_set=bool(cfg.api_key),
         api_key_hint=_mask(cfg.api_key) if cfg.api_key else "",
         api_key_source=cfg.api_key_source,
         private_key_set=bool(cfg.private_key),
         private_key_source=cfg.private_key_source,
+        public_key_pem=public_key_pem,
         connected=bool(cfg.api_key and cfg.private_key),
         updated_at=meta[1].isoformat() if meta else None,
     )
