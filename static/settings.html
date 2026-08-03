@@ -185,9 +185,11 @@
       <div class="btn-row">
         <button class="btn-secondary" id="btn-save">Save credentials</button>
         <button class="btn-primary" id="btn-connect">Connect to Xero</button>
+        <button class="btn-secondary" id="btn-xero-banksync">Sync bank transfers</button>
         <button class="btn-danger" id="btn-disconnect" style="display:none">Disconnect</button>
         <span class="msg" id="xero-msg"></span>
       </div>
+      <div class="hint" style="margin-top:-4px">Pulls incoming <strong>Wise</strong> + <strong>Payoneer</strong> transfers from Xero and matches them to deals (drives the Wise/Payoneer payment-source badges). Idempotent — safe to re-run.</div>
 
       <details class="guide">
         <summary>How to connect Xero — step by step</summary>
@@ -321,7 +323,6 @@
       <div class="btn-row">
         <button class="btn-secondary" id="btn-wise-save">Save</button>
         <button class="btn-secondary" id="btn-wise-test">Test connection</button>
-        <button class="btn-secondary" id="btn-wise-sync">Sync transfers</button>
         <button class="btn-danger" id="btn-wise-disconnect" style="display:none">Disconnect</button>
         <span class="msg" id="wise-msg"></span>
       </div>
@@ -448,6 +449,23 @@
   });
 
   $("btn-connect").addEventListener("click", () => { window.location.href = "/xero/auth"; });
+
+  $("btn-xero-banksync").addEventListener("click", async () => {
+    $("btn-xero-banksync").disabled = true;
+    setMsg("Syncing Wise + Payoneer transfers from Xero & matching to deals…", true);
+    try {
+      const resp = await fetch(`${API}/xero/sync-wise-transfers`, { method: "POST", headers: HEADERS });
+      if (!resp.ok) throw new Error((await resp.json()).detail || `HTTP ${resp.status}`);
+      const d = await resp.json();
+      setMsg(`Synced ${d.wise_fetched} Wise + ${d.payoneer_fetched} Payoneer transfers · matched `
+        + `${d.matched_high} high / ${d.matched_medium} medium / ${d.matched_low} low · `
+        + `${d.unmatched} need review.`, true);
+    } catch (err) {
+      setMsg(`Bank sync failed: ${err.message}`, false);
+    } finally {
+      $("btn-xero-banksync").disabled = false;
+    }
+  });
 
   $("btn-disconnect").addEventListener("click", async () => {
     if (!confirm("Disconnect Xero? Syncs will stop working until you reconnect.")) return;
@@ -823,20 +841,6 @@
       setWiseMsg(`Test failed: ${err.message}`, false);
     } finally {
       $("btn-wise-test").disabled = false;
-    }
-  });
-  $("btn-wise-sync").addEventListener("click", async () => {
-    $("btn-wise-sync").disabled = true;
-    setWiseMsg("Syncing transfers & matching to deals…", true);
-    try {
-      const resp = await fetch(`${API}/api/settings/connectors/wise/sync-transfers`, { method: "POST", headers: HEADERS });
-      if (!resp.ok) throw new Error((await resp.json()).detail || `HTTP ${resp.status}`);
-      const data = await resp.json();
-      setWiseMsg(data.message, true);
-    } catch (err) {
-      setWiseMsg(`Sync failed: ${err.message}`, false);
-    } finally {
-      $("btn-wise-sync").disabled = false;
     }
   });
 

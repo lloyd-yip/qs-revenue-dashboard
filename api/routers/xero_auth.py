@@ -618,8 +618,10 @@ def _match_transfer_to_deal(
 class WiseSyncResult(BaseModel):
     period_start: str
     period_end: str
-    usd_fetched: int
-    eur_fetched: int
+    usd_fetched: int          # Wise USD (kept for back-compat)
+    eur_fetched: int          # Wise EUR (kept for back-compat)
+    wise_fetched: int = 0     # Wise USD + EUR
+    payoneer_fetched: int = 0  # Payoneer USD + EUR
     total_upserted: int
     matched_high: int
     matched_medium: int
@@ -781,6 +783,8 @@ async def xero_sync_wise_transfers(
         period_end=date_to,
         usd_fetched=len(usd_txns),
         eur_fetched=len(eur_txns),
+        wise_fetched=len(usd_txns) + len(eur_txns),
+        payoneer_fetched=len(payoneer_usd) + len(payoneer_eur),
         total_upserted=len(all_txns),
         matched_high=counters["high"],
         matched_medium=counters["medium"],
