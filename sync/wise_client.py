@@ -25,6 +25,7 @@ registered yet in Wise (or there's a key mismatch).
 import asyncio
 import base64
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -50,6 +51,104 @@ class WiseSCARejected(Exception):
     private key we signed with (or none is registered) — distinct from a valid call
     that simply returns no transactions.
     """
+
+
+# ── Activities feed (NO SCA required) ─────────────────────────────────────────
+#
+# The balance-statement endpoints require Wise SCA (RSA-signed 2FA). On this account
+# SCA is unavailable (Wise rejects a provably-valid signature — a Wise-side issue), so
+# we read incoming money from the Activities feed instead, which only needs the API
+# token. Incoming credits are TRANSFER activities whose primaryAmount is wrapped in a
+# <positive>…</positive> tag (that's how Wise marks money IN).
+
+_AMOUNT_RE = re.compile(r"([\d,]+(?:\.\d+)?)\s*([A-Z]{3})")
+_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _strip_tags(s: str) -> str:
+    return _TAG_RE.sub("", s or "").strip()
+
+
+def _parse_primary_amount(primary: str) -> tuple[bool, Optional[float], Optional[str]]:
+    """Return (is_incoming, amount, currency) from a Wise activity primaryAmount string.
+
+    Incoming credits look like '<positive>+ 1,150 USD</positive>'; outgoing/plain do not
+    carry the <positive> tag.
+    """
+    incoming = "<positive>" in (primary or "")
+    text = _strip_tags(primary).replace("+", "")
+    m = _AMOUNT_RE.search(text)
+    if not m:
+        return incoming, None, None
+    return incoming, float(m.group(1).replace(",", "")), m.group(2)
+
+
+async def fetch_wise_incoming_transfers(days: int = 365, max_pages: int = 40) -> list[dict]:
+    """Fetch incoming (money-in) TRANSFER activities from Wise — no SCA needed.
+
+    Resolves credentials from the in-app connector store (Settings → Connectors), falling
+    back to env, then pages the Activities feed and keeps only incoming TRANSFER credits.
+
+    Returns normalised dicts: wise_reference_number, date, amount, currency, sender_name,
+    description, raw_type — the same shape the matcher/ingest expects.
+    """
+    from api.utils.wise_utils import get_wise_config
+
+    cfg = await get_wise_config()
+    if cfg.api_key:
+        settings.wise_api_key = cfg.api_key
+    if not settings.wise_api_key:
+        logger.error("Wise API key not set — cannot fetch activities")
+        return []
+
+    cutoff = datetime.now(timezone.utc).date()
+    from datetime import timedelta
+    cutoff = cutoff - timedelta(days=days)
+
+    out: list[dict] = []
+    cursor: Optional[str] = None
+    url = f"{WISE_API_BASE}/v1/profiles/{WISE_PROFILE_ID}/activities"
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        for _ in range(max_pages):
+            params = {"size": 50}
+            if cursor:
+                params["nextCursor"] = cursor
+            r = await client.get(url, headers=_wise_headers(), params=params)
+            if r.status_code != 200:
+                logger.warning("Wise activities page failed %s: %s", r.status_code, r.text[:150])
+                break
+            data = r.json()
+            activities = data.get("activities", [])
+            reached_cutoff = False
+            for a in activities:
+                created = (a.get("createdOn") or "")[:10]
+                try:
+                    a_date = datetime.strptime(created, "%Y-%m-%d").date()
+                except ValueError:
+                    a_date = None
+                if a_date and a_date < cutoff:
+                    reached_cutoff = True
+                    continue
+                if a.get("type") != "TRANSFER":
+                    continue
+                incoming, amount, currency = _parse_primary_amount(a.get("primaryAmount"))
+                if not incoming or not amount:
+                    continue
+                resource_id = (a.get("resource") or {}).get("id") or a.get("id", "")
+                out.append({
+                    "wise_reference_number": f"wise-{resource_id}"[:100],
+                    "date": a_date,
+                    "amount": amount,
+                    "currency": currency or "USD",
+                    "sender_name": _strip_tags(a.get("title")),
+                    "description": _strip_tags(a.get("description")),
+                    "raw_type": "CREDIT",
+                })
+            cursor = data.get("cursor")
+            if not cursor or not activities or reached_cutoff:
+                break
+    logger.info("Wise activities: %d incoming transfers (last %dd)", len(out), days)
+    return out
 
 
 def _load_private_key():

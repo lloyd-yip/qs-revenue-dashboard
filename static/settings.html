@@ -321,6 +321,7 @@
       <div class="btn-row">
         <button class="btn-secondary" id="btn-wise-save">Save</button>
         <button class="btn-secondary" id="btn-wise-test">Test connection</button>
+        <button class="btn-secondary" id="btn-wise-sync">Sync transfers</button>
         <button class="btn-danger" id="btn-wise-disconnect" style="display:none">Disconnect</button>
         <span class="msg" id="wise-msg"></span>
       </div>
@@ -822,6 +823,20 @@
       setWiseMsg(`Test failed: ${err.message}`, false);
     } finally {
       $("btn-wise-test").disabled = false;
+    }
+  });
+  $("btn-wise-sync").addEventListener("click", async () => {
+    $("btn-wise-sync").disabled = true;
+    setWiseMsg("Syncing transfers & matching to deals…", true);
+    try {
+      const resp = await fetch(`${API}/api/settings/connectors/wise/sync-transfers`, { method: "POST", headers: HEADERS });
+      if (!resp.ok) throw new Error((await resp.json()).detail || `HTTP ${resp.status}`);
+      const data = await resp.json();
+      setWiseMsg(data.message, true);
+    } catch (err) {
+      setWiseMsg(`Sync failed: ${err.message}`, false);
+    } finally {
+      $("btn-wise-sync").disabled = false;
     }
   });
 

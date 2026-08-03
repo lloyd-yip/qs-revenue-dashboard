@@ -427,44 +427,25 @@ class WiseTestResult(BaseModel):
 
 @router.post("/wise/test", response_model=WiseTestResult)
 async def test_wise_connection() -> WiseTestResult:
-    """Live check that the saved Wise credentials can pull transactions via the API.
+    """Live check that the saved Wise API key can pull incoming transfers.
 
-    Calls the existing sync/wise_client.fetch_wise_transactions over the last 90 days for both
-    USD and EUR. Surfaces a clear message on the common failure (public key not registered →
-    SCA 403) instead of the client's silent empty-list fallback."""
+    Uses the Activities feed (no SCA) — the balance-statement endpoints require Wise SCA,
+    which is unavailable on this account (Wise rejects a valid signature). Only the API key
+    is needed here; the private key/SCA path is retained in the client but unused."""
     cfg = await get_wise_config()
-    if not cfg.api_key or not cfg.private_key:
-        return WiseTestResult(ok=False, message="Set both the API key and private key first.")
+    if not cfg.api_key:
+        return WiseTestResult(ok=False, message="Set the Wise API key first.")
 
-    from datetime import datetime, timedelta, timezone
-
-    from sync.wise_client import WiseSCARejected, fetch_wise_transactions
-
-    now = datetime.now(timezone.utc)
-    start = (now - timedelta(days=90)).strftime("%Y-%m-%dT00:00:00.000Z")
-    end = now.strftime("%Y-%m-%dT23:59:59.000Z")
+    from sync.wise_client import fetch_wise_incoming_transfers
 
     try:
-        usd = await fetch_wise_transactions(start, end, currency="USD")
-        eur = await fetch_wise_transactions(start, end, currency="EUR")
-    except WiseSCARejected:
-        return WiseTestResult(
-            ok=False,
-            message=(
-                "Wise rejected the SCA signature (result=REJECTED). The public key "
-                "registered in Wise → Developer → SCA doesn't match this app's key. "
-                "Click Generate key, Download .pem, then in Wise remove any existing keys "
-                "and upload the new one — then test again."
-            ),
-        )
+        txns = await fetch_wise_incoming_transfers(days=90)
     except Exception as exc:  # noqa: BLE001 — surface any client/network error to the UI
         logger.warning("Wise test connection failed: %s", exc)
-        return WiseTestResult(
-            ok=False,
-            message=f"Wise request failed: {str(exc)[:200]}",
-        )
+        return WiseTestResult(ok=False, message=f"Wise request failed: {str(exc)[:200]}")
 
-    txns = usd + eur
+    usd = [t for t in txns if t.get("currency") == "USD"]
+    eur = [t for t in txns if t.get("currency") == "EUR"]
     sample = [
         WiseTestSample(
             date=str(t.get("date")) if t.get("date") else None,
@@ -477,20 +458,125 @@ async def test_wise_connection() -> WiseTestResult:
     if not txns:
         return WiseTestResult(
             ok=True,
-            message=(
-                "Connected — Wise accepted the request but returned 0 incoming transactions "
-                "for the last 90 days. If you expected some, confirm the public key is "
-                "registered in Wise → Developer → SCA."
-            ),
-            usd_count=0,
-            eur_count=0,
+            message="Connected — no incoming transfers found in the last 90 days.",
         )
     return WiseTestResult(
         ok=True,
-        message=f"Pulled {len(usd)} USD + {len(eur)} EUR incoming transactions (last 90 days).",
+        message=f"Connected ✓ Found {len(txns)} incoming transfers (last 90 days): "
+                f"{len(usd)} USD + {len(eur)} EUR. Use Sync to match them to deals.",
         usd_count=len(usd),
         eur_count=len(eur),
         sample=sample,
+    )
+
+
+class WiseSyncResult(BaseModel):
+    fetched: int
+    upserted: int
+    matched_high: int = 0
+    matched_medium: int = 0
+    matched_low: int = 0
+    unmatched: int = 0
+    message: str
+
+
+@router.post("/wise/sync-transfers", response_model=WiseSyncResult)
+async def sync_wise_transfers(days: int = 365) -> WiseSyncResult:
+    """Fetch incoming Wise transfers (Activities feed, no SCA), upsert them into
+    xero_bank_transfers, and match each to a won deal (name + amount + date). Reuses the
+    existing table, matcher, and Deals-page display. Idempotent — safe to re-run; never
+    overwrites a manually confirmed match."""
+    from datetime import datetime, timezone
+
+    from sqlalchemy import select
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+    from db.models import DealWhopMatch, XeroBankTransfer
+    # Pure matching function reused from the Xero Wise-reconciliation path (name+amount+date).
+    from api.routers.xero_auth import _match_transfer_to_deal
+    from sync.wise_client import fetch_wise_incoming_transfers
+
+    cfg = await get_wise_config()
+    if not cfg.api_key:
+        return WiseSyncResult(fetched=0, upserted=0, message="Set the Wise API key first.")
+
+    transfers = await fetch_wise_incoming_transfers(days=days)
+    if not transfers:
+        return WiseSyncResult(fetched=0, upserted=0, message="No incoming Wise transfers found.")
+
+    # 1. Upsert transfer rows (idempotent on the Wise transfer id).
+    async with AsyncSessionLocal() as session:
+        for t in transfers:
+            await session.execute(
+                pg_insert(XeroBankTransfer).values(
+                    xero_transaction_id=t["wise_reference_number"],
+                    account_name=f"Wise {t.get('currency') or 'USD'}",
+                    date=t.get("date"),
+                    amount=t.get("amount"),
+                    currency=t.get("currency") or "USD",
+                    contact_name=t.get("sender_name"),
+                    description=t.get("description"),
+                ).on_conflict_do_update(
+                    index_elements=["xero_transaction_id"],
+                    set_={
+                        "account_name": f"Wise {t.get('currency') or 'USD'}",
+                        "date": t.get("date"),
+                        "amount": t.get("amount"),
+                        "currency": t.get("currency") or "USD",
+                        "contact_name": t.get("sender_name"),
+                        "description": t.get("description"),
+                        "synced_at": datetime.now(timezone.utc),
+                    },
+                    where=XeroBankTransfer.is_confirmed == False,  # noqa: E712
+                )
+            )
+        await session.commit()
+
+    # 2. Match pass over unconfirmed / unmatched-or-low rows against won deals.
+    async with AsyncSessionLocal() as session:
+        rows = (await session.execute(
+            select(XeroBankTransfer)
+            .where(XeroBankTransfer.is_confirmed == False)  # noqa: E712
+            .where(XeroBankTransfer.match_confidence.in_(["unmatched", "low"]))
+        )).scalars().all()
+        deals = (await session.execute(
+            select(DealWhopMatch).where(DealWhopMatch.ghl_close_date.isnot(None))
+        )).scalars().all()
+
+    counters = {"high": 0, "medium": 0, "low": 0, "unmatched": 0}
+    async with AsyncSessionLocal() as session:
+        for row in rows:
+            ghl_id, method, confidence, score = _match_transfer_to_deal(
+                {"contact_name": row.contact_name, "amount": float(row.amount or 0), "date": row.date},
+                list(deals),
+            )
+            counters[confidence] = counters.get(confidence, 0) + 1
+            await session.execute(
+                pg_insert(XeroBankTransfer)
+                .values(xero_transaction_id=row.xero_transaction_id)
+                .on_conflict_do_update(
+                    index_elements=["xero_transaction_id"],
+                    set_={
+                        "ghl_opportunity_id": ghl_id,
+                        "match_method": method,
+                        "match_confidence": confidence,
+                        "match_score": score,
+                    },
+                    where=XeroBankTransfer.is_confirmed == False,  # noqa: E712
+                )
+            )
+        await session.commit()
+
+    return WiseSyncResult(
+        fetched=len(transfers),
+        upserted=len(transfers),
+        matched_high=counters["high"],
+        matched_medium=counters["medium"],
+        matched_low=counters["low"],
+        unmatched=counters["unmatched"],
+        message=(f"Synced {len(transfers)} incoming transfers · matched "
+                 f"{counters['high']} high / {counters['medium']} medium to deals · "
+                 f"{counters['unmatched'] + counters['low']} need review."),
     )
 
 
