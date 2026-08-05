@@ -95,9 +95,22 @@ UPSELL_PIPELINE_ID = "NjidsHukHHUpYtTcQefX"
 # is one of these products are flagged is_excluded=True by the matcher and dropped
 # from all views. Add product IDs here as new separate offers launch.
 #   prod_bgKXIW0Wly5R1 — Calendar Automation (separate subscription offer)
+#   prod_QRBbImc0avOvr — Calendar Automation (40 Accts) — a second CA product ID
+# NOTE: prefer EXCLUDED_WHOP_PRODUCT_NAME_PATTERNS below — it auto-catches every
+# tier/variant of an offer by NAME so new product IDs don't need adding here by hand.
 EXCLUDED_WHOP_PRODUCT_IDS: frozenset[str] = frozenset({
     "prod_bgKXIW0Wly5R1",
+    "prod_QRBbImc0avOvr",
 })
+
+# Product NAME substrings (lower-cased, matched against the Whop product title) that
+# mark a separate, non-coaching offer. The matcher resolves every product's title
+# once per run and excludes any membership whose product title contains one of these
+# — so a new Calendar Automation tier is excluded automatically, without editing the
+# ID set above. Keep patterns specific to avoid excluding real coaching products.
+EXCLUDED_WHOP_PRODUCT_NAME_PATTERNS: tuple[str, ...] = (
+    "calendar automation",
+)
 
 # An UNMATCHED Whop membership (no GHL deal) counts as a "coaching orphan" — worth
 # surfacing for review — when it paid at least this much and isn't an excluded

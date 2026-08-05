@@ -98,6 +98,40 @@ async def _fetch_whop_memberships(client: httpx.AsyncClient) -> list[dict]:
     return memberships
 
 
+async def _fetch_whop_products(client: httpx.AsyncClient) -> list[dict]:
+    """Fetch all Whop products (paginated). Returns raw API objects.
+
+    Whop v2 membership objects carry the product as an ID string, not a name, so
+    to exclude an offer by NAME (e.g. every 'Calendar Automation' tier/variant) we
+    resolve id → title here once per run. Same pagination shape as memberships.
+    """
+    products: list[dict] = []
+    page = 1
+    while True:
+        resp = await client.get(
+            f"{WHOP_API_BASE}/products",
+            headers=_whop_headers(),
+            params={"per_page": 50, "page": page},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        items = data.get("data", [])
+        products.extend(items)
+        pagination = data.get("pagination", {})
+        current_page = pagination.get("current_page", page)
+        total_pages = pagination.get("total_page", 1)
+        if not items or current_page >= total_pages:
+            break
+        page = current_page + 1
+    logger.info(f"Whop products: {len(products)} fetched")
+    return products
+
+
+def product_name(p: dict) -> str:
+    """Human-readable product name from a Whop product object (title/name aliases)."""
+    return str(p.get("title") or p.get("name") or "").strip()
+
+
 async def _fetch_membership_payments(
     client: httpx.AsyncClient, membership_id: str
 ) -> list[dict]:
