@@ -753,9 +753,7 @@ async def _match_one_deal(
         # Enrich payment metrics for confirmed Whop matches — same customer-level
         # collection as auto matches (sibling + unattached payments), with the
         # same multi-deal guards.
-        if existing.whop_membership_id and (
-            existing.total_paid is None or float(existing.total_paid or 0) == 0
-        ):
+        if existing.whop_membership_id:
             from db.queries.deal_matches import enrich_deal_match_payments
             try:
                 matched_m = next(
@@ -777,6 +775,20 @@ async def _match_one_deal(
                         matched_m, memberships_by_email, claimed_other,
                         existing.ghl_close_date,
                     )
+                # Claim folded siblings (see main path) so their payments — already
+                # inside this confirmed deal's metrics — aren't re-filed as orphan
+                # duplicates. Runs EVERY sync (not just when enriching): an
+                # already-enriched confirmed deal folded these in a prior run, so
+                # without re-claiming here the sibling membership re-orphans each run.
+                for _sib in siblings:
+                    if _sib.get("id"):
+                        claimed_by_membership[_sib["id"]] = deal.ghl_opportunity_id
+
+                # Only (re)compute metrics when they're missing — never disturb a
+                # confirmed deal's already-reconciled cash.
+                if existing.total_paid is not None and float(existing.total_paid or 0) != 0:
+                    return "skipped_confirmed"
+
                 payments, _fold_notes = collect_customer_payments(
                     matched_m or {"id": existing.whop_membership_id},
                     siblings,
@@ -1044,6 +1056,14 @@ async def _match_one_deal(
                     f"Deal {deal.ghl_opportunity_id}: folded into payment metrics — "
                     + "; ".join(fold_notes)
                 )
+            # A folded sibling membership's payments now live inside THIS deal's
+            # metrics — claim it so orphan detection doesn't file the same cash as a
+            # phantom duplicate (and delete_claimed_orphans removes any that already
+            # exists). Safe: sibling folding only fires when the customer has no other
+            # deal, so no legitimate separate deal can want this membership.
+            for _sib in siblings:
+                if _sib.get("id"):
+                    claimed_by_membership[_sib["id"]] = deal.ghl_opportunity_id
             # split_pay_required_payments = authoritative plan length (set at membership
             # creation for QS internal financing plans). Passed so total_installments and
             # plan_months_flag derive from it, not from len(payments) which under-counts.
