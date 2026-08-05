@@ -26,6 +26,15 @@ WHOP_API_BASE = "https://api.whop.com/api/v2"
 # - only fold memberships created within this many days of the deal close date
 #   (an old low-ticket purchase from months earlier is not part of this deal)
 SIBLING_WINDOW_DAYS = 60
+# - OR within this many days of the MATCHED membership's own creation date. This
+#   membership-anchored window is robust where the GHL close date is not: a
+#   data-entry error (e.g. a 2017 close date on a 2026 deal) or a Splitit contract
+#   settled as two charges created weeks apart (the customer needed the split to get
+#   approved). Both membership created_at dates are Whop-native and always reliable,
+#   so anchoring to the primary membership catches split-payment siblings the close
+#   date would miss. Slightly wider than the close-date window to tolerate the gap
+#   between two installments of one contract.
+SIBLING_SPLIT_WINDOW_DAYS = 75
 # - ignore sibling payments at/below this amount (community subs, small one-offs
 #   are not deal payments — same floor idea as the Stripe pass)
 MIN_SIBLING_PAYMENT = 100.0
@@ -177,20 +186,32 @@ def sibling_memberships(
     - is not the matched membership itself,
     - is not claimed by a DIFFERENT deal (prevents double-counting when one
       customer legitimately has two deals),
-    - was created within ±SIBLING_WINDOW_DAYS of the deal close date (an old
-      unrelated purchase is not part of this deal).
+    - was created within ±SIBLING_WINDOW_DAYS of the deal close date, OR within
+      ±SIBLING_SPLIT_WINDOW_DAYS of the matched membership's own creation date.
+      The membership-anchored window catches split-payment siblings when the GHL
+      close date is missing/implausible or the two charges are weeks apart (see
+      SIBLING_SPLIT_WINDOW_DAYS); an old unrelated purchase still fails both.
     """
     email, _ = _extract_whop_identity(matched_m)
     if not email:
         return []
+    primary_created = _membership_created_date(matched_m)
+    # (anchor_date, window) pairs — a sibling within ANY window qualifies.
+    anchors = []
+    if close_date is not None:
+        anchors.append((close_date, SIBLING_WINDOW_DAYS))
+    if primary_created is not None:
+        anchors.append((primary_created, SIBLING_SPLIT_WINDOW_DAYS))
     siblings = []
     for m in memberships_by_email.get(email, []):
         mid = m.get("id")
         if not mid or mid == matched_m.get("id") or mid in claimed_other_ids:
             continue
-        if close_date is not None:
+        if anchors:
             created = _membership_created_date(m)
-            if created is None or abs((created - close_date).days) > SIBLING_WINDOW_DAYS:
+            if created is None or not any(
+                abs((created - a).days) <= w for a, w in anchors
+            ):
                 continue
         siblings.append(m)
     return siblings
