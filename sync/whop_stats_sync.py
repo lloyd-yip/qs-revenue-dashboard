@@ -100,6 +100,19 @@ async def sync_whop_stats() -> dict:
     arr = round(mrr * 12, 2)
     today = datetime.now(tz=timezone.utc).date()
 
+    # Diagnostic sample (no secrets) — lets us confirm/repair the field mapping on
+    # prod when the computed MRR looks wrong, without a Whop key locally.
+    def _pick(m: dict) -> dict:
+        keys = ("status", "valid", "renewal_period_start", "renewal_period_end",
+                "renewal_price", "price", "initial_price", "final_price", "plan", "billing_period")
+        return {k: m.get(k) for k in keys if k in m}
+    sample = {
+        "membership_count": len(memberships),
+        "first_keys": sorted(memberships[0].keys()) if memberships else [],
+        "recurring_samples": [_pick(m) for m in memberships if membership_is_recurring(m)][:3],
+        "any_samples": [_pick(m) for m in memberships[:3]],
+    }
+
     async with AsyncSessionLocal() as session:
         stmt = pg_insert(WhopStatsSnapshot).values(
             snapshot_date=today, mrr=mrr, arr=arr, active_members=active,
@@ -119,4 +132,5 @@ async def sync_whop_stats() -> dict:
 
     logger.info("Whop stats sync: mrr=%.2f arr=%.2f active=%d (from %d memberships)",
                 mrr, arr, active, len(memberships))
-    return {"ok": True, "mrr": mrr, "arr": arr, "active_members": active, "snapshot_date": str(today)}
+    return {"ok": True, "mrr": mrr, "arr": arr, "active_members": active,
+            "snapshot_date": str(today), "sample": sample}
