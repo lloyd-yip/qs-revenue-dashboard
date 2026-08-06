@@ -359,7 +359,9 @@ async def get_company_monthly_series(session: AsyncSession, months: int = 12) ->
         "notes": {
             "inflow": "Operational cash in — LIVE (Whop + Stripe + bank wires).",
             "revenue": "Reconciled Xero cash collected — trails ~10 days; blank months are not yet synced.",
-            "mrr": "MRR/ARR computed from active recurring Whop memberships, snapshotted on sync; "
-                   "history builds forward from the first snapshot.",
+            "mrr": "MRR = active recurring Whop subscriptions (excludes Splitit/ClarityPay "
+                   "deal financing), snapshotted on sync. Lower than Whop's dashboard, which "
+                   "counts in-progress installment plans as recurring. History builds forward "
+                   "from the first snapshot.",
         },
     }

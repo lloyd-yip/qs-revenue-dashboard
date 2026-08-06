@@ -91,9 +91,8 @@ async def sync_whop_stats() -> dict:
 
     plan_cache: dict = {}
     mrr = 0.0
-    active = 0        # active recurring memberships (the MRR base)
+    active = 0        # active recurring SUBSCRIPTION memberships (the MRR base)
     priced = 0        # of those, how many had a resolvable plan price
-    plan_samples: list[dict] = []
 
     async with httpx.AsyncClient(timeout=60.0) as client:
         memberships = await _fetch_whop_memberships(client)
@@ -102,15 +101,14 @@ async def sync_whop_stats() -> dict:
                 continue
             # Exclude Splitit/ClarityPay financing: split_pay_required_payments marks a
             # FINITE installment plan for a high-ticket deal (e.g. $9,000 × N), not a
-            # true subscription — Whop excludes these from MRR, and so must we.
+            # durable subscription. This is "true MRR" (subscriptions only). NOTE: Whop's
+            # own dashboard is higher because it counts in-progress installment plans as
+            # recurring until they complete — flip this exclusion to mirror that number.
             if m.get("split_pay_required_payments"):
                 continue
             active += 1
             plan_id = m.get("plan")
             plan = await _fetch_plan(client, plan_id, plan_cache) if isinstance(plan_id, str) else {}
-            if plan and len(plan_samples) < 3:
-                plan_samples.append({k: plan.get(k) for k in
-                                     ("id", "renewal_price", "initial_price", "base_currency", "billing_period") if k in plan})
             price = _plan_price(plan)
             if price > 0:
                 mrr += price / _period_months(m)
@@ -120,13 +118,7 @@ async def sync_whop_stats() -> dict:
     arr = round(mrr * 12, 2)
     today = datetime.now(tz=timezone.utc).date()
 
-    # Diagnostic sample (no secrets) — confirms the plan price mapping on prod.
-    sample = {
-        "membership_count": len(memberships),
-        "active_recurring": active,
-        "priced": priced,
-        "plan_samples": plan_samples,
-    }
+    sample = {"membership_count": len(memberships), "active_recurring": active, "priced": priced}
 
     async with AsyncSessionLocal() as session:
         stmt = pg_insert(WhopStatsSnapshot).values(
