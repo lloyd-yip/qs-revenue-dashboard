@@ -447,6 +447,21 @@
     .col-acct-sub { font-size:11px; color:var(--muted); margin-top:2px; }
     td.num.warn { color:var(--yellow); }
 
+    /* ── Products lens ───────────────────────────────────────────────────── */
+    .prod-bar { display:flex; align-items:flex-start; gap:16px; margin-bottom:18px; flex-wrap:wrap; }
+    .prod-intro { font-size:13px; color:var(--muted); line-height:1.5; flex:1; min-width:280px; }
+    .prod-intro b { color:var(--text); font-weight:600; }
+    .prod-refresh { background:var(--surface2); border:1px solid var(--border); color:var(--text); font-size:13px; font-weight:600; padding:8px 14px; border-radius:8px; cursor:pointer; font-family:inherit; white-space:nowrap; }
+    .prod-refresh:hover:not(:disabled) { border-color:var(--accent); }
+    .prod-refresh:disabled { opacity:.6; cursor:default; }
+    .prod-id { font-size:10px; color:var(--muted); margin-top:2px; font-family:ui-monospace,monospace; }
+    tr.prod-excl { opacity:.62; }
+    select.prod-cat { background:var(--surface2); border:1px solid var(--border); color:var(--text); padding:5px 10px; border-radius:7px; font-size:13px; font-weight:600; font-family:inherit; cursor:pointer; }
+    select.prod-cat:disabled { opacity:.5; }
+    .prod-badge { font-size:10px; border-radius:5px; padding:1px 6px; margin-left:6px; vertical-align:middle; }
+    .prod-badge.auto { color:var(--muted); border:1px solid var(--border); }
+    .prod-badge.manual { color:var(--accent2); border:1px solid var(--accent2); }
+
     /* Rep names in the commission worksheet are clickable → deals modal */
     td.col-rep-link { color:var(--text); font-weight:600; cursor:pointer; text-decoration:underline; text-decoration-color:var(--border); text-underline-offset:3px; }
     td.col-rep-link:hover { color:var(--accent); text-decoration-color:var(--accent); }
@@ -489,6 +504,7 @@
     <button id="wl-tab-live" class="active" onclick="wlSetLens('live')"><span class="wl-dot"></span>New Deals</button>
     <button id="wl-tab-coll" onclick="wlSetLens('coll')">Collections</button>
     <button id="wl-tab-hist" onclick="wlSetLens('hist')">Historical · Reconciled</button>
+    <button id="wl-tab-prod" onclick="wlSetLens('prod')">Products</button>
   </div>
 </div>
 
@@ -579,6 +595,19 @@
       <div class="rd-body" id="rdBody"></div>
     </div>
   </div>
+
+  <!-- PRODUCTS lens (Whop product → category mapping) -->
+  <section id="lens-products" class="wl-hidden">
+    <div class="prod-bar">
+      <div class="prod-intro">
+        Map each Whop product to a category. <b>Normal Deal</b> and <b>Upsell</b> count as deal revenue;
+        <b>Hermes</b> (Calendar Automation) and <b>Ignore</b> (one-off offers) are excluded from all deal metrics.
+        Changes apply on the next Run Match.
+      </div>
+      <button class="prod-refresh" id="prodRefreshBtn" onclick="prodRefresh()">↻ Refresh from Whop</button>
+    </div>
+    <div id="prodBody"><div class="wl-empty">Loading…</div></div>
+  </section>
 
   <!-- HISTORICAL lens (existing reconciliation) -->
   <section id="lens-historical" class="wl-hidden">
@@ -1110,8 +1139,8 @@ async function wlReviewDeal(oppId, action, ev){
 let colLoaded = false;
 // Deep-linkable tabs: each lens maps to a /deals/<slug> URL so views are shareable
 // and the browser back/forward buttons work.
-const LENS_BY_SLUG = { 'new-deals':'live', 'collections':'coll', 'historical':'hist' };
-const SLUG_BY_LENS = { live:'new-deals', coll:'collections', hist:'historical' };
+const LENS_BY_SLUG = { 'new-deals':'live', 'collections':'coll', 'historical':'hist', 'products':'prod' };
+const SLUG_BY_LENS = { live:'new-deals', coll:'collections', hist:'historical', prod:'products' };
 function lensFromPath(){
   const m = (location.pathname || '').match(/^\/deals\/([^/?#]+)/);
   return (m && LENS_BY_SLUG[m[1]]) || 'live';
@@ -1121,13 +1150,96 @@ function wlSetLens(which, push){
   el('wl-tab-live').classList.toggle('active', which==='live');
   el('wl-tab-coll').classList.toggle('active', which==='coll');
   el('wl-tab-hist').classList.toggle('active', which==='hist');
+  el('wl-tab-prod').classList.toggle('active', which==='prod');
   el('lens-live').classList.toggle('wl-hidden', which!=='live');
   el('lens-collections').classList.toggle('wl-hidden', which!=='coll');
   el('lens-historical').classList.toggle('wl-hidden', which!=='hist');
+  el('lens-products').classList.toggle('wl-hidden', which!=='prod');
   if (which==='coll' && !colLoaded){ colLoaded = true; colInit(); }
+  if (which==='prod' && !prodLoaded){ prodLoaded = true; loadProducts(); }
   // Keep the URL in sync (/deals/<slug>) without reloading; skip on initial/popstate.
   const target = '/deals/' + (SLUG_BY_LENS[which] || 'new-deals');
   if (push && location.pathname !== target){ history.pushState(null, '', target + location.search); }
+}
+
+// ── Products lens (Whop product → category mapping) ──────────────────────────
+let prodLoaded = false;
+const PROD_CATS = [
+  { key:'normal_deal', label:'Normal Deal', counts:true },
+  { key:'upsell',      label:'Upsell',      counts:true },
+  { key:'hermes',      label:'Hermes',      counts:false },
+  { key:'ignore',      label:'Ignore',      counts:false },
+];
+const PROD_CAT_LABEL = Object.fromEntries(PROD_CATS.map(c => [c.key, c.label]));
+async function loadProducts(){
+  const body = el('prodBody'); body.innerHTML = '<div class="wl-empty">Loading…</div>';
+  try {
+    const r = await fetch(`${API}/products`);
+    if (!r.ok) throw new Error('HTTP '+r.status);
+    prodRender(await r.json());
+  } catch(err){ body.innerHTML = '<div class="wl-empty">Could not load products ('+err.message+')</div>'; }
+}
+function prodRender(data){
+  const products = data.products || [];
+  if (!products.length){
+    el('prodBody').innerHTML = '<div class="wl-empty">No products yet — click “↻ Refresh from Whop” to pull the catalogue.</div>';
+    return;
+  }
+  // Group revenue by counting vs excluded for the summary line.
+  let counted = 0, excluded = 0;
+  products.forEach(p => {
+    const c = PROD_CATS.find(x => x.key === p.category);
+    if (c && c.counts) counted += (p.all_time_revenue||0); else excluded += (p.all_time_revenue||0);
+  });
+  const rows = products.map(p => {
+    const isExcl = ['hermes','ignore'].includes(p.category);
+    const opts = PROD_CATS.map(c =>
+      '<option value="'+c.key+'"'+(c.key===p.category?' selected':'')+'>'+c.label+'</option>').join('');
+    const badge = p.is_manual
+      ? '<span class="prod-badge manual" title="Category set manually">edited</span>'
+      : '<span class="prod-badge auto" title="Auto-mapped from the product name">auto</span>';
+    return '<tr class="'+(isExcl?'prod-excl':'')+'">'
+      + '<td class="deal-name">'+esc(p.product_name||'(unnamed)')+'<div class="prod-id">'+esc(p.product_id)+'</div></td>'
+      + '<td class="dim">'+esc(p.price_display||'—')+'</td>'
+      + '<td class="num">'+fmtUSD(p.all_time_revenue)+'</td>'
+      + '<td class="num dim">'+(p.active_users!=null?p.active_users:'—')+'</td>'
+      + '<td><select class="prod-cat" data-pid="'+esc(p.product_id)+'" onchange="prodSetCategory(this)">'+opts+'</select> '+badge+'</td>'
+      + '</tr>';
+  }).join('');
+  el('prodBody').innerHTML =
+      '<div class="col-cards" style="margin-bottom:16px;">'
+    + colCard('Counted (all-time)', fmtUSD(counted), 'pos', 'Sum of all-time Whop revenue for products mapped to Normal Deal or Upsell.')
+    + colCard('Excluded (all-time)', fmtUSD(excluded), 'neg', 'All-time Whop revenue for products mapped to Hermes or Ignore — not counted in deal metrics.')
+    + colCard('Products', String(products.length), '', 'Number of Whop products in the catalogue.')
+    + '</div>'
+    + '<div class="table-wrap"><table class="col-plans"><thead><tr>'
+    + '<th>Product</th><th>Price</th><th style="text-align:right">All-time Revenue</th>'
+    + '<th style="text-align:right">Active Users</th><th>Category</th>'
+    + '</tr></thead><tbody>'+rows+'</tbody></table></div>';
+}
+async function prodSetCategory(sel){
+  const pid = sel.dataset.pid, category = sel.value;
+  sel.disabled = true;
+  try {
+    const r = await fetch(`${API}/products/${encodeURIComponent(pid)}`, {
+      method:'PUT', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ category })
+    });
+    if (!r.ok) throw new Error('HTTP '+r.status);
+    loadProducts();  // re-render (updates counted/excluded totals + badges)
+  } catch(err){
+    alert('Could not save category: '+err.message);
+    sel.disabled = false;
+  }
+}
+async function prodRefresh(){
+  const btn = el('prodRefreshBtn'); btn.disabled = true; btn.textContent = '↻ Refreshing…';
+  try {
+    const r = await fetch(`${API}/products/refresh`, { method:'POST' });
+    if (!r.ok) throw new Error('HTTP '+r.status);
+    await loadProducts();
+  } catch(err){ alert('Refresh failed: '+err.message); }
+  finally { btn.disabled = false; btn.textContent = '↻ Refresh from Whop'; }
 }
 
 // ── Collections lens (projected cash across all payment plans) ────────────────

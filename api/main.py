@@ -21,6 +21,7 @@ from api.routers import connectors as connectors_router
 from api.routers import dashboard as dashboard_router
 from api.routers import webhooks as webhooks_router
 from api.routers import rep_settings as rep_settings_router
+from api.routers import products as products_router
 from api.routers import whop_live as whop_live_router
 from api.routers import xero_auth as xero_auth_router
 from api.routers import xero_expenses as xero_expenses_router
@@ -240,6 +241,9 @@ app.include_router(webhooks_router.router)
 
 # Live Whop Revenue router — GET /api/dashboard/pnl/whop-live, no auth (browser-facing)
 app.include_router(whop_live_router.router)
+
+# Whop product → category mapping (Deals › Products tab), no auth (browser-facing)
+app.include_router(products_router.router)
 
 # Rep comp settings — GET/PUT /api/dashboard/rep-settings, no auth (browser-facing,
 # same convention as the dashboard router's period-input save endpoints)

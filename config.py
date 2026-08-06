@@ -112,6 +112,33 @@ EXCLUDED_WHOP_PRODUCT_NAME_PATTERNS: tuple[str, ...] = (
     "calendar automation",
 )
 
+# ── Whop product categories ──────────────────────────────────────────────────────
+# Every Whop product is mapped to a category (stored, editable, in whop_product_mappings
+# — see the Deals › Products tab). The category decides whether the product's payments
+# count as deal/coaching revenue. "normal_deal" and "upsell" COUNT; "hermes" (Calendar
+# Automation) and "ignore" (one-off offers) are EXCLUDED from all deal metrics.
+WHOP_PRODUCT_CATEGORIES: tuple[str, ...] = ("normal_deal", "upsell", "hermes", "ignore")
+# Categories whose products are excluded from deal/coaching metrics (same effect as the
+# old is_excluded flag). The matcher builds its excluded-product set from these.
+WHOP_EXCLUDED_CATEGORIES: frozenset[str] = frozenset({"hermes", "ignore"})
+
+
+def auto_product_category(name: str) -> str:
+    """Best-effort category for a Whop product from its title (the auto-mapping Lloyd
+    can override on the Products tab). Rules mirror the current product taxonomy:
+      • 'Calendar Automation' → hermes (separate product, not deal revenue)
+      • 'OpenClaw ...', 'Offer Design Sprint' → ignore (one-off offers)
+      • 'quantumSCALE Institute', 'Splitit ...' → normal_deal (coaching + split payments)
+      • anything else → normal_deal (counts by default; adjust on the Products tab)."""
+    n = (name or "").lower()
+    if "calendar automation" in n:
+        return "hermes"
+    if "openclaw" in n or "offer design sprint" in n:
+        return "ignore"
+    if "quantumscale institute" in n or "splitit" in n:
+        return "normal_deal"
+    return "normal_deal"
+
 # An UNMATCHED Whop membership (no GHL deal) counts as a "coaching orphan" — worth
 # surfacing for review — when it paid at least this much and isn't an excluded
 # product. Real coaching starts ~$2,667, so a $1,000 floor cleanly separates it

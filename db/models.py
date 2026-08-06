@@ -25,6 +25,7 @@ from db.models_finance import (  # noqa: F401 — re-exported so `from db.models
     RepCompensation,
     RepCompSetting,
     RevenueLineItem,
+    WhopProductMapping,
 )
 
 

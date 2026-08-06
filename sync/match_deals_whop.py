@@ -37,11 +37,7 @@ import httpx
 
 from sqlalchemy import select
 
-from config import (
-    EXCLUDED_WHOP_PRODUCT_IDS,
-    EXCLUDED_WHOP_PRODUCT_NAME_PATTERNS,
-    settings,
-)
+from config import EXCLUDED_WHOP_PRODUCT_IDS, settings
 from db.models import DealWhopMatch
 from db.queries.deal_matches import get_won_deals, purge_orphan_matches, upsert_deal_match
 from db.session import AsyncSessionLocal
@@ -98,39 +94,19 @@ def _membership_product_id(m: dict) -> str | None:
     return p if isinstance(p, str) else (p or {}).get("id")
 
 
-# Effective excluded-product ID set for the current run: the hardcoded IDs plus any
-# product whose Whop title matches an excluded name pattern (resolved once per run by
-# resolve_excluded_products). A mutable module set so _is_excluded_membership — called
-# from many sites with only the membership — stays a simple ID lookup. Seeded with the
-# static IDs so a standalone call (no products fetch) still excludes the known offers.
+# Effective excluded-product ID set for the current run: the static IDs plus every
+# product whose category map entry is hermes/ignore (built at run start from
+# whop_product_mappings — see run_matching Step 3). A mutable module set so
+# _is_excluded_membership — called from many sites with only the membership — stays a
+# simple ID lookup. Seeded with the static IDs so a standalone call (no DB refresh)
+# still excludes the known offers.
 _RUNTIME_EXCLUDED_PRODUCT_IDS: set[str] = set(EXCLUDED_WHOP_PRODUCT_IDS)
 
 
-def resolve_excluded_products(products: list[dict]) -> set[str]:
-    """Rebuild the effective excluded-product set from the run's product catalogue:
-    the static IDs + every product whose title contains an excluded name pattern
-    (e.g. any 'Calendar Automation' tier). Logs newly name-matched IDs. Returns the
-    set (also stored in _RUNTIME_EXCLUDED_PRODUCT_IDS for _is_excluded_membership)."""
-    from sync.whop_payments import product_name
-
-    ids = set(EXCLUDED_WHOP_PRODUCT_IDS)
-    for p in products:
-        pid = p.get("id")
-        if not pid or pid in ids:
-            continue
-        name = product_name(p).lower()
-        if any(pat in name for pat in EXCLUDED_WHOP_PRODUCT_NAME_PATTERNS):
-            ids.add(pid)
-            logger.info(f"Excluding product by name: {pid} ('{product_name(p)}')")
-    _RUNTIME_EXCLUDED_PRODUCT_IDS.clear()
-    _RUNTIME_EXCLUDED_PRODUCT_IDS.update(ids)
-    return ids
-
-
 def _is_excluded_membership(m: dict) -> bool:
-    """True when a membership is on a separate, non-coaching offer (e.g. Calendar
-    Automation) that must be excluded from all QS revenue metrics. Checks the run's
-    effective set (static IDs + name-matched IDs — see resolve_excluded_products)."""
+    """True when a membership is on a separate, non-coaching offer (Calendar Automation,
+    one-off workshops) that must be excluded from all QS revenue metrics. Checks the
+    run's effective set (static IDs + products mapped to an excluded category)."""
     return _membership_product_id(m) in _RUNTIME_EXCLUDED_PRODUCT_IDS
 
 
@@ -642,16 +618,45 @@ async def run_matching() -> dict:
             logger.info(f"Fetched {len(memberships)} Whop memberships")
             memberships_by_email = build_membership_email_index(memberships)
 
-            # Resolve which product IDs are excluded by NAME (e.g. every Calendar
-            # Automation tier) for this run. Best-effort: on failure we keep the
-            # static ID set, so a products-API hiccup never counts excluded offers.
+            # Upsert the Whop product catalogue into the editable category map, then
+            # build this run's excluded-product set from those categories (hermes /
+            # ignore) — Lloyd's manual overrides on the Products tab win over the
+            # auto-mapping. Best-effort: on any failure we keep the static ID set, so a
+            # products-API hiccup never silently starts counting an excluded offer.
             try:
-                from sync.whop_payments import _fetch_whop_products
+                from db.queries.product_mappings import (
+                    get_excluded_product_ids,
+                    upsert_product,
+                )
+                from sync.whop_payments import (
+                    _fetch_whop_products,
+                    product_active_users,
+                    product_name as _pname,
+                    product_price_display,
+                    product_revenue,
+                )
                 products = await _fetch_whop_products(whop_client)
-                excluded_ids = resolve_excluded_products(products)
-                logger.info(f"Effective excluded product IDs this run: {len(excluded_ids)}")
+                for p in products:
+                    pid = p.get("id")
+                    if not pid:
+                        continue
+                    await upsert_product(
+                        session, pid,
+                        product_name=_pname(p),
+                        price_display=product_price_display(p),
+                        all_time_revenue=product_revenue(p),
+                        active_users=product_active_users(p),
+                    )
+                await session.commit()
+                db_excluded = await get_excluded_product_ids(session)
+                _RUNTIME_EXCLUDED_PRODUCT_IDS.clear()
+                _RUNTIME_EXCLUDED_PRODUCT_IDS.update(EXCLUDED_WHOP_PRODUCT_IDS | db_excluded)
+                logger.info(
+                    f"Excluded products this run: {len(_RUNTIME_EXCLUDED_PRODUCT_IDS)} "
+                    f"({len(db_excluded)} from the category map, {len(products)} products upserted)"
+                )
             except Exception as exc:
-                logger.warning(f"Product-name exclusion resolve failed ({exc}); using static ID set")
+                logger.warning(f"Product category resolve failed ({exc}); using static ID set")
 
             # One company-wide payments sweep — replaces per-membership fetches
             # and surfaces membership-less direct charges (renewals) that

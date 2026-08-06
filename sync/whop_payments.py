@@ -132,6 +132,37 @@ def product_name(p: dict) -> str:
     return str(p.get("title") or p.get("name") or "").strip()
 
 
+def product_price_display(p: dict) -> str | None:
+    """Best-effort human price string from a Whop product object."""
+    for key in ("price_display", "formatted_price", "price"):
+        v = p.get(key)
+        if v:
+            return str(v)
+    return None
+
+
+def product_revenue(p: dict) -> float | None:
+    """All-time revenue from a Whop product object, as a float (or None)."""
+    v = p.get("all_time_revenue")
+    if v is None:
+        v = p.get("total_revenue")
+    try:
+        return float(v) if v is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def product_active_users(p: dict) -> int | None:
+    """Active-user count from a Whop product object (or None)."""
+    v = p.get("active_users")
+    if v is None:
+        v = p.get("member_count")
+    try:
+        return int(v) if v is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
 async def _fetch_membership_payments(
     client: httpx.AsyncClient, membership_id: str
 ) -> list[dict]:

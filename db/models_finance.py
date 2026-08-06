@@ -155,3 +155,29 @@ class RevenueLineItem(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
+
+
+class WhopProductMapping(Base):
+    """One row per Whop product, with an editable CATEGORY that decides whether the
+    product's payments count as deal/coaching revenue.
+
+    Populated by the matcher (upsert_product) from the Whop product catalogue with an
+    auto-suggested category; editable on the Deals › Products tab. When is_manual=True
+    a human set the category, so the auto-mapper leaves it alone. Categories:
+    normal_deal / upsell COUNT; hermes (Calendar Automation) / ignore are EXCLUDED.
+    """
+
+    __tablename__ = "whop_product_mappings"
+
+    product_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    product_name: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    price_display: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    all_time_revenue: Mapped[float | None] = mapped_column(Numeric(14, 2), nullable=True)
+    active_users: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    category: Mapped[str] = mapped_column(String(30), nullable=False, default="normal_deal", index=True)
+    auto_category: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    is_manual: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
