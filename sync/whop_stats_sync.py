@@ -100,6 +100,11 @@ async def sync_whop_stats() -> dict:
         for m in memberships:
             if not _is_active(m) or not membership_is_recurring(m):
                 continue
+            # Exclude Splitit/ClarityPay financing: split_pay_required_payments marks a
+            # FINITE installment plan for a high-ticket deal (e.g. $9,000 × N), not a
+            # true subscription — Whop excludes these from MRR, and so must we.
+            if m.get("split_pay_required_payments"):
+                continue
             active += 1
             plan_id = m.get("plan")
             plan = await _fetch_plan(client, plan_id, plan_cache) if isinstance(plan_id, str) else {}
