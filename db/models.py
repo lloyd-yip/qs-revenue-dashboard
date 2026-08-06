@@ -489,6 +489,37 @@ class XeroBankTransfer(Base):
     )
 
 
+class StripeCharge(Base):
+    """One row per succeeded Stripe charge — the live "Stripe" cash-inflow channel.
+
+    Unlike the deal-matching Stripe pass (which floors at $100 to skip the GHL SaaS
+    sub), this table captures EVERY succeeded charge, including GHL sub-account
+    subscriptions and commissions — the CEO wants those counted as company cash.
+    Populated by sync/stripe_sync.py; idempotent on stripe_charge_id. Amounts are in
+    major units (dollars/euros), dated by `created`. Net = amount − refunded_amount.
+    """
+
+    __tablename__ = "stripe_charges"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    stripe_charge_id: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
+    amount: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False, default=0.0)            # gross, major units
+    refunded_amount: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False, default=0.0)   # major units
+    currency: Mapped[str] = mapped_column(String(10), nullable=False, default="usd")
+    created: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    status: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    customer_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    customer_email: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payment_intent: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
 class SLWAWeeklyInput(Base):
     """Manual weekly dashboard inputs for Slack / WhatsApp / SMS channel pages.
 

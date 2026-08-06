@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from db.queries.company import get_company_overview
 from db.queries.whop_live import get_available_deal_months
 from db.session import get_db
+from sync.stripe_sync import sync_stripe_charges
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/dashboard", tags=["company"])
@@ -61,3 +62,18 @@ async def company_months(db: AsyncSession = Depends(get_db)) -> list[str]:
     """Months ('YYYY-MM') that have deal activity — drives the CEO page month picker,
     current month included. Reuses the Deals/Live month list."""
     return await get_available_deal_months(db)
+
+
+@router.post("/company/stripe-refresh")
+async def company_stripe_refresh() -> dict:
+    """Pull the latest succeeded Stripe charges into stripe_charges — the same job the
+    nightly cron runs. Includes GHL sub-account subscriptions + commissions (no amount
+    floor). Idempotent (upsert on charge id). Returns {ok, fetched, upserted, skipped}.
+
+    Browser-facing/no-auth like the sibling /pnl/whop-refresh; degrades to
+    ok=False when STRIPE_SECRET_KEY is not configured."""
+    try:
+        return await sync_stripe_charges()
+    except Exception as exc:
+        logger.error("Stripe refresh failed: %s", exc, exc_info=True)
+        return {"ok": False, "error": str(exc), "fetched": 0, "upserted": 0}

@@ -21,25 +21,30 @@ from datetime import date
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import logging
+
 from db.queries.collections import get_collections_for_range
 from db.queries.expenses import get_available_periods, get_expenses_for_period
 from db.queries.revenue import get_available_revenue_periods, get_revenue_for_period
+from db.queries.stripe_charges import get_stripe_inflow_for_range
 from db.queries.whop_live import get_whop_live_summary_for_month
 from db.queries.wise_transfers import get_bank_inflow_for_range
+
+logger = logging.getLogger(__name__)
 
 # Inflow channels not yet wired live — shown to the CEO as "coming" so the page is
 # honest about what the live number does and does not include today.
 ROADMAP_CHANNELS = [
-    "Stripe live cash (incl. GHL sub-account subscriptions & commissions)",
     "Direct Payoneer connection (beyond the Xero bank feed)",
     "Affiliate / referral revenue",
 ]
 
 _INFLOW_CAVEAT = (
-    "Live figure = Whop net cash + bank wires received (Wise/Payoneer via the Xero "
-    "bank feed). A wire that also settles a deal tracked in Collections can overlap; "
-    "treat the combined total as directional. Stripe and direct-Payoneer rails are "
-    "added in later stages."
+    "Live figure = Whop net cash + Stripe (all succeeded charges, incl. GHL "
+    "sub-account subscriptions & commissions) + bank wires received (Wise/Payoneer "
+    "via the Xero bank feed). A Stripe charge or wire that also settles a deal "
+    "tracked in Collections can overlap; treat the combined total as directional "
+    "until per-rail dedupe lands. Direct-Payoneer and affiliate rails come next."
 )
 
 
@@ -166,17 +171,32 @@ async def get_company_overview(
     collections = await get_collections_for_range(session, start, end)
     bank = await get_bank_inflow_for_range(session, start, end)
 
+    # Stripe is defensive: if the table isn't migrated yet or Stripe errors, the
+    # channel degrades to $0 rather than 500-ing the whole CEO page.
+    try:
+        stripe = await get_stripe_inflow_for_range(session, start, end)
+    except Exception as exc:
+        logger.warning("Stripe inflow unavailable, defaulting to $0: %s", exc)
+        stripe = {"total_usd": 0.0, "count": 0}
+
     whop_net = whop["totals"].get("net_cash_collected", 0.0) or 0.0
     bank_total = bank.get("total_usd", 0.0) or 0.0
+    stripe_total = stripe.get("total_usd", 0.0) or 0.0
 
     live_inflow = {
-        "total": round(whop_net + bank_total, 2),
+        "total": round(whop_net + stripe_total + bank_total, 2),
         "by_channel": [
             {
                 "channel": "Whop",
                 "amount": round(whop_net, 2),
                 "live": True,
                 "detail": f"{whop['totals'].get('deal_count', 0)} deals",
+            },
+            {
+                "channel": "Stripe (cards, subs & commissions)",
+                "amount": round(stripe_total, 2),
+                "live": True,
+                "detail": f"{stripe.get('count', 0)} charges",
             },
             {
                 "channel": "Bank wires (Wise / Payoneer)",

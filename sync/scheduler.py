@@ -10,6 +10,7 @@ from config import settings
 from db.queries.sync_status import reap_stale_sync_runs
 from db.session import AsyncSessionLocal
 from sync.appointment_resolver import resolve_appointments
+from sync.stripe_sync import sync_stripe_charges
 from sync.sync_engine import run_sync
 from sync.whop_refresh import refresh_current_month_payment_metrics
 from sync.xero_keepalive import keepalive_xero_token
@@ -67,6 +68,19 @@ def create_scheduler() -> AsyncIOScheduler:
         trigger=CronTrigger(hour=22, minute=0, timezone="UTC"),
         id="daily_whop_refresh",
         name="Daily EOD Whop payment refresh",
+        replace_existing=True,
+        misfire_grace_time=300,
+        max_instances=1,
+    )
+
+    # Daily Stripe inflow refresh — 21:45 UTC (just before the Whop refresh). Pulls
+    # succeeded Stripe charges (incl. GHL sub-account subscriptions + commissions) so
+    # the Company dashboard's live Stripe channel reflects last night's card cash.
+    scheduler.add_job(
+        _run_stripe_refresh,
+        trigger=CronTrigger(hour=21, minute=45, timezone="UTC"),
+        id="daily_stripe_refresh",
+        name="Daily Stripe inflow refresh",
         replace_existing=True,
         misfire_grace_time=300,
         max_instances=1,
@@ -144,6 +158,15 @@ async def _run_whop_refresh() -> None:
         logger.info("Scheduler: Whop refresh complete — %s", stats)
     except Exception as exc:
         logger.error("Scheduler: Whop refresh failed — %s", exc)
+
+
+async def _run_stripe_refresh() -> None:
+    logger.info("Scheduler: starting daily Stripe inflow refresh")
+    try:
+        stats = await sync_stripe_charges()
+        logger.info("Scheduler: Stripe inflow refresh complete — %s", stats)
+    except Exception as exc:
+        logger.error("Scheduler: Stripe inflow refresh failed — %s", exc)
 
 
 async def _run_xero_keepalive() -> None:
