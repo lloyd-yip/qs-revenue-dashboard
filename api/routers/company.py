@@ -6,6 +6,7 @@ composed in db/queries/company.py, which reuses the existing metric queries — 
 router only parses the month and returns the assembled payload.
 """
 
+import calendar
 import logging
 from datetime import date
 
@@ -19,32 +20,40 @@ from db.session import get_db
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/dashboard", tags=["company"])
 
-_MONTH_PATTERN = r"^\d{4}-\d{2}$"
+# Range bounds accept a whole month ('YYYY-MM') or an exact day ('YYYY-MM-DD'),
+# matching the Deals/Collections filter bar so the CEO page shares its controls.
+_BOUND_PATTERN = r"^\d{4}-\d{2}(-\d{2})?$"
 
 
-def _parse_month(month: str) -> tuple[date, date]:
-    """'YYYY-MM' → (first_day, last_day). Raises ValueError on an invalid month."""
-    import calendar
-
-    year, mon = (int(x) for x in month.split("-"))
-    if not (1 <= mon <= 12):
-        raise ValueError(f"month out of range: {month}")
-    return date(year, mon, 1), date(year, mon, calendar.monthrange(year, mon)[1])
+def _parse_bound(value: str, *, is_end: bool) -> date:
+    """'YYYY-MM' → first (start) / last (end) day of that month; 'YYYY-MM-DD' → that exact day."""
+    if len(value) == 7:
+        year, mon = (int(x) for x in value.split("-"))
+        if not (1 <= mon <= 12):
+            raise ValueError(f"month out of range: {value}")
+        last = calendar.monthrange(year, mon)[1]
+        return date(year, mon, last if is_end else 1)
+    return date.fromisoformat(value)
 
 
 @router.get("/company/overview")
 async def company_overview(
-    month: str = Query(..., pattern=_MONTH_PATTERN, description="Month as YYYY-MM"),
+    start: str = Query(..., pattern=_BOUND_PATTERN, description="Range start — month (YYYY-MM) or exact day (YYYY-MM-DD)"),
+    end: str | None = Query(None, pattern=_BOUND_PATTERN, description="Range end — month (YYYY-MM) or exact day (YYYY-MM-DD); defaults to start"),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Company-wide CEO snapshot for a month: live cash inflow by channel (Whop +
-    bank wires), the collections snapshot, who still owes (payment-plan installments
-    due/overdue), and the reconciled Xero P&L. See db/queries/company.py."""
+    """Company-wide CEO snapshot for a month range: live cash inflow by channel (Whop
+    + bank wires), the collections snapshot, who still owes (payment-plan installments
+    due/overdue), and the reconciled Xero P&L. Day-level bounds enable the same custom
+    date-range mode as the Collections tab. See db/queries/company.py."""
     try:
-        month_start, month_end = _parse_month(month)
+        range_start = _parse_bound(start, is_end=False)
+        range_end = _parse_bound(end or start, is_end=True)
     except ValueError:
-        raise HTTPException(status_code=422, detail=f"Invalid month: {month}")
-    return await get_company_overview(db, month_start, month_end)
+        raise HTTPException(status_code=422, detail=f"Invalid range: {start}..{end}")
+    if range_end < range_start:
+        raise HTTPException(status_code=422, detail="Range end is before start")
+    return await get_company_overview(db, range_start, range_end)
 
 
 @router.get("/company/months")

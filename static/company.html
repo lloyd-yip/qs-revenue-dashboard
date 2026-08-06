@@ -17,6 +17,7 @@
       --border: #2e3347;
       --accent: #6366f1;
       --accent2: #818cf8;
+      --muted: #94a3b8;
       --text: #e2e8f0;
       --text2: #94a3b8;
       --text3: #64748b;
@@ -29,24 +30,29 @@
 
     body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; min-height: 100vh; }
 
-    /* ── Header + month picker ── */
     header {
-      display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+      display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
       padding: 16px 24px; border-bottom: 1px solid var(--border); background: var(--surface);
     }
-    .header-left { display: flex; align-items: baseline; gap: 12px; }
     header h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.3px; }
     header .sub { font-size: 12px; color: var(--text3); }
-    .picker { display: flex; align-items: center; gap: 10px; }
-    .picker label { font-size: 12px; color: var(--text2); }
-    select#month-select {
-      background: var(--surface2); border: 1px solid var(--border); color: var(--text);
-      padding: 6px 12px; border-radius: 6px; font-size: 13px; cursor: pointer;
-      font-family: var(--font); min-width: 140px;
-    }
-    select#month-select:focus { outline: none; border-color: var(--accent); }
 
     main { padding: 24px; max-width: 1080px; margin: 0 auto; }
+
+    /* ── Period filter bar (mirrors Deals › Collections) ── */
+    .col-periodbar { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; flex-wrap: wrap; }
+    .col-plabel { font-size: 12px; color: var(--muted); }
+    #colFrom, #colTo, #colFromD, #colToD {
+      background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+      padding: 6px 12px; border-radius: 7px; font-size: 14px; font-weight: 600; font-family: inherit; cursor: pointer;
+    }
+    .wl-arrow { width: 30px; height: 30px; border-radius: 7px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); cursor: pointer; font-size: 15px; }
+    .col-presets { display: flex; gap: 6px; flex-wrap: wrap; }
+    .col-preset { background: var(--surface2); border: 1px solid var(--border); color: var(--muted); font-size: 12px; padding: 6px 11px; border-radius: 7px; cursor: pointer; font-family: inherit; }
+    .col-preset:hover { color: var(--text); border-color: var(--accent); }
+    .col-preset.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .wl-refreshed { margin-left: auto; font-size: 12px; color: var(--muted); }
+    .wl-hidden { display: none; }
 
     .section-title {
       font-size: 12px; font-weight: 600; color: var(--text2); text-transform: uppercase;
@@ -60,7 +66,6 @@
     .free.live { color: var(--green); background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.28); }
     .free.recon { color: var(--yellow); background: rgba(245,158,11,0.12); border: 1px solid rgba(245,158,11,0.28); }
 
-    /* ── Hero inflow ── */
     .hero {
       background: linear-gradient(135deg, rgba(99,102,241,0.14), rgba(99,102,241,0.02));
       border: 1px solid var(--border); border-radius: var(--radius); padding: 22px 24px; margin-bottom: 14px;
@@ -70,9 +75,7 @@
     .hero .asof { font-size: 11px; color: var(--text3); margin-top: 4px; }
 
     .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
-    .card {
-      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px;
-    }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; }
     .card .k { font-size: 12px; color: var(--text2); font-weight: 500; }
     .card .v { font-size: 22px; font-weight: 700; letter-spacing: -0.4px; margin-top: 6px; }
     .card .m { font-size: 11px; color: var(--text3); margin-top: 4px; }
@@ -84,7 +87,6 @@
       padding: 10px 12px; background: var(--surface); border: 1px dashed var(--border); border-radius: 8px;
     }
 
-    /* ── Tables ── */
     .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
     th, td { text-align: left; padding: 10px 16px; border-bottom: 1px solid rgba(46,51,71,0.6); white-space: nowrap; }
@@ -113,60 +115,108 @@
 <body>
 
 <header>
-  <div class="header-left">
-    <h1>Company Overview</h1>
-    <span class="sub">All cash inflow, collections &amp; P&amp;L — one CEO view</span>
-  </div>
-  <div class="picker">
-    <label for="month-select">Month</label>
-    <select id="month-select"><option value="">Loading…</option></select>
-  </div>
+  <h1>Company Overview</h1>
+  <span class="sub">All cash inflow, collections &amp; P&amp;L — one CEO view</span>
 </header>
 
-<main id="main">
-  <div class="state-msg"><div class="icon">⏳</div>Loading company overview…</div>
+<main id="root">
+  <!-- Period filter bar (same controls as Deals › Collections) -->
+  <div class="col-periodbar">
+    <button class="wl-arrow pb-month-el" onclick="colStep(-1)">‹</button>
+    <span class="col-plabel pb-month-el">From</span>
+    <select id="colFrom" class="pb-month-el" onchange="colClampAndLoad('from')"></select>
+    <span class="col-plabel pb-month-el">to</span>
+    <select id="colTo" class="pb-month-el" onchange="colClampAndLoad('to')"></select>
+    <button class="wl-arrow pb-month-el" onclick="colStep(1)">›</button>
+    <span class="col-plabel pb-custom-el wl-hidden">From</span>
+    <input type="date" id="colFromD" class="pb-custom-el wl-hidden" onchange="pbDateChange('from')">
+    <span class="col-plabel pb-custom-el wl-hidden">to</span>
+    <input type="date" id="colToD" class="pb-custom-el wl-hidden" onchange="pbDateChange('to')">
+    <span class="col-presets">
+      <button class="col-preset" onclick="colPresetBack(6)">Last 6 mo</button>
+      <button class="col-preset" onclick="colPresetBack(3)">Last 3 mo</button>
+      <button class="col-preset" onclick="colPresetBack(1)">Last month</button>
+      <button class="col-preset" onclick="colPreset(0)">This month</button>
+      <button class="col-preset" onclick="colPreset(3)">Next 3 mo</button>
+      <button class="col-preset" onclick="colPreset(6)">Next 6 mo</button>
+      <button class="col-preset" id="colCustomBtn" onclick="pbToggleCustom()">📅 Custom dates</button>
+    </span>
+  </div>
+  <div id="main"><div class="state-msg"><div class="icon">⏳</div>Loading company overview…</div></div>
 </main>
 
 <script>
-  const API = "";
+  const API = "/api/dashboard";
   const mainEl = document.getElementById("main");
-  const monthSel = document.getElementById("month-select");
+  const el = (id) => document.getElementById(id);
 
   const fmt = (n) => (n == null) ? "—" : "$" + Number(n).toLocaleString("en-US", { maximumFractionDigits: 0 });
   const fmt2 = (n) => (n == null) ? "—" : "$" + Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const esc = (s) => (s == null ? "" : String(s)).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const monthLabel = (m) => { if (!m) return ""; const [y, mo] = m.split("-"); return new Date(y, mo - 1, 1).toLocaleString("en-US", { month: "long", year: "numeric" }); };
 
-  function currentMonthKey() {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  // ── Period bar (ported from Deals › Collections) ────────────────────────────
+  const colYm = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+  const colMonthLabel = (mk) => { const p = mk.split("-"); return new Date(+p[0], +p[1] - 1, 1).toLocaleString("en-US", { month: "short", year: "numeric" }); };
+  const colShift = (mk, n) => { const p = mk.split("-"); return colYm(new Date(+p[0], +p[1] - 1 + n, 1)); };
+  const colCmp = (a, b) => a < b ? -1 : a > b ? 1 : 0;
+
+  let pbCustom = false;
+  function pbMonthLastDay(mk) { const p = mk.split("-"); const last = new Date(+p[0], +p[1], 0).getDate(); return mk + "-" + String(last).padStart(2, "0"); }
+  function pbToggleCustom() {
+    pbCustom = !pbCustom;
+    if (pbCustom) { el("colFromD").value = el("colFrom").value + "-01"; el("colToD").value = pbMonthLastDay(el("colTo").value); }
+    pbSyncUI(); load();
+  }
+  function pbExitCustom() { if (pbCustom) { pbCustom = false; pbSyncUI(); } }
+  function pbSyncUI() {
+    document.querySelectorAll(".pb-month-el").forEach(e => e.classList.toggle("wl-hidden", pbCustom));
+    document.querySelectorAll(".pb-custom-el").forEach(e => e.classList.toggle("wl-hidden", !pbCustom));
+    const btn = el("colCustomBtn");
+    btn.textContent = pbCustom ? "↩ Months" : "📅 Custom dates";
+    btn.classList.toggle("active", pbCustom);
+  }
+  function pbDateChange(which) {
+    const f = el("colFromD").value, t = el("colToD").value;
+    if (f && t && f > t) { if (which === "from") el("colToD").value = f; else el("colFromD").value = t; }
+    if (el("colFromD").value && el("colToD").value) load();
+  }
+  function pbRange() {
+    return pbCustom && el("colFromD").value && el("colToD").value
+      ? [el("colFromD").value, el("colToD").value]
+      : [el("colFrom").value, el("colTo").value];
   }
 
-  async function loadMonths() {
-    let months = [];
-    try {
-      months = await (await fetch(`${API}/api/dashboard/company/months`)).json();
-    } catch (e) { months = []; }
-    const cur = currentMonthKey();
-    if (!months.includes(cur)) months = [cur, ...months];
-    // Newest first, de-duplicated.
-    months = [...new Set(months)].sort().reverse();
-    monthSel.innerHTML = months.map(m => `<option value="${m}">${monthLabel(m)}</option>`).join("");
-    monthSel.value = months[0];
-    load(monthSel.value);
+  function colInit() {
+    const now = new Date();
+    const opts = [];
+    for (let i = -12; i <= 18; i++) opts.push(colYm(new Date(now.getFullYear(), now.getMonth() + i, 1)));
+    const cur = colYm(now);
+    const optHtml = sel => opts.map(m => `<option value="${m}"${m === sel ? " selected" : ""}>${colMonthLabel(m)}</option>`).join("");
+    el("colFrom").innerHTML = optHtml(cur);
+    el("colTo").innerHTML = optHtml(cur);   // default: current month only
+    load();
   }
+  function colClampAndLoad(which) {
+    const f = el("colFrom").value, t = el("colTo").value;
+    if (colCmp(f, t) > 0) { if (which === "from") el("colTo").value = f; else el("colFrom").value = t; }
+    load();
+  }
+  function colStep(n) { el("colFrom").value = colShift(el("colFrom").value, n); el("colTo").value = colShift(el("colTo").value, n); load(); }
+  function colPreset(span) { pbExitCustom(); const cur = colYm(new Date()); el("colFrom").value = cur; el("colTo").value = colShift(cur, span); load(); }
+  function colPresetBack(back) { pbExitCustom(); const cur = colYm(new Date()); el("colTo").value = cur; el("colFrom").value = colShift(cur, -back); load(); }
 
-  monthSel.addEventListener("change", () => load(monthSel.value));
-
-  async function load(month) {
-    mainEl.innerHTML = `<div class="state-msg"><div class="icon">⏳</div>Loading ${monthLabel(month)}…</div>`;
+  // ── Data load ───────────────────────────────────────────────────────────────
+  async function load() {
+    const [s, e] = pbRange();
+    mainEl.innerHTML = `<div class="state-msg"><div class="icon">⏳</div>Loading…</div>`;
     let d;
     try {
-      const res = await fetch(`${API}/api/dashboard/company/overview?month=${month}`);
-      if (!res.ok) throw new Error(res.status);
+      const url = (e && e !== s) ? `${API}/company/overview?start=${s}&end=${e}` : `${API}/company/overview?start=${s}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("HTTP " + res.status);
       d = await res.json();
-    } catch (e) {
-      mainEl.innerHTML = `<div class="state-msg"><div class="icon">⚠️</div>Could not load overview (${esc(e.message)}).</div>`;
+    } catch (err) {
+      mainEl.innerHTML = `<div class="state-msg"><div class="icon">⚠️</div>Could not load overview (${esc(err.message)}).</div>`;
       return;
     }
     render(d);
@@ -177,13 +227,14 @@
     const col = d.collections || {};
     const owes = d.who_owes || {};
     const rec = d.reconciled_pnl || {};
+    const label = d.range_label || "";
 
     let html = "";
 
     // ── Live cash inflow ──────────────────────────────────────────────────────
-    html += `<div class="section-title">Live cash inflow — ${esc(monthLabel(d.month))}<span class="free live">LIVE</span></div>`;
+    html += `<div class="section-title">Live cash inflow — ${esc(label)}<span class="free live">LIVE</span></div>`;
     html += `<div class="hero">
-      <div class="label">Cash in so far this month</div>
+      <div class="label">Cash in for this window</div>
       <div class="amount">${fmt(li.total)}</div>
       <div class="asof">${li.last_refreshed ? "Whop refreshed " + esc(new Date(li.last_refreshed).toLocaleString()) : "Refreshed nightly"}</div>
     </div>`;
@@ -204,7 +255,7 @@
     if (li.caveat) html += `<div class="caveat">${esc(li.caveat)}</div>`;
 
     // ── Collections snapshot ──────────────────────────────────────────────────
-    html += `<div class="section-title">Collections this month<span class="free live">LIVE</span></div>`;
+    html += `<div class="section-title">Collections<span class="free live">LIVE</span></div>`;
     html += `<div class="cards">
       <div class="card"><div class="k">Collected</div><div class="v green">${fmt(col.collected)}</div><div class="m">${col.deal_count || 0} deals</div></div>
       <div class="card"><div class="k">Outstanding (projected)</div><div class="v amber">${fmt(col.outstanding)}</div></div>
@@ -212,11 +263,11 @@
       <div class="card"><div class="k">Net collected</div><div class="v">${fmt(col.net_collected)}</div></div>
     </div>`;
 
-    // ── Who owes this month ────────────────────────────────────────────────────
+    // ── Who owes ───────────────────────────────────────────────────────────────
     html += `<div class="section-title">Who still needs to pay — payment plans due / overdue</div>`;
     const plans = owes.plans || [];
     if (!plans.length) {
-      html += `<div class="panel"><div class="state-msg" style="padding:34px">✅ No payment-plan installments outstanding this month.</div></div>`;
+      html += `<div class="panel"><div class="state-msg" style="padding:34px">✅ No payment-plan installments outstanding for this window.</div></div>`;
     } else {
       html += `<div class="panel" style="overflow-x:auto"><table>
         <thead><tr>
@@ -236,7 +287,7 @@
         </tr>`;
       });
       html += `</tbody></table></div>`;
-      html += `<div class="caveat">Owed this month: <b>${fmt(owes.due_this_month_total)}</b> due · <b>${fmt(owes.overdue_total)}</b> overdue.
+      html += `<div class="caveat">Owed this window: <b>${fmt(owes.due_this_month_total)}</b> due · <b>${fmt(owes.overdue_total)}</b> overdue.
         Installment dates are projected (Whop does not store future dates) — treat "Next due" as an estimate.</div>`;
     }
 
@@ -262,7 +313,7 @@
     mainEl.innerHTML = html;
   }
 
-  loadMonths();
+  colInit();
 </script>
 
 <script src="/static/nav.js"></script>

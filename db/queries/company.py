@@ -53,18 +53,19 @@ def _parse_next(nd: str | None) -> date | None:
         return None
 
 
-def _build_who_owes(collections: dict, month_start: date, month_end: date) -> dict:
-    """From the collections payload, surface the payment-plan installments that are
-    OWED on or before this month — i.e. who still needs to pay. Each plan's next_date
-    is the next UNPAID installment (paid ones are already clamped out upstream), so a
-    plan appears here iff its owed installment lands this month (due) or earlier (overdue).
+def _build_who_owes(collections: dict, start: date, end: date) -> dict:
+    """From the collections payload, surface the payment-plan installments OWED on or
+    before the window end — i.e. who still needs to pay. Each plan's next_date is the
+    next UNPAID installment (paid ones are already clamped out upstream), so a plan
+    appears here iff its owed installment lands within the window (due) or before it
+    (overdue).
     """
     due, overdue = [], []
     due_total = overdue_total = 0.0
     for p in collections.get("payment_plans", []):
         nd = _parse_next(p.get("next_date"))
-        if nd is None or nd > month_end:
-            continue  # nothing owed yet within this month
+        if nd is None or nd > end:
+            continue  # nothing owed yet within the window
         owed = p.get("outstanding") or 0.0
         row = {
             "deal_name": p.get("deal_name"),
@@ -76,9 +77,9 @@ def _build_who_owes(collections: dict, month_start: date, month_end: date) -> di
             "total_installments": p.get("total_installments"),
             "next_date": p.get("next_date"),
             "payment_source": p.get("payment_source"),
-            "status": "overdue" if nd < month_start else "due",
+            "status": "overdue" if nd < start else "due",
         }
-        if nd < month_start:
+        if nd < start:
             overdue.append(row)
             overdue_total += owed
         else:
@@ -92,6 +93,14 @@ def _build_who_owes(collections: dict, month_start: date, month_end: date) -> di
         "overdue_total": round(overdue_total, 2),
         "plans": overdue + due,  # overdue first — most urgent for the CEO
     }
+
+
+def _range_label(start: date, end: date) -> str:
+    """Human label for the window: 'Aug 2026' for a single month, else 'Aug 2026 → Nov 2026'."""
+    fmt = lambda d: d.strftime("%b %Y")
+    if start.year == end.year and start.month == end.month:
+        return fmt(start)
+    return f"{fmt(start)} → {fmt(end)}"
 
 
 async def _reconciled_pnl(session: AsyncSession) -> dict:
@@ -143,17 +152,19 @@ async def _reconciled_pnl(session: AsyncSession) -> dict:
 
 
 async def get_company_overview(
-    session: AsyncSession, month_start: date, month_end: date
+    session: AsyncSession, start: date, end: date
 ) -> dict:
-    """Assemble the company-wide CEO overview for a calendar month.
+    """Assemble the company-wide CEO overview for a date window [start, end].
 
     Composes live inflow by channel (Whop + bank wires), the collections snapshot,
     who-still-owes (payment-plan installments due/overdue), and the reconciled Xero
     P&L. No metric is recomputed here — each figure comes from its owning query fn.
+    The window may span multiple months or be a custom day range (same bounds the
+    Deals/Collections tab uses).
     """
-    whop = await get_whop_live_summary_for_month(session, month_start, month_end)
-    collections = await get_collections_for_range(session, month_start, month_end)
-    bank = await get_bank_inflow_for_range(session, month_start, month_end)
+    whop = await get_whop_live_summary_for_month(session, start, end)
+    collections = await get_collections_for_range(session, start, end)
+    bank = await get_bank_inflow_for_range(session, start, end)
 
     whop_net = whop["totals"].get("net_cash_collected", 0.0) or 0.0
     bank_total = bank.get("total_usd", 0.0) or 0.0
@@ -190,11 +201,12 @@ async def get_company_overview(
         "months": collections["months"],
     }
 
-    who_owes = _build_who_owes(collections, month_start, month_end)
+    who_owes = _build_who_owes(collections, start, end)
     reconciled = await _reconciled_pnl(session)
 
     return {
-        "month": f"{month_start.year:04d}-{month_start.month:02d}",
+        "range": {"start": str(start), "end": str(end)},
+        "range_label": _range_label(start, end),
         "live_inflow": live_inflow,
         "collections": collections_summary,
         "who_owes": who_owes,
