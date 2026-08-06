@@ -172,6 +172,62 @@ async def get_bank_inflow_for_range(
     }
 
 
+def _is_direct_wire(contact_name: str | None) -> bool:
+    """True if a bank receipt is a DIRECT client wire — i.e. NOT a Whop/Stripe payout
+    (the same cash already counted at the processor) and NOT an internal account move.
+
+    This is the key to a non-double-counted channel mix: Whop and Stripe pay their
+    collected cash out to the bank, so those bank rows must be excluded and the cash
+    counted once at the Whop/Stripe gross layer instead.
+    """
+    n = (contact_name or "").strip().lower()
+    if not n:
+        return True  # unnamed receipt → treat as a direct wire (best effort)
+    return not any(k in n for k in ("whop", "stripe", "wise", "payoneer"))
+
+
+async def get_direct_wire_by_month(session: AsyncSession, start: date, end: date) -> dict:
+    """Direct client wires (excluding Whop/Stripe payouts + internal moves) by month,
+    split by landing bank (Wise / Payoneer), USD.
+
+    Feeds the de-duplicated cash-in channel mix on the Company dashboard. Returns:
+        {by_bank: {"Wise (direct)": {month: usd}, "Payoneer (direct)": {month: usd}},
+         totals: {bank_label: usd}}
+    """
+    rows = (await session.execute(
+        select(XeroBankTransfer.amount, XeroBankTransfer.currency,
+               XeroBankTransfer.account_name, XeroBankTransfer.contact_name, XeroBankTransfer.date)
+        .where(XeroBankTransfer.date.isnot(None))
+        .where(XeroBankTransfer.date >= start)
+        .where(XeroBankTransfer.date <= end)
+    )).all()
+
+    rate_cache: dict[tuple[int, int], float] = {}
+
+    def _usd(amount: float, currency: str | None, d: date) -> float:
+        cur = (currency or "USD").strip().upper()
+        if cur == "EUR":
+            key = (d.year, d.month)
+            if key not in rate_cache:
+                rate_cache[key] = get_eur_usd_rate(d.year, d.month)
+            return amount * rate_cache[key]
+        return amount
+
+    by_bank: dict[str, dict[str, float]] = {}
+    totals: dict[str, float] = {}
+    for amount, currency, account_name, contact_name, d in rows:
+        if amount is None or d is None or not _is_direct_wire(contact_name):
+            continue
+        label = bank_source_label(account_name)  # "Wise" | "Payoneer" | …
+        label = f"{label} (direct)"
+        usd = _usd(float(amount), currency, d)
+        mk = f"{d.year:04d}-{d.month:02d}"
+        by_bank.setdefault(label, {})[mk] = round(by_bank.setdefault(label, {}).get(mk, 0.0) + usd, 2)
+        totals[label] = round(totals.get(label, 0.0) + usd, 2)
+
+    return {"by_bank": by_bank, "totals": totals}
+
+
 def _row_to_dict(r: XeroBankTransfer) -> dict:
     """Serialize one XeroBankTransfer row to a JSON-safe dict."""
     return {

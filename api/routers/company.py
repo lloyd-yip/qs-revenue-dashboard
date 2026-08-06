@@ -13,6 +13,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from db.queries.collections import get_deal_payment_history
 from db.queries.company import get_company_monthly_series, get_company_overview
 from db.queries.whop_live import get_available_deal_months
 from db.session import get_db
@@ -78,6 +79,19 @@ async def company_whop_stats_refresh() -> dict:
     except Exception as exc:
         logger.error("Whop stats refresh failed: %s", exc, exc_info=True)
         return {"ok": False, "error": str(exc), "mrr": 0.0, "arr": 0.0}
+
+
+@router.get("/company/contact-payments")
+async def company_contact_payments(
+    opp_id: str = Query(..., description="GHL opportunity id of the deal to drill into"),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Payment history for one deal/contact — installment schedule (paid/unpaid), totals,
+    and refunds. Powers the click-through from the 'who still needs to pay' table."""
+    hist = await get_deal_payment_history(db, opp_id)
+    if hist is None:
+        raise HTTPException(status_code=404, detail=f"No deal found for {opp_id}")
+    return hist
 
 
 @router.get("/company/months")

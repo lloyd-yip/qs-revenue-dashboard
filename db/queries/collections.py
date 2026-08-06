@@ -99,6 +99,58 @@ def _deal_schedule(m: DealWhopMatch, today: date) -> list[dict]:
     return out
 
 
+async def get_deal_payment_history(session: AsyncSession, ghl_opportunity_id: str) -> dict | None:
+    """Payment history for one deal/contact — the projected installment schedule with
+    each installment's date, amount, and paid/unpaid state, plus totals and refunds.
+
+    Reuses the same _deal_schedule projection the Collections view is built on, so the
+    drill-down reconciles with the outstanding figures. Returns None if not found.
+    """
+    r = (await session.execute(
+        select(DealWhopMatch).where(DealWhopMatch.ghl_opportunity_id == ghl_opportunity_id)
+    )).scalar_one_or_none()
+    if r is None:
+        return None
+
+    today = date.today()
+    sched = _deal_schedule(r, today)
+    installments = [
+        {
+            "n": i + 1,
+            "date": str(s["date"]),
+            "amount": s["amount"],       # net of provider fee (what QS keeps)
+            "gross": s["gross"],
+            "paid": s["paid"],
+            "is_first": s["is_first"],
+        }
+        for i, s in enumerate(sched)
+    ]
+    collected = round(sum(s["amount"] for s in sched if s["paid"]), 2)
+    outstanding = round(sum(s["amount"] for s in sched if not s["paid"]), 2)
+    refunded = float(r.total_refunded) if r.total_refunded else 0.0
+    next_unpaid = next((s for s in sched if not s["paid"]), None)
+    return {
+        "ghl_opportunity_id": r.ghl_opportunity_id,
+        "deal_name": r.ghl_opportunity_name,
+        "account": r.whop_email or r.ghl_contact_email,
+        "owner": r.ghl_owner_name or "Unassigned",
+        "close_date": str(r.ghl_close_date) if r.ghl_close_date else None,
+        "first_payment_date": str(r.first_payment_date) if r.first_payment_date else None,
+        "is_financed": bool(r.is_splitit or r.is_claritypay),
+        "payment_source": payment_sources_for(r, await get_matched_bank_sources_by_opp(session)),
+        "total_paid": float(r.total_paid) if r.total_paid else 0.0,
+        "net_collected": round(collected - (refunded if refunded else 0.0), 2),
+        "collected": collected,
+        "outstanding": outstanding,
+        "refunded": round(refunded, 2),
+        "refund_date": str(r.last_refund_date) if r.last_refund_date else None,
+        "paid_count": r.payment_count or 0,
+        "total_installments": max(r.total_installments or 0, r.payment_count or 0, 1),
+        "next_date": str(next_unpaid["date"]) if next_unpaid else None,
+        "installments": installments,
+    }
+
+
 async def get_collections_for_range(
     session: AsyncSession, start: date, end: date, rep: str | None = None
 ) -> dict:

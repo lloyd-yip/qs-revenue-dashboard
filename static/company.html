@@ -71,6 +71,13 @@
     .roadmap li::before { content:"◷ "; color:var(--accent2); }
     .roadmap li:last-child { border-bottom:none; }
     .state-msg { text-align:center; padding:40px 24px; color:var(--text2); font-size:14px; }
+    tbody tr.clickrow:hover { background:rgba(99,102,241,0.10); }
+    .scrim { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:80; align-items:flex-start; justify-content:center; padding:60px 16px; overflow-y:auto; }
+    .modal { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:18px 20px; width:100%; max-width:620px; box-shadow:0 20px 60px rgba(0,0,0,0.4); }
+    .mhead { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:12px; }
+    .mtitle { font-size:16px; font-weight:700; }
+    .msub { font-size:12px; color:var(--text3); margin-top:3px; }
+    .mx { background:var(--surface2); border:1px solid var(--border); color:var(--text2); border-radius:7px; width:30px; height:30px; cursor:pointer; font-size:14px; }
     .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
     @media (max-width:820px){ .grid2 { grid-template-columns:1fr; } }
     ::-webkit-scrollbar { width:6px; height:6px; }
@@ -93,6 +100,9 @@
 </header>
 <main id="main"><div class="state-msg">⏳ Loading company dashboard…</div></main>
 <div class="tip" id="tip"></div>
+<div class="scrim" id="scrim" onclick="if(event.target===this)closeContact()">
+  <div class="modal" id="modalBody"></div>
+</div>
 
 <script>
 const API = "/api/dashboard";
@@ -220,8 +230,8 @@ function render(){
   html+=`<div class="section-title">Revenue &amp; profit — monthly<span class="free recon">RECONCILED</span></div><div id="c-rev"></div>`;
   html+=`<div class="section-title">Costs by category — monthly<span class="free recon">RECONCILED</span></div><div id="c-cost"></div>`;
   html+=`<div class="section-title">Recurring revenue — MRR<span class="free live">WHOP</span></div><div id="c-mrr"></div>`;
-  html+=`<div class="section-title">Live cash-in by rail<span class="free live">LIVE</span></div><div id="c-rail"></div>`;
-  html+=`<div class="section-title">Who still needs to pay — this month</div><div id="c-owes"><div class="state-msg">Loading…</div></div>`;
+  html+=`<div class="section-title">Cash-in by channel — where the money comes from<span class="free live">DE-DUPED</span></div><div id="c-chan"></div>`;
+  html+=`<div class="section-title">Who still needs to pay — outstanding by month</div><div id="c-owes"><div class="state-msg">Loading…</div></div>`;
   html+=`<div class="section-title">Inflow channels coming next</div><div class="panel"><ul class="roadmap" id="roadmap"></ul></div>`;
   mainEl.innerHTML=html;
 
@@ -233,7 +243,7 @@ function render(){
     kpi(`Revenue · ${d.window_months}mo`, fmt(t.revenue_reconciled), "green", "reconciled Xero") +
     kpi(`Expenses · ${d.window_months}mo`, fmt(t.expenses), "red", "") +
     kpi(`Net profit · ${d.window_months}mo`, fmt(t.net_profit), t.net_profit>=0?"green":"red", "revenue − costs") +
-    kpi(`Live cash-in · ${d.window_months}mo`, fmt(t.whop+t.stripe+t.bank), "", "rails overlap — see below");
+    kpi(`Cash-in · ${d.window_months}mo`, fmt((d.channel_mix||{}).grand_total), "", "de-duplicated, all channels");
 
   // Revenue & profit
   const revSeries=[{name:"Revenue (reconciled)",color:H[0],data:S.revenue_reconciled},{name:"Net profit",color:H[2],data:S.net_profit}];
@@ -251,10 +261,16 @@ function render(){
   if(hasMrr){ document.getElementById("c-mrr").appendChild(chartPanel("MRR (monthly recurring revenue)",d.notes.mrr,[{name:"MRR",color:H[6],data:S.mrr}],"line")); }
   else { document.getElementById("c-mrr").innerHTML=`<div class="panel"><div class="state-msg">No MRR snapshots yet — the first Whop stats sync will start the series. ${esc(d.notes.mrr)}</div></div>`; }
 
-  // Live rail (not summed — overlapping)
-  const railSeries=[{name:"Whop",color:H[0],data:S.whop},{name:"Stripe",color:H[1],data:S.stripe},{name:"Bank wires",color:H[2],data:S.bank}];
-  const railPanel=chartPanel("Live cash-in by rail","Each rail shown separately — NOT summed. Bank wires include Whop/Stripe payouts, so the rails overlap.",railSeries,"line");
-  document.getElementById("c-rail").appendChild(railPanel);
+  // Cash-in by channel — DE-DUPLICATED (Whop & Stripe gross + direct wires only).
+  const CM=d.channel_mix||{channels:[],by_channel:{},totals:{},pct:{}};
+  const chanSeries=CM.channels.map((c,i)=>({name:c.label,color:H[i%H.length],data:CM.by_channel[c.label]}));
+  const chanPanel=chartPanel("Cash-in by channel (de-duplicated)", CM.note||"", chanSeries, "bar");
+  let pct=`<div class="cards" style="margin-top:14px">`;
+  CM.channels.forEach((c,i)=>{ pct+=`<div class="card"><div class="k"><i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${H[i%H.length]};margin-right:6px;vertical-align:middle"></i>${esc(c.label)}</div><div class="v">${CM.pct[c.label]!=null?CM.pct[c.label]+"%":"—"}</div><div class="m">${fmt(CM.totals[c.label])} · ${d.window_months}mo</div></div>`; });
+  pct+=`</div>`;
+  chanPanel.insertAdjacentHTML("beforeend", pct);
+  chanPanel.insertAdjacentHTML("beforeend", `<div class="caveat">This replaces the old overlapping "rails" view. Whop/Stripe payouts landing in the bank are excluded, so nothing is double-counted; the % is each channel's share of total cash in.</div>`);
+  document.getElementById("c-chan").appendChild(chanPanel);
 
   document.getElementById("roadmap").innerHTML=(d.roadmap||["Direct Payoneer connection","Affiliate / referral revenue"]).map(r=>`<li>${esc(r)}</li>`).join("");
 
@@ -264,17 +280,62 @@ function render(){
 async function loadWhoOwes(){
   const el=document.getElementById("c-owes"); if(!el) return;
   const cur=new Date().toISOString().slice(0,7);
+  const todayStr=new Date().toISOString().slice(0,10);
   try{
-    const d=await (await fetch(`${API}/company/overview?start=${cur}`)).json();
-    const owes=d.who_owes||{}; const plans=owes.plans||[];
-    if(!plans.length){ el.innerHTML=`<div class="panel"><div class="state-msg">✅ No payment-plan installments outstanding this month.</div></div>`; return; }
-    let h=`<div class="panel" style="padding:0"><div style="overflow-x:auto"><table><thead><tr><th>Status</th><th>Account / Deal</th><th>Owner</th><th class="num">Outstanding</th><th>Progress</th><th>Next due</th></tr></thead><tbody>`;
-    plans.forEach(p=>{ const b=p.status==="overdue"?`<span class="badge overdue">OVERDUE</span>`:`<span class="badge due">DUE</span>`;
-      h+=`<tr><td>${b}</td><td>${esc(p.account||p.deal_name||"—")}</td><td>${esc(p.owner||"Unassigned")}</td><td class="num">${fmt(p.outstanding)}</td><td>${p.paid_count||0}/${p.total_installments||"?"}</td><td>${esc(p.next_date||"—")}</td></tr>`; });
-    h+=`</tbody></table></div></div><div class="caveat">Owed this month: <b>${fmt(owes.due_this_month_total)}</b> due · <b>${fmt(owes.overdue_total)}</b> overdue.</div>`;
+    // All outstanding payment plans (window-independent), grouped by their next-due month.
+    const c=await (await fetch(`${API}/pnl/collections?start=${cur}&end=${cur}`)).json();
+    const plans=(c.payment_plans||[]).filter(p=>p.next_date && (p.outstanding||0)>0);
+    if(!plans.length){ el.innerHTML=`<div class="panel"><div class="state-msg">✅ No payment-plan installments outstanding.</div></div>`; return; }
+    // group by next_date month
+    const groups={};
+    plans.forEach(p=>{ const mk=p.next_date.slice(0,7); (groups[mk]=groups[mk]||[]).push(p); });
+    const monthsSorted=Object.keys(groups).sort();
+    let h="";
+    monthsSorted.forEach(mk=>{
+      const rows=groups[mk].sort((a,b)=>(a.next_date>b.next_date?1:-1));
+      const sub=rows.reduce((s,p)=>s+(p.outstanding||0),0);
+      const overdue=mk < cur;
+      h+=`<div class="section-title" style="margin:16px 0 8px">${esc(monShort(mk))} ${mk.slice(0,4)} ${overdue?'<span class="badge overdue">OVERDUE</span>':''} <span style="margin-left:auto;color:var(--text3);font-weight:600">${fmt(sub)} outstanding</span></div>`;
+      h+=`<div class="panel" style="padding:0"><div style="overflow-x:auto"><table><thead><tr><th>Account / Deal</th><th>Owner</th><th class="num">Outstanding</th><th class="num">Installment</th><th>Progress</th><th>Next due</th></tr></thead><tbody>`;
+      rows.forEach(p=>{
+        h+=`<tr class="clickrow" data-opp="${esc(p.ghl_opportunity_id)}" data-label="${esc(p.account||p.deal_name||'')}" style="cursor:pointer">
+          <td style="color:var(--accent2)">${esc(p.account||p.deal_name||"—")}</td>
+          <td>${esc(p.owner||"Unassigned")}</td>
+          <td class="num">${fmt(p.outstanding)}</td>
+          <td class="num">${p.installment_size!=null?fmt(p.installment_size):"—"}</td>
+          <td>${p.paid_count||0}/${p.total_installments||"?"}</td>
+          <td>${esc(p.next_date||"—")}</td></tr>`;
+      });
+      h+=`</tbody></table></div></div>`;
+    });
+    const totOut=plans.reduce((s,p)=>s+(p.outstanding||0),0);
+    const totOverdue=plans.filter(p=>p.next_date<todayStr).reduce((s,p)=>s+(p.outstanding||0),0);
+    h+=`<div class="caveat">Total outstanding across all plans: <b>${fmt(totOut)}</b> · overdue (past due date): <b>${fmt(totOverdue)}</b>. Click any contact to see their payment history. Installment dates are projected.</div>`;
     el.innerHTML=h;
+    el.querySelectorAll(".clickrow").forEach(r=>r.addEventListener("click",()=>openContact(r.dataset.opp, r.dataset.label)));
   }catch(e){ el.innerHTML=`<div class="panel"><div class="state-msg">Could not load who-owes (${esc(e.message)}).</div></div>`; }
 }
+
+// ── Contact payment-history modal ────────────────────────────────────────────
+async function openContact(opp, label){
+  const sc=document.getElementById("scrim"), bd=document.getElementById("modalBody");
+  sc.style.display="flex"; bd.innerHTML=`<div class="state-msg">Loading payment history…</div>`;
+  try{
+    const h=await (await fetch(`${API}/company/contact-payments?opp_id=${encodeURIComponent(opp)}`)).json();
+    let inner=`<div class="mhead"><div><div class="mtitle">${esc(h.account||label||"Contact")}</div><div class="msub">${esc(h.deal_name||"")} · ${esc(h.owner||"")} ${h.is_financed?'· financed (settles upfront)':''}</div></div><button class="mx" onclick="closeContact()">✕</button></div>`;
+    inner+=`<div class="cards" style="margin:4px 0 14px">
+      <div class="card"><div class="k">Collected</div><div class="v green">${fmt(h.collected)}</div></div>
+      <div class="card"><div class="k">Outstanding</div><div class="v amber">${fmt(h.outstanding)}</div></div>
+      <div class="card"><div class="k">Refunded</div><div class="v red">${fmt(h.refunded)}</div></div>
+      <div class="card"><div class="k">Plan</div><div class="v">${h.paid_count}/${h.total_installments}</div><div class="m">${h.payment_source? h.payment_source.join(", "):""}</div></div>
+    </div>`;
+    inner+=`<div class="panel" style="padding:0"><div style="overflow-x:auto"><table><thead><tr><th>#</th><th>Date</th><th class="num">Amount</th><th>Status</th></tr></thead><tbody>`;
+    (h.installments||[]).forEach(it=>{ inner+=`<tr><td>${it.n}</td><td>${esc(it.date)}</td><td class="num">${fmt(it.amount)}</td><td>${it.paid?'<span class="badge due" style="color:var(--green);background:rgba(34,197,94,0.12);border-color:rgba(34,197,94,0.3)">PAID</span>':'<span class="badge overdue">DUE</span>'}</td></tr>`; });
+    inner+=`</tbody></table></div></div>`;
+    bd.innerHTML=inner;
+  }catch(e){ bd.innerHTML=`<div class="mhead"><div class="mtitle">Payment history</div><button class="mx" onclick="closeContact()">✕</button></div><div class="state-msg">Could not load (${esc(e.message)}).</div>`; }
+}
+function closeContact(){ document.getElementById("scrim").style.display="none"; }
 
 async function load(){
   mainEl.innerHTML=`<div class="state-msg">⏳ Loading company dashboard…</div>`;

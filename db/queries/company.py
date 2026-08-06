@@ -40,7 +40,7 @@ from db.queries.revenue import (
 from db.queries.stripe_charges import get_stripe_inflow_for_range
 from db.queries.whop_live import get_whop_inflow_by_month, get_whop_live_summary_for_month
 from db.queries.whop_stats import get_latest_whop_stats, get_whop_stats_by_month
-from db.queries.wise_transfers import get_bank_inflow_for_range
+from db.queries.wise_transfers import get_bank_inflow_for_range, get_direct_wire_by_month
 
 logger = logging.getLogger(__name__)
 
@@ -289,6 +289,7 @@ async def get_company_monthly_series(session: AsyncSession, months: int = 12) ->
     whop = await get_whop_inflow_by_month(session, start, end)
     stripe = await get_stripe_inflow_for_range(session, start, end)
     bank = await get_bank_inflow_for_range(session, start, end)
+    direct = await get_direct_wire_by_month(session, start, end)
     exp = await get_expenses_by_month(session, start, end)
     stats = await get_whop_stats_by_month(session, start, end)
     latest_stats = await get_latest_whop_stats(session)
@@ -316,6 +317,24 @@ async def get_company_monthly_series(session: AsyncSession, months: int = 12) ->
 
     mrr_s = [stats["by_month"].get(k, {}).get("mrr") for k in keys]
     arr_s = [stats["by_month"].get(k, {}).get("arr") for k in keys]
+
+    # De-duplicated cash-in channel mix — each dollar counted ONCE, at its true origin:
+    #   Whop gross + Stripe gross + DIRECT client wires (bank receipts that are NOT
+    #   Whop/Stripe payouts). This is the honest "where does the money come from" split;
+    #   it does NOT sum Whop and its own bank payout (the old rail chart's double-count).
+    wise_direct = direct["by_bank"].get("Wise (direct)", {})
+    payo_direct = direct["by_bank"].get("Payoneer (direct)", {})
+    wise_s = [round(wise_direct.get(k, 0.0), 2) for k in keys]
+    payo_s = [round(payo_direct.get(k, 0.0), 2) for k in keys]
+    mix_channels = [
+        {"key": "whop", "label": "Whop", "data": whop_s},
+        {"key": "stripe", "label": "Stripe", "data": stripe_s},
+        {"key": "wise", "label": "Wise (direct wires)", "data": wise_s},
+        {"key": "payoneer", "label": "Payoneer (direct wires)", "data": payo_s},
+    ]
+    mix_totals = {c["label"]: round(sum(c["data"]), 2) for c in mix_channels}
+    mix_grand = round(sum(mix_totals.values()), 2) or 0.0
+    mix_pct = {lbl: (round(v / mix_grand * 100, 1) if mix_grand else 0.0) for lbl, v in mix_totals.items()}
 
     # Cost buckets present in the window (ordered), each aligned onto the month axis.
     cost_buckets = [b for b in BUCKET_ORDER if b in exp["by_bucket"]]
@@ -345,6 +364,15 @@ async def get_company_monthly_series(session: AsyncSession, months: int = 12) ->
             "buckets": [{"key": b, "label": BUCKET_LABELS.get(b, b)} for b in cost_buckets],
             "by_bucket": costs_by_bucket,
             "total": expenses_s,
+        },
+        "channel_mix": {
+            "channels": [{"key": c["key"], "label": c["label"]} for c in mix_channels],
+            "by_channel": {c["label"]: c["data"] for c in mix_channels},
+            "totals": mix_totals,
+            "grand_total": mix_grand,
+            "pct": mix_pct,
+            "note": "De-duplicated: Whop & Stripe gross + DIRECT client wires only. Whop/Stripe "
+                    "payouts landing in the bank are excluded so no dollar is counted twice.",
         },
         "latest_stats": latest_stats,
         "totals": {
