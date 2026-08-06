@@ -18,6 +18,7 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.utils.xero_utils import get_eur_usd_rate
 from db.models import XeroBankTransfer
 
 
@@ -96,6 +97,79 @@ async def get_matched_bank_sources_by_opp(session: AsyncSession) -> dict[str, se
         if opp_id:
             out.setdefault(opp_id, set()).add(bank_source_label(account_name))
     return out
+
+
+async def get_bank_inflow_for_range(
+    session: AsyncSession, start: date, end: date
+) -> dict:
+    """Sum incoming bank-transfer cash (Wise + Payoneer, via the Xero bank feed) for
+    the window [start, end], converted to USD and broken down by bank + month.
+
+    These are the RECEIVE transactions synced into xero_bank_transfers — a payment
+    rail SEPARATE from Whop (direct wires / Payoneer), so they represent cash that
+    Whop live revenue does not already capture. EUR rows are converted with the same
+    ECB monthly rate the P&L uses (get_eur_usd_rate), cached per month here so a
+    busy window doesn't refetch the rate for every row.
+
+    Returns:
+        {
+          total_usd,
+          count,
+          by_source: {"Wise": x, "Payoneer": y, ...},   # USD
+          by_month:  [{"month": "YYYY-MM", "amount": z, "count": n}],  # USD, ascending
+        }
+
+    NOTE (Stage 1 caveat): includes ALL incoming transfers, matched to a deal or not.
+    A wire that also settles a deal tracked elsewhere can overlap with collections —
+    the CEO page surfaces bank inflow as its own channel line rather than blindly
+    folding it into a single grand total. Direct-Payoneer and Stripe rails arrive in
+    later stages.
+    """
+    rows = (await session.execute(
+        select(XeroBankTransfer.amount, XeroBankTransfer.currency,
+               XeroBankTransfer.account_name, XeroBankTransfer.date)
+        .where(XeroBankTransfer.date.isnot(None))
+        .where(XeroBankTransfer.date >= start)
+        .where(XeroBankTransfer.date <= end)
+    )).all()
+
+    rate_cache: dict[tuple[int, int], float] = {}
+
+    def _to_usd(amount: float, currency: str | None, d: date) -> float:
+        cur = (currency or "USD").strip().upper()
+        if cur == "USD":
+            return amount
+        if cur == "EUR":
+            key = (d.year, d.month)
+            if key not in rate_cache:
+                rate_cache[key] = get_eur_usd_rate(d.year, d.month)
+            return amount * rate_cache[key]
+        # Unknown currency: pass through unconverted rather than drop the cash.
+        return amount
+
+    by_source: dict[str, float] = {}
+    by_month: dict[str, dict] = {}
+    total = 0.0
+    count = 0
+    for amount, currency, account_name, d in rows:
+        if amount is None or d is None:
+            continue
+        usd = _to_usd(float(amount), currency, d)
+        label = bank_source_label(account_name)
+        mk = f"{d.year:04d}-{d.month:02d}"
+        by_source[label] = round(by_source.get(label, 0.0) + usd, 2)
+        m = by_month.setdefault(mk, {"month": mk, "amount": 0.0, "count": 0})
+        m["amount"] = round(m["amount"] + usd, 2)
+        m["count"] += 1
+        total += usd
+        count += 1
+
+    return {
+        "total_usd": round(total, 2),
+        "count": count,
+        "by_source": by_source,
+        "by_month": sorted(by_month.values(), key=lambda x: x["month"]),
+    }
 
 
 def _row_to_dict(r: XeroBankTransfer) -> dict:

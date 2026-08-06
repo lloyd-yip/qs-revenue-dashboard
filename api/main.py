@@ -23,6 +23,7 @@ from api.routers import webhooks as webhooks_router
 from api.routers import rep_settings as rep_settings_router
 from api.routers import products as products_router
 from api.routers import whop_live as whop_live_router
+from api.routers import company as company_router
 from api.routers import xero_auth as xero_auth_router
 from api.routers import xero_expenses as xero_expenses_router
 from api.routers import xero_invoices as xero_invoices_router
@@ -242,6 +243,9 @@ app.include_router(webhooks_router.router)
 # Live Whop Revenue router — GET /api/dashboard/pnl/whop-live, no auth (browser-facing)
 app.include_router(whop_live_router.router)
 
+# Company-wide CEO overview — GET /api/dashboard/company/overview, no auth (browser-facing)
+app.include_router(company_router.router)
+
 # Whop product → category mapping (Deals › Products tab), no auth (browser-facing)
 app.include_router(products_router.router)
 
@@ -285,6 +289,15 @@ async def serve_debug():
 async def serve_channel_detail():
     return FileResponse(
         _STATIC_DIR / "channel-detail.html",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+    )
+
+@app.get("/company", include_in_schema=False)
+async def serve_company():
+    # CEO company-wide overview. Read-only — all data via unauthenticated
+    # /api/dashboard/company/* endpoints, so no template token is needed.
+    return FileResponse(
+        _STATIC_DIR / "company.html",
         headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
     )
 

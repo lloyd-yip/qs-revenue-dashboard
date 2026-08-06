@@ -7,9 +7,10 @@
   'use strict';
 
   var MAIN = [
-    { key: 'sales', label: 'Sales', href: '/dashboard' },
-    { key: 'pnl',   label: 'P&L',   href: '/pnl' },
-    { key: 'deals', label: 'Deals', href: '/deals' }
+    { key: 'sales',   label: 'Sales',   href: '/dashboard' },
+    { key: 'pnl',     label: 'P&L',     href: '/pnl' },
+    { key: 'deals',   label: 'Deals',   href: '/deals' },
+    { key: 'company', label: 'Company', href: '/company' }
   ];
   var UTIL = [
     { key: 'dq',       label: 'Data Quality', href: '/data-quality' },
@@ -25,6 +26,7 @@
     if (p === '' || p === '/' || p === '/dashboard') return 'sales';
     if (p === '/pnl') return 'pnl';
     if (p === '/deals' || p.indexOf('/deals/') === 0) return 'deals';  // /deals + per-tab deep links
+    if (p === '/company') return 'company';
     if (p === '/data-quality') return 'dq';
     if (p === '/sync-history') return 'sync';
     if (p === '/settings') return 'settings';

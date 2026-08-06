@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script src="/static/theme.js"></script>
+  <title>QS — Company Overview</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #22263a;
+      --border: #2e3347;
+      --accent: #6366f1;
+      --accent2: #818cf8;
+      --text: #e2e8f0;
+      --text2: #94a3b8;
+      --text3: #64748b;
+      --green: #22c55e;
+      --red: #ef4444;
+      --yellow: #f59e0b;
+      --radius: 10px;
+      --font: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+
+    body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; min-height: 100vh; }
+
+    /* ── Header + month picker ── */
+    header {
+      display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+      padding: 16px 24px; border-bottom: 1px solid var(--border); background: var(--surface);
+    }
+    .header-left { display: flex; align-items: baseline; gap: 12px; }
+    header h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.3px; }
+    header .sub { font-size: 12px; color: var(--text3); }
+    .picker { display: flex; align-items: center; gap: 10px; }
+    .picker label { font-size: 12px; color: var(--text2); }
+    select#month-select {
+      background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+      padding: 6px 12px; border-radius: 6px; font-size: 13px; cursor: pointer;
+      font-family: var(--font); min-width: 140px;
+    }
+    select#month-select:focus { outline: none; border-color: var(--accent); }
+
+    main { padding: 24px; max-width: 1080px; margin: 0 auto; }
+
+    .section-title {
+      font-size: 12px; font-weight: 600; color: var(--text2); text-transform: uppercase;
+      letter-spacing: 0.06em; margin: 26px 0 12px;
+    }
+    .section-title:first-child { margin-top: 4px; }
+    .section-title .free {
+      font-size: 10px; font-weight: 600; letter-spacing: 0.04em; margin-left: 8px;
+      padding: 2px 7px; border-radius: 4px; text-transform: none;
+    }
+    .free.live { color: var(--green); background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.28); }
+    .free.recon { color: var(--yellow); background: rgba(245,158,11,0.12); border: 1px solid rgba(245,158,11,0.28); }
+
+    /* ── Hero inflow ── */
+    .hero {
+      background: linear-gradient(135deg, rgba(99,102,241,0.14), rgba(99,102,241,0.02));
+      border: 1px solid var(--border); border-radius: var(--radius); padding: 22px 24px; margin-bottom: 14px;
+    }
+    .hero .label { font-size: 12px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.05em; }
+    .hero .amount { font-size: 38px; font-weight: 800; letter-spacing: -1px; margin-top: 4px; }
+    .hero .asof { font-size: 11px; color: var(--text3); margin-top: 4px; }
+
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+    .card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px;
+    }
+    .card .k { font-size: 12px; color: var(--text2); font-weight: 500; }
+    .card .v { font-size: 22px; font-weight: 700; letter-spacing: -0.4px; margin-top: 6px; }
+    .card .m { font-size: 11px; color: var(--text3); margin-top: 4px; }
+    .card .m .chip { display: inline-block; margin-right: 8px; }
+    .v.green { color: var(--green); } .v.red { color: var(--red); } .v.amber { color: var(--yellow); }
+
+    .caveat {
+      font-size: 11.5px; color: var(--text3); line-height: 1.5; margin-top: 10px;
+      padding: 10px 12px; background: var(--surface); border: 1px dashed var(--border); border-radius: 8px;
+    }
+
+    /* ── Tables ── */
+    .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 10px 16px; border-bottom: 1px solid rgba(46,51,71,0.6); white-space: nowrap; }
+    th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text3); font-weight: 600; }
+    td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover { background: rgba(34,38,58,0.5); }
+    .badge { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 999px; letter-spacing: 0.03em; }
+    .badge.overdue { color: var(--red); background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.3); }
+    .badge.due { color: var(--yellow); background: rgba(245,158,11,0.12); border: 1px solid rgba(245,158,11,0.3); }
+    .muted { color: var(--text3); }
+
+    .roadmap { margin-top: 12px; }
+    .roadmap li { list-style: none; font-size: 12.5px; color: var(--text2); padding: 8px 0; border-bottom: 1px solid rgba(46,51,71,0.5); }
+    .roadmap li::before { content: "◷ "; color: var(--accent2); }
+    .roadmap li:last-child { border-bottom: none; }
+
+    .state-msg { text-align: center; padding: 60px 24px; color: var(--text2); font-size: 14px; }
+    .state-msg .icon { font-size: 30px; margin-bottom: 10px; }
+
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <h1>Company Overview</h1>
+    <span class="sub">All cash inflow, collections &amp; P&amp;L — one CEO view</span>
+  </div>
+  <div class="picker">
+    <label for="month-select">Month</label>
+    <select id="month-select"><option value="">Loading…</option></select>
+  </div>
+</header>
+
+<main id="main">
+  <div class="state-msg"><div class="icon">⏳</div>Loading company overview…</div>
+</main>
+
+<script>
+  const API = "";
+  const mainEl = document.getElementById("main");
+  const monthSel = document.getElementById("month-select");
+
+  const fmt = (n) => (n == null) ? "—" : "$" + Number(n).toLocaleString("en-US", { maximumFractionDigits: 0 });
+  const fmt2 = (n) => (n == null) ? "—" : "$" + Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const esc = (s) => (s == null ? "" : String(s)).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const monthLabel = (m) => { if (!m) return ""; const [y, mo] = m.split("-"); return new Date(y, mo - 1, 1).toLocaleString("en-US", { month: "long", year: "numeric" }); };
+
+  function currentMonthKey() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  }
+
+  async function loadMonths() {
+    let months = [];
+    try {
+      months = await (await fetch(`${API}/api/dashboard/company/months`)).json();
+    } catch (e) { months = []; }
+    const cur = currentMonthKey();
+    if (!months.includes(cur)) months = [cur, ...months];
+    // Newest first, de-duplicated.
+    months = [...new Set(months)].sort().reverse();
+    monthSel.innerHTML = months.map(m => `<option value="${m}">${monthLabel(m)}</option>`).join("");
+    monthSel.value = months[0];
+    load(monthSel.value);
+  }
+
+  monthSel.addEventListener("change", () => load(monthSel.value));
+
+  async function load(month) {
+    mainEl.innerHTML = `<div class="state-msg"><div class="icon">⏳</div>Loading ${monthLabel(month)}…</div>`;
+    let d;
+    try {
+      const res = await fetch(`${API}/api/dashboard/company/overview?month=${month}`);
+      if (!res.ok) throw new Error(res.status);
+      d = await res.json();
+    } catch (e) {
+      mainEl.innerHTML = `<div class="state-msg"><div class="icon">⚠️</div>Could not load overview (${esc(e.message)}).</div>`;
+      return;
+    }
+    render(d);
+  }
+
+  function render(d) {
+    const li = d.live_inflow || {};
+    const col = d.collections || {};
+    const owes = d.who_owes || {};
+    const rec = d.reconciled_pnl || {};
+
+    let html = "";
+
+    // ── Live cash inflow ──────────────────────────────────────────────────────
+    html += `<div class="section-title">Live cash inflow — ${esc(monthLabel(d.month))}<span class="free live">LIVE</span></div>`;
+    html += `<div class="hero">
+      <div class="label">Cash in so far this month</div>
+      <div class="amount">${fmt(li.total)}</div>
+      <div class="asof">${li.last_refreshed ? "Whop refreshed " + esc(new Date(li.last_refreshed).toLocaleString()) : "Refreshed nightly"}</div>
+    </div>`;
+    html += `<div class="cards">`;
+    (li.by_channel || []).forEach(ch => {
+      let sources = "";
+      if (ch.by_source && Object.keys(ch.by_source).length) {
+        sources = `<div class="m">` + Object.entries(ch.by_source)
+          .map(([k, v]) => `<span class="chip">${esc(k)}: ${fmt(v)}</span>`).join("") + `</div>`;
+      }
+      html += `<div class="card">
+        <div class="k">${esc(ch.channel)}</div>
+        <div class="v">${fmt(ch.amount)}</div>
+        <div class="m">${esc(ch.detail || "")}</div>${sources}
+      </div>`;
+    });
+    html += `</div>`;
+    if (li.caveat) html += `<div class="caveat">${esc(li.caveat)}</div>`;
+
+    // ── Collections snapshot ──────────────────────────────────────────────────
+    html += `<div class="section-title">Collections this month<span class="free live">LIVE</span></div>`;
+    html += `<div class="cards">
+      <div class="card"><div class="k">Collected</div><div class="v green">${fmt(col.collected)}</div><div class="m">${col.deal_count || 0} deals</div></div>
+      <div class="card"><div class="k">Outstanding (projected)</div><div class="v amber">${fmt(col.outstanding)}</div></div>
+      <div class="card"><div class="k">Refunded</div><div class="v red">${fmt(col.refunded)}</div></div>
+      <div class="card"><div class="k">Net collected</div><div class="v">${fmt(col.net_collected)}</div></div>
+    </div>`;
+
+    // ── Who owes this month ────────────────────────────────────────────────────
+    html += `<div class="section-title">Who still needs to pay — payment plans due / overdue</div>`;
+    const plans = owes.plans || [];
+    if (!plans.length) {
+      html += `<div class="panel"><div class="state-msg" style="padding:34px">✅ No payment-plan installments outstanding this month.</div></div>`;
+    } else {
+      html += `<div class="panel" style="overflow-x:auto"><table>
+        <thead><tr>
+          <th>Status</th><th>Account / Deal</th><th>Owner</th><th class="num">Installment</th>
+          <th class="num">Outstanding</th><th>Progress</th><th>Next due</th>
+        </tr></thead><tbody>`;
+      plans.forEach(p => {
+        const badge = p.status === "overdue" ? `<span class="badge overdue">OVERDUE</span>` : `<span class="badge due">DUE</span>`;
+        html += `<tr>
+          <td>${badge}</td>
+          <td>${esc(p.account || p.deal_name || "—")}<div class="m muted">${esc(p.deal_name || "")}</div></td>
+          <td>${esc(p.owner || "Unassigned")}</td>
+          <td class="num">${fmt2(p.installment_size)}</td>
+          <td class="num">${fmt(p.outstanding)}</td>
+          <td>${p.paid_count || 0} / ${p.total_installments || "?"}</td>
+          <td>${esc(p.next_date || "—")}</td>
+        </tr>`;
+      });
+      html += `</tbody></table></div>`;
+      html += `<div class="caveat">Owed this month: <b>${fmt(owes.due_this_month_total)}</b> due · <b>${fmt(owes.overdue_total)}</b> overdue.
+        Installment dates are projected (Whop does not store future dates) — treat "Next due" as an estimate.</div>`;
+    }
+
+    // ── Reconciled Xero P&L ────────────────────────────────────────────────────
+    html += `<div class="section-title">Reconciled P&amp;L (Xero)<span class="free recon">RECONCILED</span></div>`;
+    const revP = rec.revenue, expP = rec.expenses;
+    html += `<div class="cards">
+      <div class="card"><div class="k">Revenue — cash collected</div><div class="v">${fmt(revP ? revP.cash_collected : null)}</div><div class="m">${revP ? "as of " + esc(revP.period_end) : "no synced month"}</div></div>
+      <div class="card"><div class="k">Contract value (invoiced)</div><div class="v">${fmt(revP ? revP.contract_value : null)}</div></div>
+      <div class="card"><div class="k">Expenses</div><div class="v red">${fmt(expP ? expP.total : null)}</div><div class="m">${expP ? "as of " + esc(expP.period_end) : "no synced month"}</div></div>
+      <div class="card"><div class="k">Net P&amp;L</div><div class="v ${rec.net >= 0 ? "green" : "red"}">${fmt(rec.net)}</div></div>
+    </div>`;
+    if (rec.note) html += `<div class="caveat">${esc(rec.note)}</div>`;
+
+    // ── Roadmap ────────────────────────────────────────────────────────────────
+    if ((d.roadmap || []).length) {
+      html += `<div class="section-title">Inflow channels coming in later stages</div>`;
+      html += `<div class="panel" style="padding:6px 18px"><ul class="roadmap">`;
+      d.roadmap.forEach(r => html += `<li>${esc(r)}</li>`);
+      html += `</ul></div>`;
+    }
+
+    mainEl.innerHTML = html;
+  }
+
+  loadMonths();
+</script>
+
+<script src="/static/nav.js"></script>
+</body>
+</html>
