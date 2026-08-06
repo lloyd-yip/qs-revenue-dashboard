@@ -100,6 +100,10 @@
   ],
   "milestones": [
     {
+      "description": "Company dashboard — de-duplicated cash-in channel mix + monthly who-owes + contact drill-down (2026-08-06, commit de3874b). Fixed the double-count the CEO flagged: old 'cash-in by rail' summed Whop gross + bank wires that ARE Whop/Stripe payouts (top bank senders literally 'Whop' $782k, 'Stripe' $37k). New de-duped channel mix = Whop gross + Stripe gross + DIRECT client wires only (get_direct_wire_by_month), split Wise/Payoneer: 12mo $1.38M (Whop 72% / Stripe 11% / Payoneer 11% / Wise 6%) vs old ~$2.2M. Who-owes now grouped by next-due month (overdue flagged), rows click → payment-history modal (get_deal_payment_history + GET /company/contact-payments). Verified live.",
+      "date": "2026-08-06"
+    },
+    {
       "description": "Company (CEO) dashboard — month-by-month operating dashboard shipped (2026-08-06, commit b940b56). Rebuilt /company into a charted CEO dashboard: Revenue & Net profit per month (reconciled), Operating costs by category stacked (new Client Delivery bucket), MRR chart + current MRR/ARR stored from Whop (new whop_stats_snapshots table, migration whopstats001), and live cash-in by rail (Whop/Stripe/bank shown separately — not summed, they overlap). Window toggle 6/12/24mo; date selector removed. New: get_company_monthly_series, get_whop_inflow_by_month, get_expenses_by_month, sync/whop_stats_sync.py, GET /company/monthly + POST /company/whop-stats-refresh + daily 22:15 cron. Charts = inline SVG w/ hover, validated dataviz palette. Open: MRR heuristic needs verifying vs Whop; client_delivery empty until expense re-sync; per-rail dedupe pending.",
       "date": "2026-08-06"
     },
