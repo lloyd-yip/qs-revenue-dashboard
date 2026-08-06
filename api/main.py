@@ -330,7 +330,7 @@ async def serve_pnl(request: Request):
 # Deals page + its per-tab deep links. Each URL serves the same deals.html but
 # pre-selects a lens via the injected `initial_lens` context var; the page also
 # keeps the URL in sync as you switch tabs (see deals.html).
-_DEALS_LENS_BY_SLUG = {"new-deals": "live", "collections": "coll", "historical": "hist"}
+_DEALS_LENS_BY_SLUG = {"new-deals": "live", "collections": "coll", "historical": "hist", "products": "prod"}
 
 
 def _deals_response(request: Request, initial_lens: str):
