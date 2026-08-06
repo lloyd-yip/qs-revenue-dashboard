@@ -13,10 +13,11 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.queries.company import get_company_overview
+from db.queries.company import get_company_monthly_series, get_company_overview
 from db.queries.whop_live import get_available_deal_months
 from db.session import get_db
 from sync.stripe_sync import sync_stripe_charges
+from sync.whop_stats_sync import sync_whop_stats
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/dashboard", tags=["company"])
@@ -55,6 +56,28 @@ async def company_overview(
     if range_end < range_start:
         raise HTTPException(status_code=422, detail="Range end is before start")
     return await get_company_overview(db, range_start, range_end)
+
+
+@router.get("/company/monthly")
+async def company_monthly(
+    months: int = Query(12, ge=1, le=36, description="Trailing months to chart (1–36)"),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Month-by-month operating dashboard: cash inflow by channel, reconciled revenue,
+    expenses by cost bucket, net profit, and MRR/ARR over the trailing N months."""
+    return await get_company_monthly_series(db, months)
+
+
+@router.post("/company/whop-stats-refresh")
+async def company_whop_stats_refresh() -> dict:
+    """Snapshot Whop MRR/ARR (from active recurring memberships) into whop_stats_snapshots
+    — the same job the nightly cron runs. Returns {ok, mrr, arr, active_members,
+    snapshot_date}. No-auth (browser-facing); no-ops when WHOP_API_KEY is unset."""
+    try:
+        return await sync_whop_stats()
+    except Exception as exc:
+        logger.error("Whop stats refresh failed: %s", exc, exc_info=True)
+        return {"ok": False, "error": str(exc), "mrr": 0.0, "arr": 0.0}
 
 
 @router.get("/company/months")

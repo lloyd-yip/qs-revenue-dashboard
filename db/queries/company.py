@@ -21,13 +21,25 @@ from datetime import date
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import calendar
 import logging
 
 from db.queries.collections import get_collections_for_range
-from db.queries.expenses import get_available_periods, get_expenses_for_period
-from db.queries.revenue import get_available_revenue_periods, get_revenue_for_period
+from db.queries.expenses import (
+    BUCKET_LABELS,
+    BUCKET_ORDER,
+    get_available_periods,
+    get_expenses_by_month,
+    get_expenses_for_period,
+)
+from db.queries.revenue import (
+    get_all_revenue_periods_summary,
+    get_available_revenue_periods,
+    get_revenue_for_period,
+)
 from db.queries.stripe_charges import get_stripe_inflow_for_range
-from db.queries.whop_live import get_whop_live_summary_for_month
+from db.queries.whop_live import get_whop_inflow_by_month, get_whop_live_summary_for_month
+from db.queries.whop_stats import get_latest_whop_stats, get_whop_stats_by_month
 from db.queries.wise_transfers import get_bank_inflow_for_range
 
 logger = logging.getLogger(__name__)
@@ -232,4 +244,122 @@ async def get_company_overview(
         "who_owes": who_owes,
         "reconciled_pnl": reconciled,
         "roadmap": ROADMAP_CHANNELS,
+    }
+
+
+# ── Month-by-month operating dashboard ───────────────────────────────────────
+
+def _trailing_window(months: int) -> tuple[date, date, list[str]]:
+    """(start, end, ['YYYY-MM'...]) for the trailing `months` calendar months ending
+    with the current month. `end` is the last day of the current month."""
+    today = date.today()
+    end = date(today.year, today.month, calendar.monthrange(today.year, today.month)[1])
+    y, m = today.year, today.month - (months - 1)
+    while m <= 0:
+        m += 12
+        y -= 1
+    start = date(y, m, 1)
+    keys, cy, cm = [], y, m
+    while (cy, cm) <= (end.year, end.month):
+        keys.append(f"{cy:04d}-{cm:02d}")
+        cm += 1
+        if cm > 12:
+            cm = 1
+            cy += 1
+    return start, end, keys
+
+
+def _series_from_by_month(by_month: list[dict], keys: list[str]) -> list[float]:
+    """Align a [{month, amount}] list onto the continuous month axis (0.0 for gaps)."""
+    lut = {r["month"]: r.get("amount", 0.0) for r in by_month}
+    return [round(lut.get(k, 0.0), 2) for k in keys]
+
+
+async def get_company_monthly_series(session: AsyncSession, months: int = 12) -> dict:
+    """Month-by-month operating dashboard: cash inflow by channel, reconciled revenue,
+    expenses by cost bucket, net profit, and MRR/ARR — over the trailing `months`.
+
+    Purely composed from the owning query fns (no metric recomputed). LIVE operational
+    inflow (Whop/Stripe/bank) sits alongside RECONCILED Xero revenue/expenses; the
+    frontend labels each. Reconciled/MRR points are null for months with no data.
+    """
+    months = max(1, min(months, 36))
+    start, end, keys = _trailing_window(months)
+
+    whop = await get_whop_inflow_by_month(session, start, end)
+    stripe = await get_stripe_inflow_for_range(session, start, end)
+    bank = await get_bank_inflow_for_range(session, start, end)
+    exp = await get_expenses_by_month(session, start, end)
+    stats = await get_whop_stats_by_month(session, start, end)
+    latest_stats = await get_latest_whop_stats(session)
+
+    # Reconciled Xero revenue (cash_collected) keyed by month.
+    rev_rows = await get_all_revenue_periods_summary(session)
+    rev_by_month = {
+        r["period_start"][:7]: r.get("cash_collected", 0.0)
+        for r in rev_rows if r.get("period_start")
+    }
+
+    whop_s = _series_from_by_month(whop["by_month"], keys)
+    stripe_s = _series_from_by_month(stripe["by_month"], keys)
+    bank_s = _series_from_by_month(bank["by_month"], keys)
+    inflow_s = [round(whop_s[i] + stripe_s[i] + bank_s[i], 2) for i in range(len(keys))]
+
+    # Reconciled revenue + net profit are null where a month hasn't been Xero-synced.
+    revenue_s = [rev_by_month.get(k) for k in keys]
+    expense_total = exp["totals"]
+    expenses_s = [round(expense_total.get(k, 0.0), 2) for k in keys]
+    net_profit_s = [
+        (round(revenue_s[i] - expenses_s[i], 2) if revenue_s[i] is not None else None)
+        for i in range(len(keys))
+    ]
+
+    mrr_s = [stats["by_month"].get(k, {}).get("mrr") for k in keys]
+    arr_s = [stats["by_month"].get(k, {}).get("arr") for k in keys]
+
+    # Cost buckets present in the window (ordered), each aligned onto the month axis.
+    cost_buckets = [b for b in BUCKET_ORDER if b in exp["by_bucket"]]
+    costs_by_bucket = {
+        b: [round(exp["by_bucket"][b].get(k, 0.0), 2) for k in keys]
+        for b in cost_buckets
+    }
+
+    def _sum(xs):
+        return round(sum(x for x in xs if x is not None), 2)
+
+    return {
+        "months": keys,
+        "window_months": months,
+        "series": {
+            "cash_inflow": inflow_s,
+            "whop": whop_s,
+            "stripe": stripe_s,
+            "bank": bank_s,
+            "revenue_reconciled": revenue_s,
+            "expenses": expenses_s,
+            "net_profit": net_profit_s,
+            "mrr": mrr_s,
+            "arr": arr_s,
+        },
+        "costs": {
+            "buckets": [{"key": b, "label": BUCKET_LABELS.get(b, b)} for b in cost_buckets],
+            "by_bucket": costs_by_bucket,
+            "total": expenses_s,
+        },
+        "latest_stats": latest_stats,
+        "totals": {
+            "cash_inflow": _sum(inflow_s),
+            "whop": _sum(whop_s),
+            "stripe": _sum(stripe_s),
+            "bank": _sum(bank_s),
+            "revenue_reconciled": _sum(revenue_s),
+            "expenses": _sum(expenses_s),
+            "net_profit": _sum(net_profit_s),
+        },
+        "notes": {
+            "inflow": "Operational cash in — LIVE (Whop + Stripe + bank wires).",
+            "revenue": "Reconciled Xero cash collected — trails ~10 days; blank months are not yet synced.",
+            "mrr": "MRR/ARR computed from active recurring Whop memberships, snapshotted on sync; "
+                   "history builds forward from the first snapshot.",
+        },
     }

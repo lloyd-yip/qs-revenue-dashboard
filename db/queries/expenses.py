@@ -20,10 +20,11 @@ from db.queries.vendor_classification import classify_vendor
 # Only buckets listed here appear in the API response and grand_total.
 # non_revenue is intentionally excluded — those items are stored but hidden.
 
-BUCKET_ORDER = ["sales", "marketing_salaries", "tech_tools", "advertising", "paid_ads", "experiments", "unclassified"]
+BUCKET_ORDER = ["sales", "client_delivery", "marketing_salaries", "tech_tools", "advertising", "paid_ads", "experiments", "unclassified"]
 
 BUCKET_LABELS = {
     "sales": "Sales",
+    "client_delivery": "Client Delivery",
     "marketing_salaries": "Marketing Salaries",
     "tech_tools": "Tech & Tools",
     "advertising": "Digital Advertising",
@@ -98,6 +99,38 @@ async def get_expenses_for_period(
         "buckets": result,
         "grand_total": grand_total,
     }
+
+
+async def get_expenses_by_month(session: AsyncSession, start: date, end: date) -> dict:
+    """Per-month expense totals by bucket for [start, end] — drives the CEO cost charts.
+
+    Returns {months: ["YYYY-MM"...], by_bucket: {bucket: {month: total}}, totals: {month: total}}.
+    Only BUCKET_ORDER buckets are counted (non_revenue hidden). Months with no expense
+    data simply don't appear; the caller fills a continuous axis.
+    """
+    rows = (await session.execute(
+        select(
+            ExpenseLineItem.period_start,
+            ExpenseLineItem.bucket,
+            func.sum(ExpenseLineItem.amount).label("total"),
+        )
+        .where(ExpenseLineItem.period_start >= start)
+        .where(ExpenseLineItem.period_start <= end)
+        .group_by(ExpenseLineItem.period_start, ExpenseLineItem.bucket)
+    )).all()
+
+    by_bucket: dict[str, dict[str, float]] = {}
+    totals: dict[str, float] = {}
+    months: set[str] = set()
+    for period_start, bucket, total in rows:
+        if bucket not in BUCKET_LABELS:  # skip non_revenue / unknown
+            continue
+        mk = f"{period_start.year:04d}-{period_start.month:02d}"
+        months.add(mk)
+        by_bucket.setdefault(bucket, {})[mk] = round(float(total or 0), 2)
+        totals[mk] = round(totals.get(mk, 0.0) + float(total or 0), 2)
+
+    return {"months": sorted(months), "by_bucket": by_bucket, "totals": totals}
 
 
 async def upsert_expense_line_items(

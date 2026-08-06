@@ -197,13 +197,24 @@ _register("experiments", [
     "CROWDTAMERS",
 ])
 
+# ── Client Delivery ──────────────────────────────────────────────────────────
+# Fulfilment / delivery team — the cost of servicing signed clients (coaching,
+# operations). These were previously hidden in non_revenue; the CEO dashboard
+# surfaces them as a real operating cost. Add delivery contractors/accounts here.
+# NOTE: reclassification applies to future expense syncs (and any re-sync/backfill)
+# — already-stored rows keep their old bucket until re-synced.
+_register("client_delivery", [
+    "COLUMN NATIONAL ASSOCIATION",   # Doug — delivery team
+    # Xero P&L account names
+    "Salaries - Operations",         # Delivery team
+])
+
 # ── Non-revenue (stored but hidden from P&L display and totals) ──────────────
 _register("non_revenue", [
     "SendinBlue",
     "MAKE.COM",
     "LITEMAIL AI",
     "APPS.EMTA.EE",
-    "COLUMN NATIONAL ASSOCIATION",  # Doug — delivery team, not sales/marketing
     "James Walter",                  # Paid from Salaries - Sales but not a sales rep (Lloyd, 2026-07-10)
     # Salary-account payees excluded from the marketing whitelist (Lloyd, 2026-07-10)
     "Alexander Gessel",              # Founder comp — not a sales/marketing cost
@@ -215,7 +226,6 @@ _register("non_revenue", [
     "Sandra Stringer",
     "Wise",                          # Bank transfer account — not an expense; confirmed not in Xero P&L
     # Xero P&L account names — hidden from dashboard
-    "Salaries - Operations",         # Delivery team
     "Salaries - Hermes",             # Lloyd OS server costs
     "Bank Fees",
     "Payoneer Bank Fees",

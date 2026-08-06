@@ -520,6 +520,31 @@ class StripeCharge(Base):
     )
 
 
+class WhopStatsSnapshot(Base):
+    """A dated snapshot of Whop MRR/ARR — computed from active recurring memberships.
+
+    MRR/ARR are not otherwise stored (Whop computes them); we snapshot on each sync so
+    the Company dashboard can chart them over time without live-calling Whop per page
+    load. One row per snapshot_date (idempotent upsert). Populated by sync/whop_stats_sync.py.
+    """
+
+    __tablename__ = "whop_stats_snapshots"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    snapshot_date: Mapped[date] = mapped_column(Date, unique=True, nullable=False, index=True)
+    mrr: Mapped[float] = mapped_column(Numeric(14, 2), nullable=False, default=0.0)
+    arr: Mapped[float] = mapped_column(Numeric(14, 2), nullable=False, default=0.0)
+    active_members: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    currency: Mapped[str] = mapped_column(String(10), nullable=False, default="usd")
+    source: Mapped[str] = mapped_column(String(40), nullable=False, default="whop_memberships")
+
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
 class SLWAWeeklyInput(Base):
     """Manual weekly dashboard inputs for Slack / WhatsApp / SMS channel pages.
 

@@ -380,6 +380,42 @@ async def get_whop_live_summary_for_month(
     }
 
 
+async def get_whop_inflow_by_month(session: AsyncSession, start: date, end: date) -> dict:
+    """Whop net cash collected by month of first payment, for [start, end].
+
+    Parallels get_stripe_inflow_for_range / get_bank_inflow_for_range so the CEO
+    dashboard can build a per-channel monthly cashflow series. Counts high/medium
+    matches with a real payment (total_paid > 0), excluding separate-offer deals.
+
+    Returns {total_usd, count, by_month: [{month, amount, count}]}.
+    """
+    month_expr = func.to_char(DealWhopMatch.first_payment_date, "YYYY-MM")
+    rows = (await session.execute(
+        select(
+            month_expr.label("mk"),
+            func.sum(DealWhopMatch.net_cash_collected).label("net"),
+            func.count().label("n"),
+        )
+        .where(DealWhopMatch.is_excluded.isnot(True))
+        .where(DealWhopMatch.first_payment_date >= start)
+        .where(DealWhopMatch.first_payment_date <= end)
+        .where(DealWhopMatch.match_confidence.in_(LIVE_CONFIDENCE_TIERS))
+        .where(DealWhopMatch.total_paid > 0)
+        .group_by(month_expr)
+    )).all()
+
+    by_month = [
+        {"month": mk, "amount": round(float(net or 0), 2), "count": int(n)}
+        for mk, net, n in rows if mk
+    ]
+    by_month.sort(key=lambda x: x["month"])
+    return {
+        "total_usd": round(sum(m["amount"] for m in by_month), 2),
+        "count": sum(m["count"] for m in by_month),
+        "by_month": by_month,
+    }
+
+
 async def get_available_deal_months(session: AsyncSession) -> list[str]:
     """Return distinct YYYY-MM that have high/medium deals, newest first, current month always included."""
     rows = (await session.execute(

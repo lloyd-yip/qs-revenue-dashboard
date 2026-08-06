@@ -12,6 +12,7 @@ from db.session import AsyncSessionLocal
 from sync.appointment_resolver import resolve_appointments
 from sync.stripe_sync import sync_stripe_charges
 from sync.sync_engine import run_sync
+from sync.whop_stats_sync import sync_whop_stats
 from sync.whop_refresh import refresh_current_month_payment_metrics
 from sync.xero_keepalive import keepalive_xero_token
 
@@ -81,6 +82,18 @@ def create_scheduler() -> AsyncIOScheduler:
         trigger=CronTrigger(hour=21, minute=45, timezone="UTC"),
         id="daily_stripe_refresh",
         name="Daily Stripe inflow refresh",
+        replace_existing=True,
+        misfire_grace_time=300,
+        max_instances=1,
+    )
+
+    # Daily Whop MRR/ARR snapshot — 22:15 UTC (after the Whop payment refresh). Stores
+    # one MRR/ARR row per day so the Company dashboard can chart recurring revenue.
+    scheduler.add_job(
+        _run_whop_stats,
+        trigger=CronTrigger(hour=22, minute=15, timezone="UTC"),
+        id="daily_whop_stats",
+        name="Daily Whop MRR/ARR snapshot",
         replace_existing=True,
         misfire_grace_time=300,
         max_instances=1,
@@ -167,6 +180,15 @@ async def _run_stripe_refresh() -> None:
         logger.info("Scheduler: Stripe inflow refresh complete — %s", stats)
     except Exception as exc:
         logger.error("Scheduler: Stripe inflow refresh failed — %s", exc)
+
+
+async def _run_whop_stats() -> None:
+    logger.info("Scheduler: starting daily Whop MRR/ARR snapshot")
+    try:
+        stats = await sync_whop_stats()
+        logger.info("Scheduler: Whop MRR/ARR snapshot complete — %s", stats)
+    except Exception as exc:
+        logger.error("Scheduler: Whop MRR/ARR snapshot failed — %s", exc)
 
 
 async def _run_xero_keepalive() -> None:

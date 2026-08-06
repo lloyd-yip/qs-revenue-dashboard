@@ -6,316 +6,289 @@
   <script src="/static/theme.js"></script>
   <title>QS — Company Overview</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
     :root {
-      --bg: #0f1117;
-      --surface: #1a1d27;
-      --surface2: #22263a;
-      --border: #2e3347;
-      --accent: #6366f1;
-      --accent2: #818cf8;
-      --muted: #94a3b8;
-      --text: #e2e8f0;
-      --text2: #94a3b8;
-      --text3: #64748b;
-      --green: #22c55e;
-      --red: #ef4444;
-      --yellow: #f59e0b;
-      --radius: 10px;
-      --font: 'Inter', system-ui, -apple-system, sans-serif;
+      --bg:#0f1117; --surface:#1a1d27; --surface2:#22263a; --border:#2e3347;
+      --accent:#6366f1; --accent2:#818cf8; --muted:#94a3b8;
+      --text:#e2e8f0; --text2:#94a3b8; --text3:#64748b;
+      --green:#22c55e; --red:#ef4444; --yellow:#f59e0b;
+      --radius:10px; --font:'Inter',system-ui,-apple-system,sans-serif;
     }
+    body { background:var(--bg); color:var(--text); font-family:var(--font); font-size:14px; min-height:100vh; }
+    header { display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; padding:16px 24px;
+      border-bottom:1px solid var(--border); background:var(--surface); }
+    header h1 { font-size:18px; font-weight:600; letter-spacing:-0.3px; }
+    header .sub { font-size:12px; color:var(--text3); }
+    .win { margin-left:auto; display:flex; align-items:center; gap:8px; }
+    .win label { font-size:12px; color:var(--text2); }
+    #winSel { background:var(--surface2); border:1px solid var(--border); color:var(--text);
+      padding:6px 12px; border-radius:7px; font-size:13px; font-weight:600; font-family:inherit; cursor:pointer; }
+    main { padding:24px; max-width:1180px; margin:0 auto; }
 
-    body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; min-height: 100vh; }
+    .section-title { font-size:12px; font-weight:600; color:var(--text2); text-transform:uppercase;
+      letter-spacing:0.06em; margin:28px 0 12px; display:flex; align-items:center; gap:8px; }
+    .section-title:first-child { margin-top:2px; }
+    .free { font-size:10px; font-weight:600; letter-spacing:0.04em; padding:2px 7px; border-radius:4px; text-transform:none; }
+    .free.live { color:var(--green); background:rgba(34,197,94,0.12); border:1px solid rgba(34,197,94,0.28); }
+    .free.recon { color:var(--yellow); background:rgba(245,158,11,0.12); border:1px solid rgba(245,158,11,0.28); }
 
-    header {
-      display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
-      padding: 16px 24px; border-bottom: 1px solid var(--border); background: var(--surface);
-    }
-    header h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.3px; }
-    header .sub { font-size: 12px; color: var(--text3); }
+    .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(165px,1fr)); gap:12px; }
+    .card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:15px 17px; }
+    .card .k { font-size:11.5px; color:var(--text2); font-weight:500; }
+    .card .v { font-size:21px; font-weight:700; letter-spacing:-0.4px; margin-top:6px; }
+    .card .m { font-size:11px; color:var(--text3); margin-top:4px; }
+    .v.green{color:var(--green);} .v.red{color:var(--red);} .v.amber{color:var(--yellow);}
 
-    main { padding: 24px; max-width: 1080px; margin: 0 auto; }
+    .panel { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px 18px; }
+    .panel h3 { font-size:14px; font-weight:600; margin-bottom:2px; }
+    .panel .psub { font-size:11.5px; color:var(--text3); margin-bottom:10px; }
+    .legend { display:flex; flex-wrap:wrap; gap:12px; margin:8px 0 4px; }
+    .legend span { display:inline-flex; align-items:center; gap:6px; font-size:11.5px; color:var(--text2); }
+    .legend i { width:10px; height:10px; border-radius:3px; display:inline-block; }
+    .chart-wrap { position:relative; width:100%; overflow-x:auto; }
+    svg.chart { width:100%; display:block; }
+    .tip { position:fixed; z-index:60; pointer-events:none; background:var(--surface2); border:1px solid var(--border);
+      border-radius:8px; padding:8px 10px; font-size:11.5px; color:var(--text); box-shadow:0 6px 20px rgba(0,0,0,0.3);
+      display:none; min-width:120px; }
+    .tip .th { font-weight:700; margin-bottom:5px; }
+    .tip .tr { display:flex; align-items:center; justify-content:space-between; gap:14px; }
+    .tip .tr i { width:8px; height:8px; border-radius:2px; margin-right:6px; display:inline-block; }
+    .tip .tk { color:var(--text2); }
 
-    /* ── Period filter bar (mirrors Deals › Collections) ── */
-    .col-periodbar { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; flex-wrap: wrap; }
-    .col-plabel { font-size: 12px; color: var(--muted); }
-    #colFrom, #colTo, #colFromD, #colToD {
-      background: var(--surface2); border: 1px solid var(--border); color: var(--text);
-      padding: 6px 12px; border-radius: 7px; font-size: 14px; font-weight: 600; font-family: inherit; cursor: pointer;
-    }
-    .wl-arrow { width: 30px; height: 30px; border-radius: 7px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); cursor: pointer; font-size: 15px; }
-    .col-presets { display: flex; gap: 6px; flex-wrap: wrap; }
-    .col-preset { background: var(--surface2); border: 1px solid var(--border); color: var(--muted); font-size: 12px; padding: 6px 11px; border-radius: 7px; cursor: pointer; font-family: inherit; }
-    .col-preset:hover { color: var(--text); border-color: var(--accent); }
-    .col-preset.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-    .wl-refreshed { margin-left: auto; font-size: 12px; color: var(--muted); }
-    .wl-hidden { display: none; }
-
-    .section-title {
-      font-size: 12px; font-weight: 600; color: var(--text2); text-transform: uppercase;
-      letter-spacing: 0.06em; margin: 26px 0 12px;
-    }
-    .section-title:first-child { margin-top: 4px; }
-    .section-title .free {
-      font-size: 10px; font-weight: 600; letter-spacing: 0.04em; margin-left: 8px;
-      padding: 2px 7px; border-radius: 4px; text-transform: none;
-    }
-    .free.live { color: var(--green); background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.28); }
-    .free.recon { color: var(--yellow); background: rgba(245,158,11,0.12); border: 1px solid rgba(245,158,11,0.28); }
-
-    .hero {
-      background: linear-gradient(135deg, rgba(99,102,241,0.14), rgba(99,102,241,0.02));
-      border: 1px solid var(--border); border-radius: var(--radius); padding: 22px 24px; margin-bottom: 14px;
-    }
-    .hero .label { font-size: 12px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.05em; }
-    .hero .amount { font-size: 38px; font-weight: 800; letter-spacing: -1px; margin-top: 4px; }
-    .hero .asof { font-size: 11px; color: var(--text3); margin-top: 4px; }
-
-    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
-    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; }
-    .card .k { font-size: 12px; color: var(--text2); font-weight: 500; }
-    .card .v { font-size: 22px; font-weight: 700; letter-spacing: -0.4px; margin-top: 6px; }
-    .card .m { font-size: 11px; color: var(--text3); margin-top: 4px; }
-    .card .m .chip { display: inline-block; margin-right: 8px; }
-    .v.green { color: var(--green); } .v.red { color: var(--red); } .v.amber { color: var(--yellow); }
-
-    .caveat {
-      font-size: 11.5px; color: var(--text3); line-height: 1.5; margin-top: 10px;
-      padding: 10px 12px; background: var(--surface); border: 1px dashed var(--border); border-radius: 8px;
-    }
-
-    .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th, td { text-align: left; padding: 10px 16px; border-bottom: 1px solid rgba(46,51,71,0.6); white-space: nowrap; }
-    th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text3); font-weight: 600; }
-    td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-    tbody tr:last-child td { border-bottom: none; }
-    tbody tr:hover { background: rgba(34,38,58,0.5); }
-    .badge { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 999px; letter-spacing: 0.03em; }
-    .badge.overdue { color: var(--red); background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.3); }
-    .badge.due { color: var(--yellow); background: rgba(245,158,11,0.12); border: 1px solid rgba(245,158,11,0.3); }
-    .muted { color: var(--text3); }
-
-    .roadmap { margin-top: 12px; }
-    .roadmap li { list-style: none; font-size: 12.5px; color: var(--text2); padding: 8px 0; border-bottom: 1px solid rgba(46,51,71,0.5); }
-    .roadmap li::before { content: "◷ "; color: var(--accent2); }
-    .roadmap li:last-child { border-bottom: none; }
-
-    .state-msg { text-align: center; padding: 60px 24px; color: var(--text2); font-size: 14px; }
-    .state-msg .icon { font-size: 30px; margin-bottom: 10px; }
-
-    ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: var(--bg); }
-    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    .caveat { font-size:11.5px; color:var(--text3); line-height:1.5; margin-top:10px; padding:10px 12px;
+      background:var(--surface); border:1px dashed var(--border); border-radius:8px; }
+    table { width:100%; border-collapse:collapse; font-size:13px; }
+    th, td { text-align:left; padding:9px 14px; border-bottom:1px solid rgba(46,51,71,0.6); white-space:nowrap; }
+    th { font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--text3); font-weight:600; }
+    td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
+    tbody tr:last-child td { border-bottom:none; }
+    .badge { font-size:10px; font-weight:700; padding:2px 8px; border-radius:999px; }
+    .badge.overdue { color:var(--red); background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.3); }
+    .badge.due { color:var(--yellow); background:rgba(245,158,11,0.12); border:1px solid rgba(245,158,11,0.3); }
+    .roadmap { margin-top:4px; }
+    .roadmap li { list-style:none; font-size:12.5px; color:var(--text2); padding:8px 0; border-bottom:1px solid rgba(46,51,71,0.5); }
+    .roadmap li::before { content:"◷ "; color:var(--accent2); }
+    .roadmap li:last-child { border-bottom:none; }
+    .state-msg { text-align:center; padding:40px 24px; color:var(--text2); font-size:14px; }
+    .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+    @media (max-width:820px){ .grid2 { grid-template-columns:1fr; } }
+    ::-webkit-scrollbar { width:6px; height:6px; }
+    ::-webkit-scrollbar-track { background:var(--bg); }
+    ::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
   </style>
 </head>
 <body>
-
 <header>
   <h1>Company Overview</h1>
-  <span class="sub">All cash inflow, collections &amp; P&amp;L — one CEO view</span>
-</header>
-
-<main id="root">
-  <!-- Period filter bar (same controls as Deals › Collections) -->
-  <div class="col-periodbar">
-    <button class="wl-arrow pb-month-el" onclick="colStep(-1)">‹</button>
-    <span class="col-plabel pb-month-el">From</span>
-    <select id="colFrom" class="pb-month-el" onchange="colClampAndLoad('from')"></select>
-    <span class="col-plabel pb-month-el">to</span>
-    <select id="colTo" class="pb-month-el" onchange="colClampAndLoad('to')"></select>
-    <button class="wl-arrow pb-month-el" onclick="colStep(1)">›</button>
-    <span class="col-plabel pb-custom-el wl-hidden">From</span>
-    <input type="date" id="colFromD" class="pb-custom-el wl-hidden" onchange="pbDateChange('from')">
-    <span class="col-plabel pb-custom-el wl-hidden">to</span>
-    <input type="date" id="colToD" class="pb-custom-el wl-hidden" onchange="pbDateChange('to')">
-    <span class="col-presets">
-      <button class="col-preset" onclick="colPresetBack(6)">Last 6 mo</button>
-      <button class="col-preset" onclick="colPresetBack(3)">Last 3 mo</button>
-      <button class="col-preset" onclick="colPresetBack(1)">Last month</button>
-      <button class="col-preset" onclick="colPreset(0)">This month</button>
-      <button class="col-preset" onclick="colPreset(3)">Next 3 mo</button>
-      <button class="col-preset" onclick="colPreset(6)">Next 6 mo</button>
-      <button class="col-preset" id="colCustomBtn" onclick="pbToggleCustom()">📅 Custom dates</button>
-    </span>
+  <span class="sub">Month-by-month operating dashboard — revenue, costs, recurring &amp; live cash</span>
+  <div class="win">
+    <label for="winSel">Window</label>
+    <select id="winSel">
+      <option value="6">Last 6 months</option>
+      <option value="12" selected>Last 12 months</option>
+      <option value="24">Last 24 months</option>
+    </select>
   </div>
-  <div id="main"><div class="state-msg"><div class="icon">⏳</div>Loading company overview…</div></div>
-</main>
+</header>
+<main id="main"><div class="state-msg">⏳ Loading company dashboard…</div></main>
+<div class="tip" id="tip"></div>
 
 <script>
-  const API = "/api/dashboard";
-  const mainEl = document.getElementById("main");
-  const el = (id) => document.getElementById(id);
+const API = "/api/dashboard";
+const mainEl = document.getElementById("main");
+const tip = document.getElementById("tip");
+const winSel = document.getElementById("winSel");
 
-  const fmt = (n) => (n == null) ? "—" : "$" + Number(n).toLocaleString("en-US", { maximumFractionDigits: 0 });
-  const fmt2 = (n) => (n == null) ? "—" : "$" + Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const esc = (s) => (s == null ? "" : String(s)).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const fmt = n => (n==null) ? "—" : "$" + Number(n).toLocaleString("en-US",{maximumFractionDigits:0});
+const fmtK = n => { if(n==null) return "—"; const a=Math.abs(n); if(a>=1e6) return "$"+(n/1e6).toFixed(1)+"M"; if(a>=1e3) return "$"+Math.round(n/1e3)+"k"; return "$"+Math.round(n); };
+const esc = s => (s==null?"":String(s)).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const monShort = mk => { const p=mk.split("-"); return new Date(+p[0],+p[1]-1,1).toLocaleString("en-US",{month:"short"}) + (p[1]==="01"?" '"+p[0].slice(2):""); };
 
-  // ── Period bar (ported from Deals › Collections) ────────────────────────────
-  const colYm = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
-  const colMonthLabel = (mk) => { const p = mk.split("-"); return new Date(+p[0], +p[1] - 1, 1).toLocaleString("en-US", { month: "short", year: "numeric" }); };
-  const colShift = (mk, n) => { const p = mk.split("-"); return colYm(new Date(+p[0], +p[1] - 1 + n, 1)); };
-  const colCmp = (a, b) => a < b ? -1 : a > b ? 1 : 0;
+// Validated categorical palette (dataviz skill reference), light + dark steps.
+const HUES_LIGHT = ["#2a78d6","#eb6834","#1baf7a","#eda100","#e87ba4","#008300","#4a3aa7","#e34948"];
+const HUES_DARK  = ["#3987e5","#d95926","#199e70","#c98500","#d55181","#008300","#9085e9","#e66767"];
+const isDark = () => (document.documentElement.getAttribute("data-theme")||"dark") !== "light";
+const hues = () => isDark() ? HUES_DARK : HUES_LIGHT;
+const cssvar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim() || "#888";
 
-  let pbCustom = false;
-  function pbMonthLastDay(mk) { const p = mk.split("-"); const last = new Date(+p[0], +p[1], 0).getDate(); return mk + "-" + String(last).padStart(2, "0"); }
-  function pbToggleCustom() {
-    pbCustom = !pbCustom;
-    if (pbCustom) { el("colFromD").value = el("colFrom").value + "-01"; el("colToD").value = pbMonthLastDay(el("colTo").value); }
-    pbSyncUI(); load();
+let DATA = null;  // last monthly payload, for re-render on theme toggle
+
+// ── SVG helpers ──────────────────────────────────────────────────────────────
+const NS = "http://www.w3.org/2000/svg";
+function svgEl(tag, attrs){ const e=document.createElementNS(NS,tag); for(const k in attrs) e.setAttribute(k,attrs[k]); return e; }
+function niceMax(v){ if(v<=0) return 1; const p=Math.pow(10,Math.floor(Math.log10(v))); const f=v/p; const n=f<=1?1:f<=2?2:f<=5?5:10; return n*p; }
+
+// Multi-series line chart. series:[{name,color,data:[num|null]}]. Nulls break the line.
+function lineChart(labels, series){
+  const W=760, H=260, PL=52, PR=14, PT=14, PB=28;
+  const iw=W-PL-PR, ih=H-PT-PB;
+  const svg=svgEl("svg",{class:"chart",viewBox:`0 0 ${W} ${H}`,preserveAspectRatio:"none"});
+  let max=0; series.forEach(s=>s.data.forEach(v=>{ if(v!=null && v>max) max=v; }));
+  max=niceMax(max);
+  const n=labels.length;
+  const x=i=> PL + (n<=1?iw/2:iw*i/(n-1));
+  const y=v=> PT + ih*(1 - (v/max));
+  const ax=cssvar("--text3"), gl=isDark()?"rgba(148,163,184,0.12)":"rgba(100,116,139,0.14)";
+  // gridlines + y labels
+  for(let g=0; g<=4; g++){ const yv=max*g/4, yy=y(yv);
+    svg.appendChild(svgEl("line",{x1:PL,y1:yy,x2:W-PR,y2:yy,stroke:gl,"stroke-width":1}));
+    const t=svgEl("text",{x:PL-8,y:yy+3,"text-anchor":"end","font-size":10,fill:ax}); t.textContent=fmtK(yv); svg.appendChild(t);
   }
-  function pbExitCustom() { if (pbCustom) { pbCustom = false; pbSyncUI(); } }
-  function pbSyncUI() {
-    document.querySelectorAll(".pb-month-el").forEach(e => e.classList.toggle("wl-hidden", pbCustom));
-    document.querySelectorAll(".pb-custom-el").forEach(e => e.classList.toggle("wl-hidden", !pbCustom));
-    const btn = el("colCustomBtn");
-    btn.textContent = pbCustom ? "↩ Months" : "📅 Custom dates";
-    btn.classList.toggle("active", pbCustom);
-  }
-  function pbDateChange(which) {
-    const f = el("colFromD").value, t = el("colToD").value;
-    if (f && t && f > t) { if (which === "from") el("colToD").value = f; else el("colFromD").value = t; }
-    if (el("colFromD").value && el("colToD").value) load();
-  }
-  function pbRange() {
-    return pbCustom && el("colFromD").value && el("colToD").value
-      ? [el("colFromD").value, el("colToD").value]
-      : [el("colFrom").value, el("colTo").value];
-  }
+  // x labels (thin them if many)
+  const step=Math.ceil(n/12);
+  labels.forEach((mk,i)=>{ if(i%step) return; const t=svgEl("text",{x:x(i),y:H-9,"text-anchor":"middle","font-size":10,fill:ax}); t.textContent=monShort(mk); svg.appendChild(t); });
+  // series polylines (split on nulls)
+  series.forEach(s=>{
+    let seg=[];
+    const flush=()=>{ if(seg.length>1){ svg.appendChild(svgEl("polyline",{points:seg.map(p=>p.join(",")).join(" "),fill:"none",stroke:s.color,"stroke-width":2,"stroke-linejoin":"round","stroke-linecap":"round"})); } else if(seg.length===1){ svg.appendChild(svgEl("circle",{cx:seg[0][0],cy:seg[0][1],r:2.5,fill:s.color})); } seg=[]; };
+    s.data.forEach((v,i)=>{ if(v==null){ flush(); } else { seg.push([x(i),y(v)]); } });
+    flush();
+  });
+  // hover
+  const hover=svgEl("line",{x1:0,y1:PT,x2:0,y2:PT+ih,stroke:cssvar("--text3"),"stroke-width":1,opacity:0});
+  svg.appendChild(hover);
+  const rect=svgEl("rect",{x:PL,y:PT,width:iw,height:ih,fill:"transparent"});
+  svg.appendChild(rect);
+  rect.addEventListener("mousemove",ev=>{
+    const b=svg.getBoundingClientRect(); const rx=(ev.clientX-b.left)*(W/b.width);
+    let i=Math.round((rx-PL)/(iw/(n<=1?1:n-1))); i=Math.max(0,Math.min(n-1,i));
+    hover.setAttribute("x1",x(i)); hover.setAttribute("x2",x(i)); hover.setAttribute("opacity",1);
+    let html=`<div class="th">${monShort(labels[i])} ${labels[i].slice(0,4)}</div>`;
+    series.forEach(s=>{ html+=`<div class="tr"><span class="tk"><i style="background:${s.color}"></i>${esc(s.name)}</span><b>${s.data[i]==null?"—":fmt(s.data[i])}</b></div>`; });
+    tip.innerHTML=html; tip.style.display="block"; tip.style.left=(ev.clientX+14)+"px"; tip.style.top=(ev.clientY-10)+"px";
+  });
+  rect.addEventListener("mouseleave",()=>{ hover.setAttribute("opacity",0); tip.style.display="none"; });
+  return svg;
+}
 
-  function colInit() {
-    const now = new Date();
-    const opts = [];
-    for (let i = -12; i <= 18; i++) opts.push(colYm(new Date(now.getFullYear(), now.getMonth() + i, 1)));
-    const cur = colYm(now);
-    const optHtml = sel => opts.map(m => `<option value="${m}"${m === sel ? " selected" : ""}>${colMonthLabel(m)}</option>`).join("");
-    el("colFrom").innerHTML = optHtml(cur);
-    el("colTo").innerHTML = optHtml(cur);   // default: current month only
-    load();
+// Stacked bar chart. series:[{name,color,data:[num]}] — additive.
+function stackedBar(labels, series){
+  const W=760, H=260, PL=52, PR=14, PT=14, PB=28;
+  const iw=W-PL-PR, ih=H-PT-PB, n=labels.length;
+  const svg=svgEl("svg",{class:"chart",viewBox:`0 0 ${W} ${H}`,preserveAspectRatio:"none"});
+  const totals=labels.map((_,i)=>series.reduce((a,s)=>a+(s.data[i]||0),0));
+  const max=niceMax(Math.max(1,...totals));
+  const y=v=> PT + ih*(1-(v/max));
+  const ax=cssvar("--text3"), gl=isDark()?"rgba(148,163,184,0.12)":"rgba(100,116,139,0.14)";
+  for(let g=0; g<=4; g++){ const yv=max*g/4, yy=y(yv);
+    svg.appendChild(svgEl("line",{x1:PL,y1:yy,x2:W-PR,y2:yy,stroke:gl,"stroke-width":1}));
+    const t=svgEl("text",{x:PL-8,y:yy+3,"text-anchor":"end","font-size":10,fill:ax}); t.textContent=fmtK(yv); svg.appendChild(t);
   }
-  function colClampAndLoad(which) {
-    const f = el("colFrom").value, t = el("colTo").value;
-    if (colCmp(f, t) > 0) { if (which === "from") el("colTo").value = f; else el("colFrom").value = t; }
-    load();
-  }
-  function colStep(n) { el("colFrom").value = colShift(el("colFrom").value, n); el("colTo").value = colShift(el("colTo").value, n); load(); }
-  function colPreset(span) { pbExitCustom(); const cur = colYm(new Date()); el("colFrom").value = cur; el("colTo").value = colShift(cur, span); load(); }
-  function colPresetBack(back) { pbExitCustom(); const cur = colYm(new Date()); el("colTo").value = cur; el("colFrom").value = colShift(cur, -back); load(); }
-
-  // ── Data load ───────────────────────────────────────────────────────────────
-  async function load() {
-    const [s, e] = pbRange();
-    mainEl.innerHTML = `<div class="state-msg"><div class="icon">⏳</div>Loading…</div>`;
-    let d;
-    try {
-      const url = (e && e !== s) ? `${API}/company/overview?start=${s}&end=${e}` : `${API}/company/overview?start=${s}`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error("HTTP " + res.status);
-      d = await res.json();
-    } catch (err) {
-      mainEl.innerHTML = `<div class="state-msg"><div class="icon">⚠️</div>Could not load overview (${esc(err.message)}).</div>`;
-      return;
-    }
-    render(d);
-  }
-
-  function render(d) {
-    const li = d.live_inflow || {};
-    const col = d.collections || {};
-    const owes = d.who_owes || {};
-    const rec = d.reconciled_pnl || {};
-    const label = d.range_label || "";
-
-    let html = "";
-
-    // ── Live cash inflow ──────────────────────────────────────────────────────
-    html += `<div class="section-title">Live cash inflow — ${esc(label)}<span class="free live">LIVE</span></div>`;
-    html += `<div class="hero">
-      <div class="label">Cash in for this window</div>
-      <div class="amount">${fmt(li.total)}</div>
-      <div class="asof">${li.last_refreshed ? "Whop refreshed " + esc(new Date(li.last_refreshed).toLocaleString()) : "Refreshed nightly"}</div>
-    </div>`;
-    html += `<div class="cards">`;
-    (li.by_channel || []).forEach(ch => {
-      let sources = "";
-      if (ch.by_source && Object.keys(ch.by_source).length) {
-        sources = `<div class="m">` + Object.entries(ch.by_source)
-          .map(([k, v]) => `<span class="chip">${esc(k)}: ${fmt(v)}</span>`).join("") + `</div>`;
-      }
-      html += `<div class="card">
-        <div class="k">${esc(ch.channel)}</div>
-        <div class="v">${fmt(ch.amount)}</div>
-        <div class="m">${esc(ch.detail || "")}</div>${sources}
-      </div>`;
+  const bw=Math.min(34, iw/n*0.62);
+  const step=Math.ceil(n/12);
+  labels.forEach((mk,i)=>{
+    const cx=PL + (n<=1?iw/2:iw*i/(n-1)); let acc=0;
+    const surf=cssvar("--surface");
+    series.forEach(s=>{ const v=s.data[i]||0; if(v<=0) return;
+      const h=ih*(v/max); const yy=y(acc+v);
+      svg.appendChild(svgEl("rect",{x:cx-bw/2,y:yy,width:bw,height:Math.max(0,h-2),fill:s.color,rx:2,stroke:surf,"stroke-width":1}));
+      acc+=v;
     });
-    html += `</div>`;
-    if (li.caveat) html += `<div class="caveat">${esc(li.caveat)}</div>`;
+    if(!(i%step)){ const t=svgEl("text",{x:cx,y:H-9,"text-anchor":"middle","font-size":10,fill:ax}); t.textContent=monShort(mk); svg.appendChild(t); }
+    // hit area
+    const hit=svgEl("rect",{x:cx-iw/n/2,y:PT,width:iw/n,height:ih,fill:"transparent"}); svg.appendChild(hit);
+    hit.addEventListener("mousemove",ev=>{
+      let html=`<div class="th">${monShort(mk)} ${mk.slice(0,4)} · ${fmt(totals[i])}</div>`;
+      series.forEach(s=>{ if(!s.data[i]) return; html+=`<div class="tr"><span class="tk"><i style="background:${s.color}"></i>${esc(s.name)}</span><b>${fmt(s.data[i])}</b></div>`; });
+      tip.innerHTML=html; tip.style.display="block"; tip.style.left=(ev.clientX+14)+"px"; tip.style.top=(ev.clientY-10)+"px";
+    });
+    hit.addEventListener("mouseleave",()=>tip.style.display="none");
+  });
+  return svg;
+}
 
-    // ── Collections snapshot ──────────────────────────────────────────────────
-    html += `<div class="section-title">Collections<span class="free live">LIVE</span></div>`;
-    html += `<div class="cards">
-      <div class="card"><div class="k">Collected</div><div class="v green">${fmt(col.collected)}</div><div class="m">${col.deal_count || 0} deals</div></div>
-      <div class="card"><div class="k">Outstanding (projected)</div><div class="v amber">${fmt(col.outstanding)}</div></div>
-      <div class="card"><div class="k">Refunded</div><div class="v red">${fmt(col.refunded)}</div></div>
-      <div class="card"><div class="k">Net collected</div><div class="v">${fmt(col.net_collected)}</div></div>
-    </div>`;
+function legend(series){ return `<div class="legend">${series.map(s=>`<span><i style="background:${s.color}"></i>${esc(s.name)}</span>`).join("")}</div>`; }
+function chartPanel(title, sub, series, kind){
+  const wrap=document.createElement("div"); wrap.className="panel";
+  wrap.innerHTML=`<h3>${esc(title)}</h3><div class="psub">${esc(sub)}</div>${legend(series)}<div class="chart-wrap"></div>`;
+  const cw=wrap.querySelector(".chart-wrap");
+  cw.appendChild(kind==="bar" ? stackedBar(DATA.months, series) : lineChart(DATA.months, series));
+  return wrap;
+}
 
-    // ── Who owes ───────────────────────────────────────────────────────────────
-    html += `<div class="section-title">Who still needs to pay — payment plans due / overdue</div>`;
-    const plans = owes.plans || [];
-    if (!plans.length) {
-      html += `<div class="panel"><div class="state-msg" style="padding:34px">✅ No payment-plan installments outstanding for this window.</div></div>`;
-    } else {
-      html += `<div class="panel" style="overflow-x:auto"><table>
-        <thead><tr>
-          <th>Status</th><th>Account / Deal</th><th>Owner</th><th class="num">Installment</th>
-          <th class="num">Outstanding</th><th>Progress</th><th>Next due</th>
-        </tr></thead><tbody>`;
-      plans.forEach(p => {
-        const badge = p.status === "overdue" ? `<span class="badge overdue">OVERDUE</span>` : `<span class="badge due">DUE</span>`;
-        html += `<tr>
-          <td>${badge}</td>
-          <td>${esc(p.account || p.deal_name || "—")}<div class="m muted">${esc(p.deal_name || "")}</div></td>
-          <td>${esc(p.owner || "Unassigned")}</td>
-          <td class="num">${fmt2(p.installment_size)}</td>
-          <td class="num">${fmt(p.outstanding)}</td>
-          <td>${p.paid_count || 0} / ${p.total_installments || "?"}</td>
-          <td>${esc(p.next_date || "—")}</td>
-        </tr>`;
-      });
-      html += `</tbody></table></div>`;
-      html += `<div class="caveat">Owed this window: <b>${fmt(owes.due_this_month_total)}</b> due · <b>${fmt(owes.overdue_total)}</b> overdue.
-        Installment dates are projected (Whop does not store future dates) — treat "Next due" as an estimate.</div>`;
-    }
+// ── Render ───────────────────────────────────────────────────────────────────
+function render(){
+  const d=DATA, S=d.series, C=d.costs, H=hues(), t=d.totals, ls=d.latest_stats;
+  let html="";
 
-    // ── Reconciled Xero P&L ────────────────────────────────────────────────────
-    html += `<div class="section-title">Reconciled P&amp;L (Xero)<span class="free recon">RECONCILED</span></div>`;
-    const revP = rec.revenue, expP = rec.expenses;
-    html += `<div class="cards">
-      <div class="card"><div class="k">Revenue — cash collected</div><div class="v">${fmt(revP ? revP.cash_collected : null)}</div><div class="m">${revP ? "as of " + esc(revP.period_end) : "no synced month"}</div></div>
-      <div class="card"><div class="k">Contract value (invoiced)</div><div class="v">${fmt(revP ? revP.contract_value : null)}</div></div>
-      <div class="card"><div class="k">Expenses</div><div class="v red">${fmt(expP ? expP.total : null)}</div><div class="m">${expP ? "as of " + esc(expP.period_end) : "no synced month"}</div></div>
-      <div class="card"><div class="k">Net P&amp;L</div><div class="v ${rec.net >= 0 ? "green" : "red"}">${fmt(rec.net)}</div></div>
-    </div>`;
-    if (rec.note) html += `<div class="caveat">${esc(rec.note)}</div>`;
+  // KPI cards
+  html+=`<div class="section-title">Key metrics <span class="free live">MRR/ARR</span><span class="free recon">P&amp;L reconciled</span></div>`;
+  html+=`<div class="cards" id="kpis"></div>`;
 
-    // ── Roadmap ────────────────────────────────────────────────────────────────
-    if ((d.roadmap || []).length) {
-      html += `<div class="section-title">Inflow channels coming in later stages</div>`;
-      html += `<div class="panel" style="padding:6px 18px"><ul class="roadmap">`;
-      d.roadmap.forEach(r => html += `<li>${esc(r)}</li>`);
-      html += `</ul></div>`;
-    }
+  // sections mounted after (charts need DOM nodes)
+  html+=`<div class="section-title">Revenue &amp; profit — monthly<span class="free recon">RECONCILED</span></div><div id="c-rev"></div>`;
+  html+=`<div class="section-title">Costs by category — monthly<span class="free recon">RECONCILED</span></div><div id="c-cost"></div>`;
+  html+=`<div class="section-title">Recurring revenue — MRR<span class="free live">WHOP</span></div><div id="c-mrr"></div>`;
+  html+=`<div class="section-title">Live cash-in by rail<span class="free live">LIVE</span></div><div id="c-rail"></div>`;
+  html+=`<div class="section-title">Who still needs to pay — this month</div><div id="c-owes"><div class="state-msg">Loading…</div></div>`;
+  html+=`<div class="section-title">Inflow channels coming next</div><div class="panel"><ul class="roadmap" id="roadmap"></ul></div>`;
+  mainEl.innerHTML=html;
 
-    mainEl.innerHTML = html;
-  }
+  // KPIs
+  const kpi=(k,v,cls,m)=>`<div class="card"><div class="k">${k}</div><div class="v ${cls||''}">${v}</div>${m?`<div class="m">${m}</div>`:''}</div>`;
+  document.getElementById("kpis").innerHTML =
+    kpi("MRR (current)", ls?fmt(ls.mrr):"—", "", ls?ls.active_members+" active members":"not synced yet") +
+    kpi("ARR (current)", ls?fmt(ls.arr):"—", "", ls?("as of "+ls.snapshot_date):"") +
+    kpi(`Revenue · ${d.window_months}mo`, fmt(t.revenue_reconciled), "green", "reconciled Xero") +
+    kpi(`Expenses · ${d.window_months}mo`, fmt(t.expenses), "red", "") +
+    kpi(`Net profit · ${d.window_months}mo`, fmt(t.net_profit), t.net_profit>=0?"green":"red", "revenue − costs") +
+    kpi(`Live cash-in · ${d.window_months}mo`, fmt(t.whop+t.stripe+t.bank), "", "rails overlap — see below");
 
-  colInit();
+  // Revenue & profit
+  const revSeries=[{name:"Revenue (reconciled)",color:H[0],data:S.revenue_reconciled},{name:"Net profit",color:H[2],data:S.net_profit}];
+  document.getElementById("c-rev").appendChild(chartPanel("Revenue & net profit","Xero cash-basis. Recent months are blank until reconciled (~10-day lag).",revSeries,"line"));
+
+  // Costs stacked
+  const costSeries=C.buckets.map((b,i)=>({name:b.label,color:H[i%H.length],data:C.by_bucket[b.key]}));
+  const costPanel=chartPanel("Operating costs by category","Additive — total = sum of categories. Reconciled from Xero.",costSeries,"bar");
+  const hasDelivery=C.buckets.some(b=>b.key==="client_delivery");
+  if(!hasDelivery) costPanel.insertAdjacentHTML("beforeend",`<div class="caveat">A <b>Client Delivery</b> cost bucket now exists but is empty until the Xero expenses are re-synced (delivery payees were previously hidden). Trigger a Xero expense re-sync (or ask me to backfill) to populate it.</div>`);
+  document.getElementById("c-cost").appendChild(costPanel);
+
+  // MRR
+  const hasMrr=S.mrr.some(v=>v!=null);
+  if(hasMrr){ document.getElementById("c-mrr").appendChild(chartPanel("MRR (monthly recurring revenue)",d.notes.mrr,[{name:"MRR",color:H[6],data:S.mrr}],"line")); }
+  else { document.getElementById("c-mrr").innerHTML=`<div class="panel"><div class="state-msg">No MRR snapshots yet — the first Whop stats sync will start the series. ${esc(d.notes.mrr)}</div></div>`; }
+
+  // Live rail (not summed — overlapping)
+  const railSeries=[{name:"Whop",color:H[0],data:S.whop},{name:"Stripe",color:H[1],data:S.stripe},{name:"Bank wires",color:H[2],data:S.bank}];
+  const railPanel=chartPanel("Live cash-in by rail","Each rail shown separately — NOT summed. Bank wires include Whop/Stripe payouts, so the rails overlap.",railSeries,"line");
+  document.getElementById("c-rail").appendChild(railPanel);
+
+  document.getElementById("roadmap").innerHTML=(d.roadmap||["Direct Payoneer connection","Affiliate / referral revenue"]).map(r=>`<li>${esc(r)}</li>`).join("");
+
+  loadWhoOwes();
+}
+
+async function loadWhoOwes(){
+  const el=document.getElementById("c-owes"); if(!el) return;
+  const cur=new Date().toISOString().slice(0,7);
+  try{
+    const d=await (await fetch(`${API}/company/overview?start=${cur}`)).json();
+    const owes=d.who_owes||{}; const plans=owes.plans||[];
+    if(!plans.length){ el.innerHTML=`<div class="panel"><div class="state-msg">✅ No payment-plan installments outstanding this month.</div></div>`; return; }
+    let h=`<div class="panel" style="padding:0"><div style="overflow-x:auto"><table><thead><tr><th>Status</th><th>Account / Deal</th><th>Owner</th><th class="num">Outstanding</th><th>Progress</th><th>Next due</th></tr></thead><tbody>`;
+    plans.forEach(p=>{ const b=p.status==="overdue"?`<span class="badge overdue">OVERDUE</span>`:`<span class="badge due">DUE</span>`;
+      h+=`<tr><td>${b}</td><td>${esc(p.account||p.deal_name||"—")}</td><td>${esc(p.owner||"Unassigned")}</td><td class="num">${fmt(p.outstanding)}</td><td>${p.paid_count||0}/${p.total_installments||"?"}</td><td>${esc(p.next_date||"—")}</td></tr>`; });
+    h+=`</tbody></table></div></div><div class="caveat">Owed this month: <b>${fmt(owes.due_this_month_total)}</b> due · <b>${fmt(owes.overdue_total)}</b> overdue.</div>`;
+    el.innerHTML=h;
+  }catch(e){ el.innerHTML=`<div class="panel"><div class="state-msg">Could not load who-owes (${esc(e.message)}).</div></div>`; }
+}
+
+async function load(){
+  mainEl.innerHTML=`<div class="state-msg">⏳ Loading company dashboard…</div>`;
+  try{
+    DATA=await (await fetch(`${API}/company/monthly?months=${winSel.value}`)).json();
+    render();
+  }catch(e){ mainEl.innerHTML=`<div class="state-msg">⚠️ Could not load dashboard (${esc(e.message)}).</div>`; }
+}
+
+winSel.addEventListener("change", load);
+// Re-render charts on theme toggle (hues change).
+new MutationObserver(()=>{ if(DATA) render(); }).observe(document.documentElement,{attributes:true,attributeFilter:["data-theme"]});
+load();
 </script>
-
 <script src="/static/nav.js"></script>
 </body>
 </html>
