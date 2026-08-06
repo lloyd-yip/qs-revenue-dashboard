@@ -22,7 +22,12 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from config import settings
 from db.models import WhopStatsSnapshot
 from db.session import AsyncSessionLocal
-from sync.whop_payments import _fetch_whop_memberships, membership_is_recurring
+from sync.whop_payments import (
+    WHOP_API_BASE,
+    _fetch_whop_memberships,
+    _whop_headers,
+    membership_is_recurring,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -46,41 +51,32 @@ def _period_months(m: dict) -> float:
     return 1.0
 
 
-def _renewal_price(m: dict) -> float:
-    """Best-effort renewal price (major units) for a recurring membership.
+async def _fetch_plan(client: httpx.AsyncClient, plan_id: str, cache: dict) -> dict:
+    """Fetch a Whop plan by id (price lives on the plan, not the membership). Cached."""
+    if plan_id in cache:
+        return cache[plan_id]
+    try:
+        resp = await client.get(f"{WHOP_API_BASE}/plans/{plan_id}", headers=_whop_headers())
+        plan = resp.json() if resp.status_code == 200 else {}
+    except Exception:
+        plan = {}
+    cache[plan_id] = plan
+    return plan
 
-    Reads the common Whop fields defensively. Values that look like cents (integers
-    ≥ 1000 with no decimal) are left as-is here — unit correction, if needed, is a
-    one-line change verified against the Whop dashboard on the first prod sync.
-    """
-    plan = m.get("plan") if isinstance(m.get("plan"), dict) else {}
-    for src in (m, plan):
-        for key in ("renewal_price", "price", "initial_price", "final_price"):
-            v = src.get(key)
-            if v is None:
-                continue
-            try:
-                f = float(v)
-            except (TypeError, ValueError):
-                continue
-            if f > 0:
-                return f
+
+def _plan_price(plan: dict) -> float:
+    """Renewal price (major units) from a Whop plan object, read defensively."""
+    for key in ("renewal_price", "initial_price", "price", "final_price"):
+        v = plan.get(key)
+        if v is None:
+            continue
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            continue
+        if f > 0:
+            return f
     return 0.0
-
-
-def _compute_mrr(memberships: list[dict]) -> tuple[float, int]:
-    """(mrr, active_recurring_count) from active recurring memberships."""
-    mrr = 0.0
-    active = 0
-    for m in memberships:
-        if not _is_active(m) or not membership_is_recurring(m):
-            continue
-        price = _renewal_price(m)
-        if price <= 0:
-            continue
-        active += 1
-        mrr += price / _period_months(m)
-    return round(mrr, 2), active
 
 
 async def sync_whop_stats() -> dict:
@@ -93,24 +89,38 @@ async def sync_whop_stats() -> dict:
         logger.info("WHOP_API_KEY not set — skipping Whop stats sync")
         return {"ok": False, "reason": "no_whop_key", "mrr": 0.0, "arr": 0.0, "active_members": 0}
 
+    plan_cache: dict = {}
+    mrr = 0.0
+    active = 0        # active recurring memberships (the MRR base)
+    priced = 0        # of those, how many had a resolvable plan price
+    plan_samples: list[dict] = []
+
     async with httpx.AsyncClient(timeout=60.0) as client:
         memberships = await _fetch_whop_memberships(client)
+        for m in memberships:
+            if not _is_active(m) or not membership_is_recurring(m):
+                continue
+            active += 1
+            plan_id = m.get("plan")
+            plan = await _fetch_plan(client, plan_id, plan_cache) if isinstance(plan_id, str) else {}
+            if plan and len(plan_samples) < 3:
+                plan_samples.append({k: plan.get(k) for k in
+                                     ("id", "renewal_price", "initial_price", "base_currency", "billing_period") if k in plan})
+            price = _plan_price(plan)
+            if price > 0:
+                mrr += price / _period_months(m)
+                priced += 1
 
-    mrr, active = _compute_mrr(memberships)
+    mrr = round(mrr, 2)
     arr = round(mrr * 12, 2)
     today = datetime.now(tz=timezone.utc).date()
 
-    # Diagnostic sample (no secrets) — lets us confirm/repair the field mapping on
-    # prod when the computed MRR looks wrong, without a Whop key locally.
-    def _pick(m: dict) -> dict:
-        keys = ("status", "valid", "renewal_period_start", "renewal_period_end",
-                "renewal_price", "price", "initial_price", "final_price", "plan", "billing_period")
-        return {k: m.get(k) for k in keys if k in m}
+    # Diagnostic sample (no secrets) — confirms the plan price mapping on prod.
     sample = {
         "membership_count": len(memberships),
-        "first_keys": sorted(memberships[0].keys()) if memberships else [],
-        "recurring_samples": [_pick(m) for m in memberships if membership_is_recurring(m)][:3],
-        "any_samples": [_pick(m) for m in memberships[:3]],
+        "active_recurring": active,
+        "priced": priced,
+        "plan_samples": plan_samples,
     }
 
     async with AsyncSessionLocal() as session:
