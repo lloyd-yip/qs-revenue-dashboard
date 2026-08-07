@@ -50,6 +50,49 @@ def expense_group(account: str) -> str:
     return "Other"
 
 
+async def get_xero_pnl_for_period(session: AsyncSession, period_start: date) -> dict:
+    """Company-wide P&L for ONE month (matched on period_start), shaped for the P&L
+    page's bucket renderer: income accounts + expense groups (each with account items)
+    + totals + net. Matches Xero. Returns has_data=False when the month isn't synced.
+    """
+    rows = (await session.execute(
+        select(XeroPnlLine.section, XeroPnlLine.account, XeroPnlLine.is_income, XeroPnlLine.amount_usd)
+        .where(XeroPnlLine.period_start == period_start)
+        .order_by(XeroPnlLine.amount_usd.desc())
+    )).all()
+
+    income_items: list[dict] = []
+    groups: dict[str, list] = {}
+    total_income = total_expense = 0.0
+    for section, account, is_income, amount_usd in rows:
+        amt = float(amount_usd or 0)
+        if is_income:
+            income_items.append({"name": account, "amount": amt})
+            total_income += amt
+        else:
+            groups.setdefault(expense_group(account), []).append({"name": account, "amount": amt})
+            total_expense += amt
+
+    expense_groups = []
+    for g in EXPENSE_GROUP_ORDER:
+        items = groups.get(g)
+        if not items:
+            continue
+        items.sort(key=lambda x: x["amount"], reverse=True)
+        expense_groups.append({"label": g, "total": round(sum(i["amount"] for i in items), 2), "items": items})
+
+    income_items.sort(key=lambda x: x["amount"], reverse=True)
+    return {
+        "has_data": bool(rows),
+        "period_start": str(period_start),
+        "total_income": round(total_income, 2),
+        "total_expenses": round(total_expense, 2),
+        "net_profit": round(total_income - total_expense, 2),
+        "income_items": income_items,
+        "expense_groups": expense_groups,
+    }
+
+
 async def get_xero_pnl_by_month(session: AsyncSession, start: date, end: date) -> dict:
     """Company-wide P&L per month from xero_pnl_lines.
 

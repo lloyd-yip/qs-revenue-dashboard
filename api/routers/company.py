@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from db.queries.collections import get_deal_payment_history
 from db.queries.company import get_company_monthly_series, get_company_overview
 from db.queries.whop_live import get_available_deal_months
+from db.queries.xero_pnl import get_xero_pnl_for_period
 from db.session import get_db
 from sync.stripe_sync import sync_stripe_charges
 from sync.whop_stats_sync import sync_whop_stats
@@ -92,6 +93,21 @@ async def company_contact_payments(
     if hist is None:
         raise HTTPException(status_code=404, detail=f"No deal found for {opp_id}")
     return hist
+
+
+@router.get("/company/pnl")
+async def company_pnl(
+    period_start: str = Query(..., description="Month start YYYY-MM-DD (from the P&L period dropdown)"),
+    period_end: str | None = Query(None, description="Unused; period is keyed by month start"),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Company-wide Xero P&L for one month (full income + expense accounts + net),
+    shaped for the P&L page's Company-wide tab. See db/queries/xero_pnl.py."""
+    try:
+        ps = date.fromisoformat(period_start)
+    except ValueError:
+        raise HTTPException(status_code=422, detail=f"Invalid period_start: {period_start}")
+    return await get_xero_pnl_for_period(db, ps)
 
 
 @router.get("/company/months")
