@@ -72,11 +72,15 @@
     .roadmap li:last-child { border-bottom:none; }
     .state-msg { text-align:center; padding:40px 24px; color:var(--text2); font-size:14px; }
     tbody tr.clickrow:hover { background:rgba(99,102,241,0.10); }
-    .owes-ctrl { display:flex; align-items:center; gap:8px; margin-bottom:4px; flex-wrap:wrap; }
-    #owesPick { background:var(--surface2); border:1px solid var(--border); color:var(--text); padding:7px 12px;
-      border-radius:7px; font-size:14px; font-weight:600; font-family:inherit; min-width:240px; }
+    .owes-ctrl { display:flex; align-items:center; gap:10px; margin-bottom:4px; flex-wrap:wrap; }
+    #owesPick { background:var(--surface2); border:1px solid var(--border); color:var(--text); padding:9px 14px;
+      border-radius:8px; font-size:15px; font-weight:600; font-family:inherit; min-width:260px; }
     #owesPick:focus { outline:none; border-color:var(--accent); }
-    .wl-arrow:disabled { opacity:0.4; cursor:default; }
+    .wl-arrow { width:44px; height:44px; border-radius:10px; border:1px solid var(--border); background:var(--surface2);
+      color:var(--text); cursor:pointer; font-size:22px; font-weight:700; line-height:1; display:inline-flex;
+      align-items:center; justify-content:center; transition:background .15s,border-color .15s; }
+    .wl-arrow:hover:not(:disabled) { background:var(--accent); border-color:var(--accent); color:#fff; }
+    .wl-arrow:disabled { opacity:0.35; cursor:default; }
     .scrim { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:80; align-items:flex-start; justify-content:center; padding:60px 16px; overflow-y:auto; }
     .modal { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:18px 20px; width:100%; max-width:620px; box-shadow:0 20px 60px rgba(0,0,0,0.4); }
     .mhead { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:12px; }
@@ -119,6 +123,8 @@ const fmt = n => (n==null) ? "—" : "$" + Number(n).toLocaleString("en-US",{max
 const fmtK = n => { if(n==null) return "—"; const a=Math.abs(n); if(a>=1e6) return "$"+(n/1e6).toFixed(1)+"M"; if(a>=1e3) return "$"+Math.round(n/1e3)+"k"; return "$"+Math.round(n); };
 const esc = s => (s==null?"":String(s)).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const monShort = mk => { const p=mk.split("-"); return new Date(+p[0],+p[1]-1,1).toLocaleString("en-US",{month:"short"}) + (p[1]==="01"?" '"+p[0].slice(2):""); };
+const PERSONAL_DOMAINS = new Set(["gmail.com","outlook.com","hotmail.com","yahoo.com","icloud.com","aol.com","proton.me","protonmail.com","live.com","msn.com"]);
+function companyOf(email, deal){ if(!email||email.indexOf("@")<0) return deal||"—"; const dom=email.split("@")[1].toLowerCase(); if(PERSONAL_DOMAINS.has(dom)) return deal||dom; return dom; }
 
 // Validated categorical palette (dataviz skill reference), light + dark steps.
 const HUES_LIGHT = ["#2a78d6","#eb6834","#1baf7a","#eda100","#e87ba4","#008300","#4a3aa7","#e34948"];
@@ -333,9 +339,10 @@ function renderOwesMonth(){
   const prev=document.getElementById("owesPrev"), next=document.getElementById("owesNext");
   if(prev) prev.disabled=owesIdx<=0; if(next) next.disabled=owesIdx>=owesMonths.length-1;
   let h=`<div class="section-title" style="margin:14px 0 8px">${esc(monShort(mk))} ${mk.slice(0,4)} ${overdue?'<span class="badge overdue">OVERDUE</span>':'<span class="badge due">DUE</span>'} <span style="margin-left:auto;color:var(--text3);font-weight:600">${fmt(sub)} outstanding · ${rows.length} plan${rows.length!==1?'s':''}</span></div>`;
-  h+=`<div class="panel" style="padding:0"><div style="overflow-x:auto"><table><thead><tr><th>Account / Deal</th><th>Owner</th><th class="num">Outstanding</th><th class="num">Installment</th><th>Progress</th><th>Next due</th></tr></thead><tbody>`;
+  h+=`<div class="panel" style="padding:0"><div style="overflow-x:auto"><table><thead><tr><th>Account / Deal</th><th>Company</th><th>Owner</th><th class="num">Outstanding</th><th class="num">Installment</th><th>Progress</th><th>Next due</th></tr></thead><tbody>`;
   rows.forEach(p=>{ h+=`<tr class="clickrow" data-opp="${esc(p.ghl_opportunity_id)}" data-label="${esc(p.account||p.deal_name||'')}" style="cursor:pointer">
       <td style="color:var(--accent2)">${esc(p.account||p.deal_name||"—")}</td>
+      <td>${esc(companyOf(p.account, p.deal_name))}</td>
       <td>${esc(p.owner||"Unassigned")}</td>
       <td class="num">${fmt(p.outstanding)}</td>
       <td class="num">${p.installment_size!=null?fmt(p.installment_size):"—"}</td>
