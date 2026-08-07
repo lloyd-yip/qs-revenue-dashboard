@@ -13,6 +13,7 @@ from sync.appointment_resolver import resolve_appointments
 from sync.stripe_sync import sync_stripe_charges
 from sync.sync_engine import run_sync
 from sync.whop_stats_sync import sync_whop_stats
+from sync.xero_pnl_sync import sync_xero_pnl
 from sync.whop_refresh import refresh_current_month_payment_metrics
 from sync.xero_keepalive import keepalive_xero_token
 
@@ -96,6 +97,19 @@ def create_scheduler() -> AsyncIOScheduler:
         name="Daily Whop MRR/ARR snapshot",
         replace_existing=True,
         misfire_grace_time=300,
+        max_instances=1,
+    )
+
+    # Monthly full Xero P&L pull — 5th of each month, 07:00 UTC. By the 5th the prior
+    # month is reconciled, so this captures the company-wide P&L (all accounts + net)
+    # for the Company dashboard without any manual token paste (stored refresh token).
+    scheduler.add_job(
+        _run_xero_pnl_monthly,
+        trigger=CronTrigger(day=5, hour=7, minute=0, timezone="UTC"),
+        id="monthly_xero_pnl",
+        name="Monthly full Xero P&L pull (prev month)",
+        replace_existing=True,
+        misfire_grace_time=3600,
         max_instances=1,
     )
 
@@ -189,6 +203,23 @@ async def _run_whop_stats() -> None:
         logger.info("Scheduler: Whop MRR/ARR snapshot complete — %s", stats)
     except Exception as exc:
         logger.error("Scheduler: Whop MRR/ARR snapshot failed — %s", exc)
+
+
+async def _run_xero_pnl_monthly() -> None:
+    """Pull the PREVIOUS month's full Xero P&L (reconciled by the 5th)."""
+    from datetime import date
+    today = date.today()
+    y, m = today.year, today.month - 1
+    if m == 0:
+        m = 12
+        y -= 1
+    month = f"{y:04d}-{m:02d}"
+    logger.info("Scheduler: starting monthly Xero P&L pull for %s", month)
+    try:
+        result = await sync_xero_pnl(month)
+        logger.info("Scheduler: Xero P&L pull complete — %s", result)
+    except Exception as exc:
+        logger.error("Scheduler: Xero P&L pull failed for %s — %s", month, exc)
 
 
 async def _run_xero_keepalive() -> None:

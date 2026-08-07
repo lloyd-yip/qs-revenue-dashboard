@@ -183,13 +183,15 @@ function lineChart(labels, series){
   return svg;
 }
 
-// Stacked bar chart. series:[{name,color,data:[num]}] — additive.
-function stackedBar(labels, series){
+// Stacked bar chart. series:[{name,color,data:[num]}] — additive. Optional overlay
+// {name,color,data:[num|null]} drawn as a line on the SAME axis (e.g. income vs costs).
+function stackedBar(labels, series, overlay){
   const W=760, H=260, PL=52, PR=14, PT=14, PB=28;
   const iw=W-PL-PR, ih=H-PT-PB, n=labels.length;
   const svg=svgEl("svg",{class:"chart",viewBox:`0 0 ${W} ${H}`,preserveAspectRatio:"none"});
   const totals=labels.map((_,i)=>series.reduce((a,s)=>a+(s.data[i]||0),0));
-  const max=niceMax(Math.max(1,...totals));
+  const ovMax=overlay?Math.max(0,...overlay.data.filter(v=>v!=null)):0;
+  const max=niceMax(Math.max(1,...totals,ovMax));
   const y=v=> PT + ih*(1-(v/max));
   const ax=cssvar("--text3"), gl=isDark()?"rgba(148,163,184,0.12)":"rgba(100,116,139,0.14)";
   for(let g=0; g<=4; g++){ const yv=max*g/4, yy=y(yv);
@@ -210,21 +212,29 @@ function stackedBar(labels, series){
     // hit area
     const hit=svgEl("rect",{x:cx-iw/n/2,y:PT,width:iw/n,height:ih,fill:"transparent"}); svg.appendChild(hit);
     hit.addEventListener("mousemove",ev=>{
-      let html=`<div class="th">${monShort(mk)} ${mk.slice(0,4)} · ${fmt(totals[i])}</div>`;
+      let html=`<div class="th">${monShort(mk)} ${mk.slice(0,4)} · costs ${fmt(totals[i])}</div>`;
+      if(overlay && overlay.data[i]!=null) html+=`<div class="tr"><span class="tk"><i style="background:${overlay.color}"></i>${esc(overlay.name)}</span><b>${fmt(overlay.data[i])}</b></div>`;
       series.forEach(s=>{ if(!s.data[i]) return; html+=`<div class="tr"><span class="tk"><i style="background:${s.color}"></i>${esc(s.name)}</span><b>${fmt(s.data[i])}</b></div>`; });
       tip.innerHTML=html; tip.style.display="block"; tip.style.left=(ev.clientX+14)+"px"; tip.style.top=(ev.clientY-10)+"px";
     });
     hit.addEventListener("mouseleave",()=>tip.style.display="none");
   });
+  if(overlay && overlay.data){  // income line over the cost bars (same axis)
+    let seg=[];
+    const flush=()=>{ if(seg.length>1) svg.appendChild(svgEl("polyline",{points:seg.map(p=>p.join(",")).join(" "),fill:"none",stroke:overlay.color,"stroke-width":2.5,"stroke-linejoin":"round","stroke-linecap":"round"})); else if(seg.length===1) svg.appendChild(svgEl("circle",{cx:seg[0][0],cy:seg[0][1],r:3,fill:overlay.color})); seg=[]; };
+    overlay.data.forEach((v,i)=>{ if(v==null){flush();} else { const cx=PL+(n<=1?iw/2:iw*i/(n-1)); seg.push([cx,y(v)]); } });
+    flush();
+  }
   return svg;
 }
 
 function legend(series){ return `<div class="legend">${series.map(s=>`<span><i style="background:${s.color}"></i>${esc(s.name)}</span>`).join("")}</div>`; }
-function chartPanel(title, sub, series, kind){
+function chartPanel(title, sub, series, kind, overlay){
   const wrap=document.createElement("div"); wrap.className="panel";
-  wrap.innerHTML=`<h3>${esc(title)}</h3><div class="psub">${esc(sub)}</div>${legend(series)}<div class="chart-wrap"></div>`;
+  const leg = overlay ? series.concat([overlay]) : series;
+  wrap.innerHTML=`<h3>${esc(title)}</h3><div class="psub">${esc(sub)}</div>${legend(leg)}<div class="chart-wrap"></div>`;
   const cw=wrap.querySelector(".chart-wrap");
-  cw.appendChild(kind==="bar" ? stackedBar(DATA.months, series) : lineChart(DATA.months, series));
+  cw.appendChild(kind==="bar" ? stackedBar(DATA.months, series, overlay) : lineChart(DATA.months, series));
   return wrap;
 }
 
@@ -262,11 +272,15 @@ function render(){
   const revSeries=[{name:"Revenue (reconciled)",color:H[0],data:S.revenue_reconciled},{name:"Net profit",color:H[2],data:S.net_profit}];
   document.getElementById("c-rev").appendChild(chartPanel("Revenue & net profit","Xero cash-basis. Recent months are blank until reconciled (~10-day lag).",revSeries,"line"));
 
-  // Costs stacked
-  const costSeries=C.buckets.map((b,i)=>({name:b.label,color:H[i%H.length],data:C.by_bucket[b.key]}));
-  const costPanel=chartPanel("Operating costs by category","Additive — total = sum of categories. Reconciled from Xero.",costSeries,"bar");
-  const hasDelivery=C.buckets.some(b=>b.key==="client_delivery");
-  if(!hasDelivery) costPanel.insertAdjacentHTML("beforeend",`<div class="caveat">A <b>Client Delivery</b> cost bucket now exists but is empty until the Xero expenses are re-synced (delivery payees were previously hidden). Trigger a Xero expense re-sync (or ask me to backfill) to populate it.</div>`);
+  // Costs stacked + income line overlaid ("the flow")
+  const costSeries=C.buckets.map((b,i)=>({name:b.label,color:H[i%H.length],data:C.by_bucket[b.label]}));
+  const cwide=C.company_wide;
+  const incomeOverlay = C.income_overlay ? {name:"Income", color:cssvar("--green"), data:C.income_overlay} : null;
+  const costPanel=chartPanel("Operating costs by category",
+    cwide?"Company-wide — every Xero P&L expense account. Green line = income, so you can see the flow (income vs costs)."
+         :"Marketing/sales subset — the full company-wide P&L populates once the Xero P&L sync runs for these months.",
+    costSeries,"bar",incomeOverlay);
+  if(!cwide) costPanel.insertAdjacentHTML("beforeend",`<div class="caveat">This is the marketing/sales cost subset. The full company-wide P&L (all Xero accounts, matching your Xero Net Profit) appears here once the Xero P&L sync has run for these months.</div>`);
   document.getElementById("c-cost").appendChild(costPanel);
 
   // Revenue streams — two separate line charts (different scales → not one axis).

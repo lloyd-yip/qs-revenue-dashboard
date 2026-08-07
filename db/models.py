@@ -520,6 +520,35 @@ class StripeCharge(Base):
     )
 
 
+class XeroPnlLine(Base):
+    """One row per (month, section, account) copied faithfully from the Xero P&L report.
+
+    Unlike expense_line_items (marketing/sales view, non-revenue hidden), this stores
+    EVERY income and expense account so the Company dashboard's Revenue/Expenses/Net
+    match Xero exactly. Populated by sync/xero_pnl_sync.py; idempotent via the unique
+    (period_start, period_end, section, account) key. Amounts in USD (converted from the
+    EUR the Xero org reports in) plus the raw EUR + rate for audit.
+    """
+
+    __tablename__ = "xero_pnl_lines"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    period_start: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    period_end: Mapped[date] = mapped_column(Date, nullable=False)
+    section: Mapped[str] = mapped_column(String(120), nullable=False)
+    account: Mapped[str] = mapped_column(String(200), nullable=False)
+    is_income: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    amount_usd: Mapped[float] = mapped_column(Numeric(14, 2), nullable=False, default=0.0)
+    amount_eur: Mapped[float] = mapped_column(Numeric(14, 2), nullable=False, default=0.0)
+    eur_usd: Mapped[float | None] = mapped_column(Numeric(8, 4), nullable=True)
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+    __table_args__ = (UniqueConstraint("period_start", "period_end", "section", "account", name="uq_xero_pnl_line"),)
+
+
 class WhopStatsSnapshot(Base):
     """A dated snapshot of Whop MRR/ARR — computed from active recurring memberships.
 

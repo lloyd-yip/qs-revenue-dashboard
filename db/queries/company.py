@@ -42,6 +42,7 @@ from db.queries.stripe_charges import get_stripe_inflow_for_range
 from db.queries.whop_live import get_whop_inflow_by_month, get_whop_live_summary_for_month
 from db.queries.whop_stats import get_latest_whop_stats, get_whop_stats_by_month
 from db.queries.wise_transfers import get_bank_inflow_for_range, get_direct_wire_by_month
+from db.queries.xero_pnl import get_xero_pnl_by_month
 
 logger = logging.getLogger(__name__)
 
@@ -308,14 +309,31 @@ async def get_company_monthly_series(session: AsyncSession, months: int = 12) ->
     bank_s = _series_from_by_month(bank["by_month"], keys)
     inflow_s = [round(whop_s[i] + stripe_s[i] + bank_s[i], 2) for i in range(len(keys))]
 
-    # Reconciled revenue + net profit are null where a month hasn't been Xero-synced.
-    revenue_s = [rev_by_month.get(k) for k in keys]
-    expense_total = exp["totals"]
-    expenses_s = [round(expense_total.get(k, 0.0), 2) for k in keys]
-    net_profit_s = [
-        (round(revenue_s[i] - expenses_s[i], 2) if revenue_s[i] is not None else None)
-        for i in range(len(keys))
-    ]
+    # Company-wide P&L: prefer the faithful full Xero P&L (all accounts, matches Xero
+    # exactly) when it's been synced; otherwise fall back to the marketing/sales subset
+    # so nothing breaks before the backfill runs. Months not yet synced stay null (blank).
+    pnl = await get_xero_pnl_by_month(session, start, end)
+    if pnl["has_data"]:
+        revenue_s = [pnl["income"].get(k) for k in keys]
+        expenses_s = [pnl["expenses"].get(k) for k in keys]
+        net_profit_s = [pnl["net"].get(k) for k in keys]
+        cost_buckets = [{"key": g, "label": g} for g in pnl["groups_present"]]
+        costs_by_bucket = {
+            g["label"]: [round(pnl["expense_groups"][g["key"]].get(k, 0.0), 2) for k in keys]
+            for g in cost_buckets
+        }
+    else:
+        revenue_s = [rev_by_month.get(k) for k in keys]
+        expenses_s = [round(exp["totals"].get(k, 0.0), 2) for k in keys]
+        net_profit_s = [
+            (round(revenue_s[i] - expenses_s[i], 2) if revenue_s[i] is not None else None)
+            for i in range(len(keys))
+        ]
+        cost_buckets = [{"key": b, "label": BUCKET_LABELS.get(b, b)} for b in BUCKET_ORDER if b in exp["by_bucket"]]
+        costs_by_bucket = {
+            c["label"]: [round(exp["by_bucket"][c["key"]].get(k, 0.0), 2) for k in keys]
+            for c in cost_buckets
+        }
 
     mrr_s = [stats["by_month"].get(k, {}).get("mrr") for k in keys]
     arr_s = [stats["by_month"].get(k, {}).get("arr") for k in keys]
@@ -342,13 +360,6 @@ async def get_company_monthly_series(session: AsyncSession, months: int = 12) ->
     hi_ticket_s = [round(streams["by_stream"]["high_ticket"].get(k, 0.0), 2) for k in keys]
     recurring_s = [round(streams["by_stream"]["recurring"].get(k, 0.0), 2) for k in keys]
 
-    # Cost buckets present in the window (ordered), each aligned onto the month axis.
-    cost_buckets = [b for b in BUCKET_ORDER if b in exp["by_bucket"]]
-    costs_by_bucket = {
-        b: [round(exp["by_bucket"][b].get(k, 0.0), 2) for k in keys]
-        for b in cost_buckets
-    }
-
     def _sum(xs):
         return round(sum(x for x in xs if x is not None), 2)
 
@@ -367,9 +378,11 @@ async def get_company_monthly_series(session: AsyncSession, months: int = 12) ->
             "arr": arr_s,
         },
         "costs": {
-            "buckets": [{"key": b, "label": BUCKET_LABELS.get(b, b)} for b in cost_buckets],
+            "buckets": cost_buckets,
             "by_bucket": costs_by_bucket,
             "total": expenses_s,
+            "income_overlay": revenue_s,   # income line drawn over the cost bars
+            "company_wide": pnl["has_data"],
         },
         "revenue_streams": {
             "high_ticket": hi_ticket_s,

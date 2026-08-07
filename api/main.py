@@ -26,6 +26,7 @@ from api.routers import whop_live as whop_live_router
 from api.routers import company as company_router
 from api.routers import xero_auth as xero_auth_router
 from api.routers import xero_expenses as xero_expenses_router
+from api.routers import xero_pnl as xero_pnl_router
 from api.routers import xero_invoices as xero_invoices_router
 from api.schemas.responses import HealthResponse
 from config import settings
@@ -262,6 +263,9 @@ app.include_router(xero_invoices_router.router)
 
 # Xero expense sync — POST /xero/sync-expenses, bearer-protected via verify_bearer dependency
 app.include_router(xero_expenses_router.router)
+
+# Xero full-P&L sync — POST /xero/sync-pnl[-backfill], bearer-protected (company-wide P&L)
+app.include_router(xero_pnl_router.router)
 
 # Settings → Connectors — /api/settings/connectors/*, bearer-protected (secrets live here)
 app.include_router(connectors_router.router, dependencies=[Depends(verify_token)])
