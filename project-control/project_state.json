@@ -100,6 +100,10 @@
   ],
   "milestones": [
     {
+      "description": "Company dashboard — faithful company-wide Xero P&L + revenue-stream split + who-owes month-picker (2026-08-07, commits 7162467 + 1a90267 + 08a3245 + 71dc684). (1) P&L ACCURACY FIX: dashboard net was a marketing/sales subset (~$74k/Jun) because the expense sync drops non_revenue accounts. New xero_pnl_lines table (migration xeropnl001) mirrors the FULL Xero P&L (every income+expense account) via sync/xero_pnl_sync.py (stored-refresh-token, unattended) + monthly cron on the 5th (prior reconciled month) + POST /xero/sync-pnl[-backfill]. Company dashboard now shows company-wide Revenue/Expenses/Net + cost groups + income overlay; Lloyd's P&L page unchanged. VERIFIED vs Xero: Jun net $29.8k (Xero $29.6k, ~0.8% FX). Backfilled 12mo. (2) REVENUE STREAMS: MRR split into two monthly lines — high-ticket offer deals (installments) vs recurring (GHL sub-accounts + referral). (3) Who-owes: searchable month picker + prev/next + Company column. All live.",
+      "date": "2026-08-07"
+    },
+    {
       "description": "Company dashboard — de-duplicated cash-in channel mix + monthly who-owes + contact drill-down (2026-08-06, commit de3874b). Fixed the double-count the CEO flagged: old 'cash-in by rail' summed Whop gross + bank wires that ARE Whop/Stripe payouts (top bank senders literally 'Whop' $782k, 'Stripe' $37k). New de-duped channel mix = Whop gross + Stripe gross + DIRECT client wires only (get_direct_wire_by_month), split Wise/Payoneer: 12mo $1.38M (Whop 72% / Stripe 11% / Payoneer 11% / Wise 6%) vs old ~$2.2M. Who-owes now grouped by next-due month (overdue flagged), rows click → payment-history modal (get_deal_payment_history + GET /company/contact-payments). Verified live.",
       "date": "2026-08-06"
     },
