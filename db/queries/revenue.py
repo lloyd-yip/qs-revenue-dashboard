@@ -121,6 +121,50 @@ async def get_revenue_for_period(
     }
 
 
+# Revenue-stream grouping for the CEO dashboard's two monthly lines:
+#   high_ticket = the offer deals (Splitit/installment/upfront) — one-time-ish, NOT MRR
+#   recurring   = GHL sub-account subscriptions (saas) + other reliable monthly recurring
+#   refunds     = refunds/adjustments (netted out, shown separately if needed)
+STREAM_OF_PRODUCT = {
+    "high_ticket_installment": "high_ticket",
+    "high_ticket_upfront": "high_ticket",
+    "low_ticket_installment": "high_ticket",
+    "high_ticket": "high_ticket",
+    "saas": "recurring",
+    "referral": "recurring",
+    "refunds": "refunds",
+    "splitit_balance": "refunds",
+}
+
+
+async def get_revenue_streams_by_month(session: AsyncSession, start: date, end: date) -> dict:
+    """Monthly revenue split into high-ticket offer deals vs recurring, from the Xero
+    P&L income accounts already stored in revenue_line_items.
+
+    Returns {by_stream: {"high_ticket": {mk: amt}, "recurring": {mk: amt},
+             "refunds": {mk: amt}}}. Unmapped product types fall under 'high_ticket'
+    (offer revenue) so nothing is silently dropped.
+    """
+    rows = (await session.execute(
+        select(
+            RevenueLineItem.period_start,
+            RevenueLineItem.product_type,
+            func.sum(RevenueLineItem.amount).label("total"),
+        )
+        .where(RevenueLineItem.source == "xero")
+        .where(RevenueLineItem.category == "cash_collected")
+        .where(RevenueLineItem.period_start >= start)
+        .where(RevenueLineItem.period_start <= end)
+        .group_by(RevenueLineItem.period_start, RevenueLineItem.product_type)
+    )).all()
+    by_stream: dict[str, dict[str, float]] = {"high_ticket": {}, "recurring": {}, "refunds": {}}
+    for period_start, product_type, total in rows:
+        stream = STREAM_OF_PRODUCT.get(product_type, "high_ticket")
+        mk = f"{period_start.year:04d}-{period_start.month:02d}"
+        by_stream[stream][mk] = round(by_stream[stream].get(mk, 0.0) + float(total or 0), 2)
+    return {"by_stream": by_stream}
+
+
 async def get_all_revenue_periods_summary(session: AsyncSession) -> list[dict]:
     """Return monthly totals for all periods — used by the P&L multi-month view.
 

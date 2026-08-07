@@ -36,6 +36,7 @@ from db.queries.revenue import (
     get_all_revenue_periods_summary,
     get_available_revenue_periods,
     get_revenue_for_period,
+    get_revenue_streams_by_month,
 )
 from db.queries.stripe_charges import get_stripe_inflow_for_range
 from db.queries.whop_live import get_whop_inflow_by_month, get_whop_live_summary_for_month
@@ -293,6 +294,7 @@ async def get_company_monthly_series(session: AsyncSession, months: int = 12) ->
     exp = await get_expenses_by_month(session, start, end)
     stats = await get_whop_stats_by_month(session, start, end)
     latest_stats = await get_latest_whop_stats(session)
+    streams = await get_revenue_streams_by_month(session, start, end)
 
     # Reconciled Xero revenue (cash_collected) keyed by month.
     rev_rows = await get_all_revenue_periods_summary(session)
@@ -336,6 +338,10 @@ async def get_company_monthly_series(session: AsyncSession, months: int = 12) ->
     mix_grand = round(sum(mix_totals.values()), 2) or 0.0
     mix_pct = {lbl: (round(v / mix_grand * 100, 1) if mix_grand else 0.0) for lbl, v in mix_totals.items()}
 
+    # Revenue streams — two monthly lines: high-ticket offer deals vs recurring subs.
+    hi_ticket_s = [round(streams["by_stream"]["high_ticket"].get(k, 0.0), 2) for k in keys]
+    recurring_s = [round(streams["by_stream"]["recurring"].get(k, 0.0), 2) for k in keys]
+
     # Cost buckets present in the window (ordered), each aligned onto the month axis.
     cost_buckets = [b for b in BUCKET_ORDER if b in exp["by_bucket"]]
     costs_by_bucket = {
@@ -364,6 +370,13 @@ async def get_company_monthly_series(session: AsyncSession, months: int = 12) ->
             "buckets": [{"key": b, "label": BUCKET_LABELS.get(b, b)} for b in cost_buckets],
             "by_bucket": costs_by_bucket,
             "total": expenses_s,
+        },
+        "revenue_streams": {
+            "high_ticket": hi_ticket_s,
+            "recurring": recurring_s,
+            "note": "High-ticket = offer deals (Splitit/installment/upfront) — one-time-ish, "
+                    "how much came in that month. Recurring = GHL sub-account subscriptions + "
+                    "referral, the reliable monthly base. From the Xero P&L income accounts.",
         },
         "channel_mix": {
             "channels": [{"key": c["key"], "label": c["label"]} for c in mix_channels],

@@ -231,6 +231,8 @@ function chartPanel(title, sub, series, kind){
 // ── Render ───────────────────────────────────────────────────────────────────
 function render(){
   const d=DATA, S=d.series, C=d.costs, H=hues(), t=d.totals, ls=d.latest_stats;
+  const RS=d.revenue_streams||{high_ticket:[],recurring:[]};
+  const lastVal=a=>{ for(let i=(a||[]).length-1;i>=0;i--){ if(a[i]) return a[i]; } return 0; };
   let html="";
 
   // KPI cards
@@ -240,7 +242,7 @@ function render(){
   // sections mounted after (charts need DOM nodes)
   html+=`<div class="section-title">Revenue &amp; profit — monthly<span class="free recon">RECONCILED</span></div><div id="c-rev"></div>`;
   html+=`<div class="section-title">Costs by category — monthly<span class="free recon">RECONCILED</span></div><div id="c-cost"></div>`;
-  html+=`<div class="section-title">Recurring revenue — MRR<span class="free live">WHOP</span></div><div id="c-mrr"></div>`;
+  html+=`<div class="section-title">Revenue streams — high-ticket deals vs recurring<span class="free recon">RECONCILED</span></div><div id="c-streams"></div>`;
   html+=`<div class="section-title">Cash-in by channel — where the money comes from<span class="free live">DE-DUPED</span></div><div id="c-chan"></div>`;
   html+=`<div class="section-title">Who still needs to pay — outstanding by month</div><div id="c-owes"><div class="state-msg">Loading…</div></div>`;
   html+=`<div class="section-title">Inflow channels coming next</div><div class="panel"><ul class="roadmap" id="roadmap"></ul></div>`;
@@ -249,8 +251,8 @@ function render(){
   // KPIs
   const kpi=(k,v,cls,m)=>`<div class="card"><div class="k">${k}</div><div class="v ${cls||''}">${v}</div>${m?`<div class="m">${m}</div>`:''}</div>`;
   document.getElementById("kpis").innerHTML =
-    kpi("MRR (current)", ls?fmt(ls.mrr):"—", "", ls?ls.active_members+" active members":"not synced yet") +
-    kpi("ARR (current)", ls?fmt(ls.arr):"—", "", ls?("as of "+ls.snapshot_date):"") +
+    kpi("High-ticket (last mo)", fmt(lastVal(RS.high_ticket)), "", "offer deals, monthly") +
+    kpi("Recurring (last mo)", fmt(lastVal(RS.recurring)), "", "GHL subs + other recurring") +
     kpi(`Revenue · ${d.window_months}mo`, fmt(t.revenue_reconciled), "green", "reconciled Xero") +
     kpi(`Expenses · ${d.window_months}mo`, fmt(t.expenses), "red", "") +
     kpi(`Net profit · ${d.window_months}mo`, fmt(t.net_profit), t.net_profit>=0?"green":"red", "revenue − costs") +
@@ -267,10 +269,11 @@ function render(){
   if(!hasDelivery) costPanel.insertAdjacentHTML("beforeend",`<div class="caveat">A <b>Client Delivery</b> cost bucket now exists but is empty until the Xero expenses are re-synced (delivery payees were previously hidden). Trigger a Xero expense re-sync (or ask me to backfill) to populate it.</div>`);
   document.getElementById("c-cost").appendChild(costPanel);
 
-  // MRR
-  const hasMrr=S.mrr.some(v=>v!=null);
-  if(hasMrr){ document.getElementById("c-mrr").appendChild(chartPanel("MRR (monthly recurring revenue)",d.notes.mrr,[{name:"MRR",color:H[6],data:S.mrr}],"line")); }
-  else { document.getElementById("c-mrr").innerHTML=`<div class="panel"><div class="state-msg">No MRR snapshots yet — the first Whop stats sync will start the series. ${esc(d.notes.mrr)}</div></div>`; }
+  // Revenue streams — two separate line charts (different scales → not one axis).
+  const g=document.createElement("div"); g.className="grid2";
+  g.appendChild(chartPanel("High-ticket offer deals — monthly","Offer deals (Splitit/installment/upfront). One-time-ish: how much came in each month — not MRR.",[{name:"High-ticket deals",color:H[1],data:RS.high_ticket}],"line"));
+  g.appendChild(chartPanel("Recurring revenue — monthly","GHL sub-account subscriptions + referral — the reliable monthly recurring base.",[{name:"Recurring",color:H[2],data:RS.recurring}],"line"));
+  document.getElementById("c-streams").appendChild(g);
 
   // Cash-in by channel — DE-DUPLICATED (Whop & Stripe gross + direct wires only).
   const CM=d.channel_mix||{channels:[],by_channel:{},totals:{},pct:{}};
