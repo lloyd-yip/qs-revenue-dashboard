@@ -20,11 +20,10 @@ from db.queries.vendor_classification import classify_vendor
 # Only buckets listed here appear in the API response and grand_total.
 # non_revenue is intentionally excluded — those items are stored but hidden.
 
-BUCKET_ORDER = ["sales", "client_delivery", "marketing_salaries", "tech_tools", "advertising", "paid_ads", "experiments", "unclassified"]
+BUCKET_ORDER = ["sales", "marketing_salaries", "tech_tools", "advertising", "paid_ads", "experiments", "unclassified"]
 
 BUCKET_LABELS = {
     "sales": "Sales",
-    "client_delivery": "Client Delivery",
     "marketing_salaries": "Marketing Salaries",
     "tech_tools": "Tech & Tools",
     "advertising": "Digital Advertising",
@@ -32,6 +31,15 @@ BUCKET_LABELS = {
     "experiments": "Experiments",
     "unclassified": "Unclassified — Needs Review",
 }
+
+# Shared tools that are only ~50% a marketing/sales cost — count half of their spend
+# in the Marketing/Sales P&L. (The Company-wide P&L keeps 100%, the actual Xero cost.)
+_HALF_ALLOC_KEYS = ("fireflies", "clickup", "go high level", "highlevel", "high level")
+
+
+def _marketing_alloc(vendor: str) -> float:
+    n = (vendor or "").lower()
+    return 0.5 if any(k in n for k in _HALF_ALLOC_KEYS) else 1.0
 
 
 # ── Queries ──────────────────────────────────────────────────────────────────
@@ -67,13 +75,22 @@ async def get_expenses_for_period(
 
     buckets: dict[str, list] = {b: [] for b in BUCKET_ORDER}
     for row in rows:
+        # Re-apply the CURRENT classification so exclusions take effect immediately
+        # (no re-sync needed): Xero, delivery/ops salaries, etc. drop out of the
+        # Marketing/Sales view even if they were stored under a different bucket.
+        if classify_vendor(row.vendor, row.bucket) == "non_revenue":
+            continue
         if row.bucket not in buckets:
             buckets[row.bucket] = []
+        alloc = _marketing_alloc(row.vendor)
+        note = row.notes
+        if alloc != 1.0:
+            note = (f"{note} · " if note else "") + "50% marketing allocation"
         buckets[row.bucket].append({
             "vendor": row.vendor,
-            "amount": float(row.amount),
+            "amount": round(float(row.amount) * alloc, 2),
             "is_approximate": row.is_approximate,
-            "notes": row.notes,
+            "notes": note,
         })
 
     result = []
