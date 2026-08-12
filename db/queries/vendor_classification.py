@@ -155,7 +155,6 @@ _register("tech_tools", [
     "SUPABASE",
     "Screenz LLC",
     "Skarpe",
-    "Skool",
     "Sold Out Sales Fun",
     "Squarespace",
     "TRUSTMARY",
@@ -208,6 +207,8 @@ _register("non_revenue", [
     "COLUMN NATIONAL ASSOCIATION",   # Doug — delivery team, not sales/marketing
     "Salaries - Operations",         # Delivery team — not a marketing/sales cost
     "Xero",                          # Accounting tool — not marketing (auto-exclude even if mis-tagged in Xero)
+    "Skool",                         # Not a marketing tool
+    "BitWarden",                     # Password manager (security) — not a marketing tool
     "James Walter",                  # Paid from Salaries - Sales but not a sales rep (Lloyd, 2026-07-10)
     # Salary-account payees excluded from the marketing whitelist (Lloyd, 2026-07-10)
     "Alexander Gessel",              # Founder comp — not a sales/marketing cost
