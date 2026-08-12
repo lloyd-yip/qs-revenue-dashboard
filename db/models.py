@@ -549,6 +549,32 @@ class XeroPnlLine(Base):
     __table_args__ = (UniqueConstraint("period_start", "period_end", "section", "account", name="uq_xero_pnl_line"),)
 
 
+class XeroPnlLineItem(Base):
+    """Per-payee detail behind a Company-wide P&L expense account (from Xero SPEND txns).
+
+    Lets the Company-wide P&L expand an account (e.g. "Tools - Funnel") down to the
+    individual payees inside it. Populated by sync/xero_pnl_sync.py; idempotent via the
+    unique (period_start, period_end, account, payee) key. Not every account has detail
+    (only those with bank SPEND lines) — the account total from xero_pnl_lines stays
+    authoritative regardless.
+    """
+
+    __tablename__ = "xero_pnl_line_items"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    period_start: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    period_end: Mapped[date] = mapped_column(Date, nullable=False)
+    account: Mapped[str] = mapped_column(String(200), nullable=False)
+    payee: Mapped[str] = mapped_column(String(300), nullable=False)
+    amount_usd: Mapped[float] = mapped_column(Numeric(14, 2), nullable=False, default=0.0)
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+    __table_args__ = (UniqueConstraint("period_start", "period_end", "account", "payee", name="uq_xero_pnl_line_item"),)
+
+
 class WhopStatsSnapshot(Base):
     """A dated snapshot of Whop MRR/ARR — computed from active recurring memberships.
 

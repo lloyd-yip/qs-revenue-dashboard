@@ -10,7 +10,7 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.models import XeroPnlLine
+from db.models import XeroPnlLine, XeroPnlLineItem
 
 # Display grouping for the company cost chart — maps a Xero expense account name to a
 # readable bucket. Substring match on the lowercased account; first hit wins.
@@ -61,6 +61,17 @@ async def get_xero_pnl_for_period(session: AsyncSession, period_start: date) -> 
         .order_by(XeroPnlLine.amount_usd.desc())
     )).all()
 
+    # Per-payee detail behind each account (drill-down), keyed by account name.
+    detail_rows = (await session.execute(
+        select(XeroPnlLineItem.account, XeroPnlLineItem.payee, XeroPnlLineItem.amount_usd)
+        .where(XeroPnlLineItem.period_start == period_start)
+    )).all()
+    detail_by_account: dict[str, list] = {}
+    for account, payee, amt in detail_rows:
+        detail_by_account.setdefault(account, []).append({"name": payee, "amount": float(amt or 0)})
+    for items in detail_by_account.values():
+        items.sort(key=lambda x: abs(x["amount"]), reverse=True)
+
     income_items: list[dict] = []
     groups: dict[str, list] = {}
     total_income = total_expense = 0.0
@@ -70,7 +81,8 @@ async def get_xero_pnl_for_period(session: AsyncSession, period_start: date) -> 
             income_items.append({"name": account, "amount": amt})
             total_income += amt
         else:
-            groups.setdefault(expense_group(account), []).append({"name": account, "amount": amt})
+            groups.setdefault(expense_group(account), []).append(
+                {"name": account, "amount": amt, "items": detail_by_account.get(account, [])})
             total_expense += amt
 
     expense_groups = []

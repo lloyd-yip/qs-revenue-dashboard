@@ -24,7 +24,7 @@ from api.utils.xero_utils import (
     get_xero_config,
     xero_access_token_from_stored_refresh,
 )
-from db.models import XeroPnlLine
+from db.models import XeroPnlLine, XeroPnlLineItem
 from db.session import AsyncSessionLocal
 
 logger = logging.getLogger(__name__)
@@ -122,9 +122,41 @@ async def sync_xero_pnl(month: str, xero_token: str | None = None) -> dict:
             ))
         await session.commit()
 
+    # Per-payee detail for each expense account (so the P&L can drill into an account).
+    # Best-effort: needs accounting.settings.read + bank SPEND data; degrades to no detail.
+    detail_rows = 0
+    try:
+        from api.routers.xero_expenses import (
+            _ScopeMissing, _fetch_expense_account_names, _fetch_spend_detail,
+        )
+        account_names = await _fetch_expense_account_names(access_token, cfg.tenant_id)
+        detail = await _fetch_spend_detail(access_token, cfg.tenant_id, account_names, ps.year, ps.month, eur_usd)
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                delete(XeroPnlLineItem).where(
+                    XeroPnlLineItem.period_start == ps, XeroPnlLineItem.period_end == pe)
+            )
+            for account, payees in detail.items():
+                for payee, usd in payees.items():
+                    if not payee or round(usd, 2) == 0:
+                        continue
+                    await session.execute(pg_insert(XeroPnlLineItem).values(
+                        period_start=ps, period_end=pe, account=account, payee=payee[:300],
+                        amount_usd=round(usd, 2),
+                    ).on_conflict_do_update(
+                        index_elements=["period_start", "period_end", "account", "payee"],
+                        set_={"amount_usd": round(usd, 2), "synced_at": datetime.now(tz=timezone.utc)},
+                    ))
+                    detail_rows += 1
+            await session.commit()
+    except _ScopeMissing:
+        logger.info("Xero P&L %s: payee detail skipped (accounting.settings.read not granted)", month)
+    except Exception as exc:
+        logger.warning("Xero P&L %s: payee detail failed (%s) — account totals still stored", month, exc)
+
     income_usd, expense_usd = round(income_usd, 2), round(expense_usd, 2)
-    result = {"ok": True, "month": month, "lines": len(lines), "eur_usd": round(eur_usd, 4),
-              "income_usd": income_usd, "expenses_usd": expense_usd,
+    result = {"ok": True, "month": month, "lines": len(lines), "detail_rows": detail_rows,
+              "eur_usd": round(eur_usd, 4), "income_usd": income_usd, "expenses_usd": expense_usd,
               "net_usd": round(income_usd - expense_usd, 2)}
     logger.info("Xero P&L sync %s: %s", month, result)
     return result
