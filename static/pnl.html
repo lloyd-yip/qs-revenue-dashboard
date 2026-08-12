@@ -479,6 +479,11 @@
       : [];
     if (cashCollectedCats.length > 0) {
       cashCollectedCats.forEach((cat, i) => {
+        // Xero-sourced income rows are account totals from the Xero P&L (no per-payment
+        // count), so show "Xero P&L income" instead of a misleading "0 payments".
+        const catMeta = cat.payment_count > 0
+          ? `${cat.payment_count} payment${cat.payment_count !== 1 ? "s" : ""}`
+          : "Xero P&L income";
         html += renderBucket(
           `rev-${cat.category}`,
           cat.label,
@@ -486,12 +491,14 @@
           cat.items.map(item => ({
             name: item.label,
             amount: item.amount,
-            meta: `${item.payment_count} payment${item.payment_count !== 1 ? "s" : ""}`,
+            meta: item.payment_count > 0
+              ? `${item.payment_count} payment${item.payment_count !== 1 ? "s" : ""}`
+              : "Xero P&L income account",
             is_approximate: false,
             notes: null,
           })),
           i === 0,
-          `${cat.payment_count} payment${cat.payment_count !== 1 ? "s" : ""}`,
+          catMeta,
         );
       });
     } else {
