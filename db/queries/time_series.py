@@ -6,7 +6,14 @@ from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Opportunity
-from db.queries.common import base_filter, bookable_1st_call_expr, has_1st_call, showed_1st_call_expr
+from db.queries.common import (
+    QUALIFIED_LEAD_QUALITY,
+    base_filter,
+    bookable_1st_call_expr,
+    has_1st_call,
+    showed_1st_call_expr,
+)
+from sync.ghl_client import DEAL_WON_STAGE_ID
 
 _TRUNC_MAP = {"day": "day", "week": "week", "month": "month"}
 
@@ -19,11 +26,16 @@ async def get_time_series(
     date_by: str = "appointment",
     rep_id: str | None = None,
 ) -> list[dict]:
-    """Return per-period show rate data for the line chart.
+    """Return per-period funnel-rate data for the trends line chart.
 
-    Each row: { period (ISO string), calls_booked, shows, show_rate }
-    Periods with zero bookings are included only if data exists — gaps are handled
-    by Chart.js spanGaps on the frontend.
+    Each row: { period (ISO string), calls_booked, shows, qualified_shows,
+                units_closed, show_rate, qual_rate, close_rate }
+
+    Rate definitions match metrics_summary exactly so the chart and the KPI cards
+    can never disagree: show_rate = shows ÷ occurred (bookable), qual_rate =
+    qualified shows ÷ shows, close_rate = cohort units closed ÷ shows.
+    Only periods that actually contain a 1st call are returned; a rate is None when
+    its denominator is 0, and the frontend spans those gaps.
     """
     trunc_unit = _TRUNC_MAP.get(granularity, "week")
 
@@ -52,8 +64,25 @@ async def get_time_series(
             func.count(
                 case((and_(is_1st, bookable_1st_call_expr()), 1))
             ).label("bookable"),
+            func.count(
+                case((
+                    and_(is_1st, showed_1st, Opportunity.lead_quality.in_(QUALIFIED_LEAD_QUALITY)),
+                    1,
+                ))
+            ).label("qualified_shows"),
+            # Cohort close: of this period's 1st calls, how many are now won.
+            # Gated by is_1st so it stays a subset of shows → close_rate never exceeds 100%.
+            func.count(
+                case((and_(is_1st, Opportunity.pipeline_stage_id == DEAL_WON_STAGE_ID), 1))
+            ).label("units_closed"),
         )
-        .where(bf)
+        # Every metric above is already gated on is_1st, so restricting the rows to
+        # is_1st changes no count — it only drops all-zero phantom buckets. Those come
+        # from 'appointment' mode, where base_filter admits an opp whose 2nd call is in
+        # range while its 1st call sits years earlier: it buckets on that old call1 date
+        # and contributes 0 to every metric, stretching the axis back to 2024 and
+        # squashing the real months into a sliver.
+        .where(and_(bf, is_1st))
         .group_by(period_expr)
         .order_by(period_expr)
     )
@@ -66,7 +95,11 @@ async def get_time_series(
             "period": row.period.isoformat() if row.period else None,
             "calls_booked": row.calls_booked,
             "shows": row.shows,
+            "qualified_shows": row.qualified_shows,
+            "units_closed": row.units_closed,
             "show_rate": safe_rate(row.shows, row.bookable),
+            "qual_rate": safe_rate(row.qualified_shows, row.shows),
+            "close_rate": safe_rate(row.units_closed, row.shows),
         }
         for row in result.all()
     ]

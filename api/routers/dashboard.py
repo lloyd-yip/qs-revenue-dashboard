@@ -153,7 +153,7 @@ async def time_series(
     params: tuple = Depends(_date_params),
     db: AsyncSession = Depends(get_db),
 ):
-    """Show rate over time — for the line chart."""
+    """Show / qual / close rate over time — for the trends line chart."""
     start, end, date_by = params
     data = await get_time_series(db, start, end, granularity, date_by, rep_id)
     return TimeSeriesResponse(data=data, meta=_meta(start, end, date_by))

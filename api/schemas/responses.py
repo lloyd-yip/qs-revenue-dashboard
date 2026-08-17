@@ -184,7 +184,11 @@ class TimeSeriesPoint(BaseModel):
     period: str | None
     calls_booked: int
     shows: int
+    qualified_shows: int
+    units_closed: int
     show_rate: float | None
+    qual_rate: float | None
+    close_rate: float | None
 
 
 class TimeSeriesResponse(BaseModel):
