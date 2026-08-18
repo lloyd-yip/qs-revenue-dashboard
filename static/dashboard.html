@@ -1544,7 +1544,10 @@ function renderShowRateChart(data) {
       maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },   // crosshair-style: one hover, all three series
       plugins: {
-        legend: { labels: { color: TREND_AXIS.tick, usePointStyle: true, pointStyle: 'line', boxWidth: 18 } },
+        // pointStyle 'line' draws nothing usable here, which left these labels with
+        // no colour chip at all — use the same circle the line plots its points
+        // with, so the legend marker mirrors the mark and carries the hue.
+        legend: { labels: { color: TREND_AXIS.tick, usePointStyle: true, pointStyle: 'circle', boxWidth: 8, boxHeight: 8, padding: 16 } },
         tooltip: {
           callbacks: {
             title: items => trendTitle(data[items[0].dataIndex]?.period, gran),
@@ -1584,7 +1587,7 @@ function renderShowRateChart(data) {
       maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
       plugins: {
-        legend: { labels: { color: TREND_AXIS.tick, usePointStyle: true, pointStyle: 'rect', boxWidth: 12 } },
+        legend: { labels: { color: TREND_AXIS.tick, usePointStyle: true, pointStyle: 'rect', boxWidth: 12, boxHeight: 10, padding: 16 } },
         tooltip: {
           callbacks: {
             title: items => trendTitle(data[items[0].dataIndex]?.period, gran),
