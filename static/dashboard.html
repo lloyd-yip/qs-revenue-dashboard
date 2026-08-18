@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <script src="/static/theme.js"></script>
+  <script src="/static/metric-colors.js"></script>
   <title>QS Analytics Dashboard</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 
@@ -121,6 +122,14 @@
       min-width: 0;
     }
     .chart-box h3 { font-size: 13px; font-weight: 600; color: var(--text2); margin-bottom: 16px; text-transform: uppercase; letter-spacing: 0.4px; }
+    /* Title + per-chart control on one line; the h3 keeps its own margin so a
+       chart-box without a control is unaffected. */
+    .chart-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .chart-head h3 { margin-bottom: 16px; }
+    .chart-head select {
+      background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+      padding: 5px 9px; border-radius: 6px; font-size: 12px; cursor: pointer; margin-bottom: 16px;
+    }
     .chart-box canvas { max-height: 260px; max-width: 100%; }
 
     /* Section header with toggle */
@@ -181,6 +190,9 @@
     .clickable-row:hover td { background: var(--surface2); }
     .closes-link { color: var(--accent2); cursor: pointer; font-size: 13px; }
     .closes-link:hover { text-decoration: underline; }
+    /* In a graded cell the drill-down link takes the cell's colour, otherwise the
+       link blue hides the grade (No Outcome is both a link and a graded metric). */
+    .rate-good > .closes-link, .rate-warn > .closes-link, .rate-bad > .closes-link { color: inherit; }
     .btn-week-nav {
       background: var(--surface2); border: 1px solid var(--border); color: var(--text2);
       width: 26px; height: 26px; border-radius: 5px; cursor: pointer; font-size: 13px;
@@ -252,13 +264,6 @@
     <button class="toggle-btn" data-val="booked" onclick="setDateBy('booked')" title="Filter by when the meeting was booked/scheduled">Booking Date</button>
     <button class="toggle-btn" data-val="created" onclick="setDateBy('created')" title="Filter by when the opportunity was created in GHL">Created</button>
   </div>
-  <div class="filter-sep"></div>
-  <label>Granularity</label>
-  <div class="toggle-group" id="granularity-toggle">
-    <button class="toggle-btn" data-val="day" onclick="setGranularity('day')">Day</button>
-    <button class="toggle-btn active" data-val="week" onclick="setGranularity('week')">Week</button>
-    <button class="toggle-btn" data-val="month" onclick="setGranularity('month')">Month</button>
-  </div>
 </div>
 
 <nav class="subbar">
@@ -278,7 +283,17 @@
 
   <div class="charts-row">
     <div class="chart-box">
-      <h3>Rate Trends — Show · Qual · Close</h3>
+      <div class="chart-head">
+        <h3>Rate Trends — Show · Qual · Close</h3>
+        <select id="trend-interval" onchange="setGranularity(this.value)"
+                title="Bucket size for the trend line. The date range above sets the window; this sets how finely it is sliced.">
+          <option value="day">Daily</option>
+          <option value="week" selected>Weekly</option>
+          <option value="month">Monthly</option>
+          <option value="quarter">Quarterly</option>
+          <option value="year">Yearly</option>
+        </select>
+      </div>
       <canvas id="chart-show-rate"></canvas>
     </div>
     <div class="chart-box">
@@ -750,7 +765,7 @@ function applyUrlState() {
   if (repId !== null) {
     AppState.repId = repId;
   }
-  if (['day', 'week', 'month'].includes(granularity || '')) {
+  if (['day', 'week', 'month', 'quarter', 'year'].includes(granularity || '')) {
     AppState.granularity = granularity;
   }
 }
@@ -853,11 +868,23 @@ function onRepChange(val) {
 
 function setGranularity(val) {
   AppState.granularity = val;
-  document.querySelectorAll('#granularity-toggle .toggle-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.val === val);
-  });
+  const sel = document.getElementById('trend-interval');
+  if (sel && sel.value !== val) sel.value = val;
   syncUrlState();
-  renderAll();
+  reloadTrendChart();   // the interval only drives this one chart
+}
+
+/** Re-fetch the trend series at the current interval and redraw just that chart. */
+async function reloadTrendChart() {
+  const canvas = document.getElementById('chart-show-rate');
+  if (!canvas) return;
+  const repParam = AppState.repId ? `&rep_id=${AppState.repId}` : '';
+  try {
+    const ts = await apiFetch(`/api/dashboard/time-series?${qs()}&granularity=${AppState.granularity}${repParam}`);
+    renderShowRateChart(ts.data);
+  } catch (e) {
+    console.error('trend chart reload failed', e);
+  }
 }
 
 function setDateBy(val) {
@@ -965,15 +992,14 @@ function scaleClass(v, good, warn) {
 // Attendance-style rates (show rate, qual rate) — most calls should clear these.
 function rateClass(v) { return scaleClass(v, 0.6, 0.4); }
 
-// Close rates need their own scale: a healthy high-ticket close rate is nowhere
-// near 60%, so the attendance thresholds above paint every row red and the column
-// stops carrying signal. Calibrated on Mar–Jul 2026 actuals — per-rep close rate
-// spans 4–18% (team 9%) and qual close 7–22% (team 14%), so team-average lands
-// amber and only genuine over/under-performance goes green/red.
+// A lone KPI card has no peer group to be graded against, so it keeps a fixed
+// scale — but close rate needs its OWN one: a healthy high-ticket close rate is
+// nowhere near 60%, so the attendance thresholds above would paint it red always.
+// Calibrated on Mar–Jul 2026 actuals (team close rate 9%, per-rep 4–18%).
+// The tables don't use this — they grade every column against the rows in view
+// via static/metric-colors.js.
 const CLOSE_GOOD = 0.15, CLOSE_WARN = 0.08;        // closed ÷ shows
-const QUAL_CLOSE_GOOD = 0.20, QUAL_CLOSE_WARN = 0.11;   // closed ÷ qualified shows
-function closeRateClass(v)     { return scaleClass(v, CLOSE_GOOD, CLOSE_WARN); }
-function qualCloseRateClass(v) { return scaleClass(v, QUAL_CLOSE_GOOD, QUAL_CLOSE_WARN); }
+function closeRateClass(v) { return scaleClass(v, CLOSE_GOOD, CLOSE_WARN); }
 
 function destroyChart(key) {
   if (Charts[key]) { Charts[key].destroy(); delete Charts[key]; }
@@ -1117,6 +1143,10 @@ function injectTooltips() {
     const key = el.textContent.trim();
     if (METRIC_TIPS[key] && !el.getAttribute('data-tip')) {
       el.setAttribute('data-tip', METRIC_TIPS[key]);
+      // Drop the short native title — tooltip.js only absorbs a title when
+      // data-tip is empty, so leaving it here fires the browser's own tooltip
+      // alongside the rich one (two boxes for the same column).
+      el.removeAttribute('title');
       el.addEventListener('mouseenter', _showTip);
       el.addEventListener('mousemove',  _positionTip);
       el.addEventListener('mouseleave', _hideTip);
@@ -1410,15 +1440,39 @@ const TREND_SERIES = [
   { key: 'close_rate', label: 'Close Rate', color: '#199e70' },
 ];
 
+// Bucket start → axis label / tooltip heading, per interval. Read in UTC: the
+// period comes back as a UTC midnight, and local getters would shift a Mar 1
+// bucket to Feb 28 for anyone west of Greenwich.
+const _TREND_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function trendLabel(iso, gran) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d)) return iso.split('T')[0];
+  const y = d.getUTCFullYear(), mo = _TREND_MONTHS[d.getUTCMonth()], day = d.getUTCDate();
+  switch (gran) {
+    case 'year':    return String(y);
+    case 'quarter': return 'Q' + (Math.floor(d.getUTCMonth() / 3) + 1) + ' ' + y;
+    case 'month':   return mo + ' ' + y;
+    default:        return mo + ' ' + day;          // day + week
+  }
+}
+function trendTitle(iso, gran) {
+  const base = trendLabel(iso, gran);
+  if (gran === 'week') return 'Week of ' + base + ', ' + new Date(iso).getUTCFullYear();
+  if (gran === 'day') return base + ', ' + new Date(iso).getUTCFullYear();
+  return base;
+}
+
 function renderShowRateChart(data) {
   destroyChart('showRate');
   const ctx = document.getElementById('chart-show-rate').getContext('2d');
   // Surface token, so the ring around overlapping points reads in either theme.
   const surface = getComputedStyle(document.documentElement).getPropertyValue('--surface').trim() || '#1a1d27';
+  const gran = AppState.granularity;
   Charts.showRate = new Chart(ctx, {
     type: 'line',
     data: {
-      labels: data.map(d => d.period ? d.period.split('T')[0] : ''),
+      labels: data.map(d => trendLabel(d.period, gran)),
       datasets: TREND_SERIES.map(s => ({
         label: s.label,
         data: data.map(d => d[s.key] !== null && d[s.key] !== undefined ? +(d[s.key] * 100).toFixed(1) : null),
@@ -1441,6 +1495,7 @@ function renderShowRateChart(data) {
         legend: { labels: { color: '#94a3b8', usePointStyle: true, pointStyle: 'line', boxWidth: 18 } },
         tooltip: {
           callbacks: {
+            title: items => trendTitle(data[items[0].dataIndex]?.period, gran),
             label: c => `${c.dataset.label}: ${c.parsed.y === null ? '—' : c.parsed.y + '%'}`,
             afterBody: items => {
               // Raw counts behind the rates — a rate off 3 calls reads very differently to one off 90.
@@ -1499,7 +1554,56 @@ function renderRepBreakdown(reps) {
     return;
   }
   const dash = '<span style="color:var(--text2);">—</span>';
-  const roriStyle = v => v === null || v === undefined ? dash : `<span style="color:var(--green); font-weight:600;">${v.toFixed(2)}x</span>`;
+
+  // ── Colour scales, sized from the reps actually in view ──
+  // Every comparable metric is graded against the table's own pooled average
+  // rather than a hard-coded cutoff — see static/metric-colors.js for the method.
+  // Raw volume columns (Booked / Showed / Closed / Qualified / the lead-quality
+  // counts / money totals) are deliberately NOT graded: they measure how much
+  // work a rep did, not how well, so colouring them would just paint part-time
+  // reps red. The per-unit versions of those (Avg Contract, Avg Cash, Cost/Close,
+  // RORI) are graded, since those ARE comparable across reps of any size.
+  const MC = MetricColors, F = MetricColors.fmt;
+  // Per-close metrics need their own (lower) volume gate — nobody closes 8 deals
+  // in a month, so the default call-based gate would blank these columns entirely.
+  // 2 still excludes anyone whose "average" would be a single deal.
+  const CLOSES = 2;
+  const S = MC.buildAll(reps, {
+    show_rate:  { value: r => r.show_rate_1st, num: r => r.shows_1st, den: r => r.occurred_1st,
+                  sample: r => r.occurred_1st, format: F.pct },
+    resched:    { value: r => r.reschedule_rate_1st, num: r => r.rescheduled_1st, den: r => r.calls_booked_1st,
+                  sample: r => r.calls_booked_1st, higherIsBetter: false, format: F.pct },
+    qual_rate:  { value: r => r.qualification_rate, num: r => qualifiedCount(r), den: r => r.shows_1st,
+                  sample: r => r.shows_1st, format: F.pct },
+    close_rate: { value: r => r.close_rate, num: r => r.units_closed, den: r => r.shows_1st,
+                  sample: r => r.shows_1st, format: F.pct },
+    close_qual: { value: r => r.close_rate_qual, num: r => r.units_closed, den: r => qualifiedCount(r),
+                  sample: r => qualifiedCount(r), format: F.pct },
+    cycle:      { value: r => r.avg_cycle_days, sample: r => r.units_closed, minSample: CLOSES,
+                  higherIsBetter: false, format: F.days },
+    // Graded as a SHARE of booked calls, though the cell shows the raw count —
+    // otherwise the busiest reps look worst purely for handling more calls.
+    no_outcome: { value: r => r.calls_booked_1st ? r.outcome_not_logged_count / r.calls_booked_1st : null,
+                  num: r => r.outcome_not_logged_count, den: r => r.calls_booked_1st,
+                  sample: r => r.calls_booked_1st, higherIsBetter: false, format: F.pct },
+    avg_contract: { value: r => r.avg_contract_value, num: r => r.whop_projected_total, den: r => r.units_closed,
+                  sample: r => r.units_closed, minSample: CLOSES, format: F.money },
+    avg_cash:   { value: r => r.avg_cash_collected, num: r => r.cash_collected, den: r => r.units_closed,
+                  sample: r => r.units_closed, minSample: CLOSES, format: F.money },
+    // Value is already in percentage points, so the pooled centre is scaled to match.
+    upfront:    { value: r => r.avg_cash_pct_upfront, num: r => (r.upfront_cash || 0) * 100,
+                  den: r => r.whop_projected_total, sample: r => r.units_closed, minSample: CLOSES, format: F.pctPt },
+    cost_close: { value: r => r.cost_per_close, num: r => r.total_invested, den: r => r.units_closed,
+                  sample: r => r.units_closed, minSample: CLOSES, higherIsBetter: false, format: F.money },
+    cash_rori:  { value: r => r.cash_rori, num: r => r.cash_collected, den: r => r.total_invested,
+                  sample: r => r.units_closed, minSample: CLOSES, format: F.mult },
+    contract_rori: { value: r => r.contract_rori, num: r => r.whop_projected_total, den: r => r.total_invested,
+                  sample: r => r.units_closed, minSample: CLOSES, format: F.mult },
+  });
+  const roriStyle = (v, cls = '') => v === null || v === undefined
+    ? dash
+    : `<span class="${cls}" style="font-weight:600;">${v.toFixed(2)}x</span>`;
+
   const rows = reps.map(r => {
     const n = r.rep_name.replace(/'/g, "\\'");
     const rid = r.rep_id;
@@ -1520,15 +1624,15 @@ function renderRepBreakdown(reps) {
       <td>${r.rep_name}</td>
       <td class="num">${bookedCell}</td>
       <td class="num">${showedCell}</td>
-      <td class="num clickable" onclick="window.open(debugUrl('show_rate_1st','${rid}'),'_blank')" style="cursor:pointer;" title="↗ Debug">${pct(r.show_rate_1st)}</td>
-      <td class="num clickable ${r.reschedule_rate_1st !== null && r.reschedule_rate_1st > 0.3 ? 'rate-warn' : ''}" onclick="window.open(debugUrl('rescheduled_1st','${rid}'),'_blank')" style="cursor:pointer;" title="↗ Debug — 1st calls rescheduled at least once">${num(r.rescheduled_1st)}${r.reschedule_rate_1st !== null && r.reschedule_rate_1st !== undefined ? ` <span style="color:var(--text2);">(${pct(r.reschedule_rate_1st)})</span>` : ''}</td>
-      <td class="num clickable" onclick="window.open(debugUrl('qualification_rate','${rid}'),'_blank')" style="cursor:pointer;" title="↗ Debug">${pct(r.qualification_rate)}</td>
-      <td class="num clickable" onclick="window.open(debugUrl('close_rate','${rid}'),'_blank')" style="cursor:pointer;" title="↗ Debug">${pct(r.close_rate)}</td>
-      <td class="num" title="Units Closed ÷ Qualified Shows">${pct(r.close_rate_qual)}</td>
-      <td class="num">${closedCell}</td>
-      <td class="num" style="color:var(--text2);">${r.avg_cycle_days !== null && r.avg_cycle_days !== undefined ? r.avg_cycle_days + 'd' : '—'}</td>
-      <td class="num ${r.outcome_not_logged_count > 0 ? 'rate-warn' : ''}">${notLoggedCell}</td>
+      <td class="num clickable ${S.show_rate.grade(r)}" onclick="window.open(debugUrl('show_rate_1st','${rid}'),'_blank')" style="cursor:pointer;" title="↗ Debug · ${S.show_rate.explain(r)}">${pct(r.show_rate_1st)}</td>
+      <td class="num clickable ${S.resched.grade(r)}" onclick="window.open(debugUrl('rescheduled_1st','${rid}'),'_blank')" style="cursor:pointer;" title="↗ Debug — 1st calls rescheduled at least once · ${S.resched.explain(r)}">${num(r.rescheduled_1st)}${r.reschedule_rate_1st !== null && r.reschedule_rate_1st !== undefined ? ` <span style="color:var(--text2);">(${pct(r.reschedule_rate_1st)})</span>` : ''}</td>
       <td class="num" style="font-weight:600;">${num(qualifiedCount(r))}</td>
+      <td class="num clickable ${S.qual_rate.grade(r)}" onclick="window.open(debugUrl('qualification_rate','${rid}'),'_blank')" style="cursor:pointer;" title="↗ Debug · ${S.qual_rate.explain(r)}">${pct(r.qualification_rate)}</td>
+      <td class="num clickable ${S.close_rate.grade(r)}" onclick="window.open(debugUrl('close_rate','${rid}'),'_blank')" style="cursor:pointer;" title="↗ Debug · ${S.close_rate.explain(r)}">${pct(r.close_rate)}</td>
+      <td class="num ${S.close_qual.grade(r)}" title="Units Closed ÷ Qualified Shows · ${S.close_qual.explain(r)}">${pct(r.close_rate_qual)}</td>
+      <td class="num">${closedCell}</td>
+      <td class="num ${S.cycle.grade(r)}" title="${S.cycle.explain(r)}">${r.avg_cycle_days !== null && r.avg_cycle_days !== undefined ? r.avg_cycle_days + 'd' : '—'}</td>
+      <td class="num ${S.no_outcome.grade(r)}" title="Graded as a share of this rep's booked calls · ${S.no_outcome.explain(r)}">${notLoggedCell}</td>
       <td class="num" style="color:#22c55e;">${num(r.lq_great)}</td>
       <td class="num" style="color:#84cc16;">${num(r.lq_ok)}</td>
       <td class="num" style="color:var(--yellow);">${num(r.lq_barely)}</td>
@@ -1537,13 +1641,13 @@ function renderRepBreakdown(reps) {
       <td class="num" style="color:var(--green);">${r.contract_value ? money(r.contract_value) : dash}</td>
       <td class="num" style="color:var(--green);">${r.whop_projected_total ? money(r.whop_projected_total) : dash}</td>
       <td class="num" style="color:var(--green);">${r.cash_collected ? money(r.cash_collected) : dash}</td>
-      <td class="num" style="color:var(--green);">${r.avg_contract_value ? money(r.avg_contract_value) : dash}</td>
-      <td class="num" style="color:var(--green);">${r.avg_cash_collected ? money(r.avg_cash_collected) : dash}</td>
-      <td class="num" style="color:var(--green);">${r.avg_cash_pct_upfront !== null && r.avg_cash_pct_upfront !== undefined ? r.avg_cash_pct_upfront + '%' : dash}</td>
+      <td class="num ${S.avg_contract.grade(r)}" title="${S.avg_contract.explain(r)}">${r.avg_contract_value ? money(r.avg_contract_value) : dash}</td>
+      <td class="num ${S.avg_cash.grade(r)}" title="${S.avg_cash.explain(r)}">${r.avg_cash_collected ? money(r.avg_cash_collected) : dash}</td>
+      <td class="num ${S.upfront.grade(r)}" title="${S.upfront.explain(r)}">${r.avg_cash_pct_upfront !== null && r.avg_cash_pct_upfront !== undefined ? r.avg_cash_pct_upfront + '%' : dash}</td>
       <td class="num">${r.total_invested !== null && r.total_invested !== undefined ? money(r.total_invested) : dash}</td>
-      <td class="num">${r.cost_per_close !== null && r.cost_per_close !== undefined ? money(r.cost_per_close) : dash}</td>
-      <td class="num">${roriStyle(r.cash_rori)}</td>
-      <td class="num">${roriStyle(r.contract_rori)}</td>
+      <td class="num ${S.cost_close.grade(r)}" title="${S.cost_close.explain(r)}">${r.cost_per_close !== null && r.cost_per_close !== undefined ? money(r.cost_per_close) : dash}</td>
+      <td class="num" title="${S.cash_rori.explain(r)}">${roriStyle(r.cash_rori, S.cash_rori.grade(r))}</td>
+      <td class="num" title="${S.contract_rori.explain(r)}">${roriStyle(r.contract_rori, S.contract_rori.grade(r))}</td>
     </tr>`;
   }).join('');
 
@@ -1567,13 +1671,13 @@ function renderRepBreakdown(reps) {
       <td class="num">${num(tShowed)}</td>
       <td class="num" title="Showed ÷ Occurred — same definition as the per-rep rows">${rate(tShowed, tOccurred)}</td>
       <td class="num">${num(tResched)}${tBooked > 0 ? ` <span style="color:var(--text2); font-weight:400;">(${pct(tResched / tBooked)})</span>` : ''}</td>
+      <td class="num">${num(sum('lq_great') + sum('lq_ok') + sum('lq_barely'))}</td>
       <td class="num">${rate(tQual, tShowed)}</td>
       <td class="num">${rate(tClosed, tShowed)}</td>
       <td class="num">${rate(tClosed, tQual)}</td>
       <td class="num">${num(tClosed)}</td>
       <td class="num" style="color:var(--text2);" title="Weighted by units closed">${tCycle !== null ? tCycle.toFixed(1) + 'd' : '—'}</td>
       <td class="num">${num(tNoOut)}</td>
-      <td class="num">${num(sum('lq_great') + sum('lq_ok') + sum('lq_barely'))}</td>
       <td class="num" style="color:#22c55e;">${num(sum('lq_great'))}</td>
       <td class="num" style="color:#84cc16;">${num(sum('lq_ok'))}</td>
       <td class="num" style="color:var(--yellow);">${num(sum('lq_barely'))}</td>
@@ -1598,13 +1702,13 @@ function renderRepBreakdown(reps) {
         <th class="num">Showed</th>
         <th class="num">Show Rate</th>
         <th class="num" title="1st calls rescheduled at least once (and rate of scheduled)">Resched</th>
+        <th class="num" title="Qualified 1st-call shows — Great + Ok + Barely Passable (the same set behind Qual Rate). Excludes Bad / DQ and ungraded.">Qualified</th>
         <th class="num">Qual Rate</th>
         <th class="num">Close Rate</th>
         <th class="num" title="Units Closed ÷ Qualified 1st Call Shows">Qual Close</th>
         <th class="num">Closed</th>
         <th class="num" title="Avg days from the first showed call to the first payment (won deals)">Avg Cycle</th>
         <th class="num" title="Appointment outcome (show/no-show) never logged by rep">No Outcome</th>
-        <th class="num" title="Qualified 1st-call shows — Great + Ok + Barely Passable (the same set behind Qual Rate). Excludes Bad / DQ and ungraded.">Qualified</th>
         <th class="num" style="color:#22c55e;">Great</th>
         <th class="num" style="color:#84cc16;">Ok</th>
         <th class="num" style="color:var(--yellow);">Barely Pass.</th>
@@ -1928,10 +2032,36 @@ async function renderPipelineIntelligence() {
     const POST_CALL_DIMS = new Set(['lead_quality','intent','indoctrination','business_fit','pain_goal','industry','current_revenue']);
     const showC1Rate = !POST_CALL_DIMS.has(groupBy);
 
+    // ── Colour scales, rebuilt from whichever segments the current Segment-by
+    // produced — so every dimension is graded against its own spread, never a
+    // fixed cutoff borrowed from another metric. See static/metric-colors.js.
+    // Raw volume columns (C1/C2 Booked, Occurred, Closed, money totals) stay
+    // ungraded: they size a segment, they don't rate it.
+    const MC = MetricColors, F = MetricColors.fmt;
+    const S = MC.buildAll(rows, {
+      show_rate_1st: { value: r => r.show_rate_1st, num: r => r.shows_1st, den: r => r.occurred_1st,
+                       sample: r => r.occurred_1st, format: F.pct },
+      qual_rate:     { value: r => r.qual_rate, num: r => r.qualified_shows, den: r => r.shows_1st,
+                       sample: r => r.shows_1st, format: F.pct },
+      show_rate_2nd: { value: r => r.show_rate_2nd, num: r => r.shows_2nd, den: r => r.occurred_2nd,
+                       sample: r => r.occurred_2nd, format: F.pct },
+      close_rate:    { value: r => r.close_rate, num: r => r.units_closed, den: r => r.shows_1st,
+                       sample: r => r.shows_1st, format: F.pct },
+      close_qual:    { value: r => r.close_rate_qual, num: r => r.units_closed, den: r => r.qualified_shows,
+                       sample: r => r.qualified_shows, format: F.pct },
+      // Cycle is measured per closed deal, so it gets the lower per-close gate.
+      cycle:         { value: r => r.avg_cycle_days, sample: r => r.units_closed, minSample: 2,
+                       higherIsBetter: false, format: F.days },
+    });
+    // Segmenting BY lead quality makes Qual% tautological (an "Ok" segment is
+    // 100% qualified by definition), so grading it would just colour the
+    // definition. Same reasoning as hiding C1 Show% on post-call dimensions.
+    const gradeQual = groupBy !== 'lead_quality';
+
     const tableRows = rows.map(r => {
       const cycleTxt = r.avg_cycle_days !== null ? `${r.avg_cycle_days}d` : '<span style="color:var(--text2);">—</span>';
       const c1ShowCell = showC1Rate
-        ? `<td class="num ${rateClass(r.show_rate_1st)}">${pct(r.show_rate_1st)}</td>`
+        ? `<td class="num ${S.show_rate_1st.grade(r)}" title="${S.show_rate_1st.explain(r)}">${pct(r.show_rate_1st)}</td>`
         : `<td class="num" style="color:var(--text2);" title="Not applicable — this field is only recorded post-show, so show rate is always 100%">—</td>`;
       const closedCell = r.units_closed > 0
         ? `<td class="num"><span class="closes-link" onclick="showPiClosesModal('${groupBy}','${r.segment.replace(/'/g,"\\'")}');event.stopPropagation();">↗ ${num(r.units_closed)}</span></td>`
@@ -1941,14 +2071,14 @@ async function renderPipelineIntelligence() {
         <td class="num">${num(r.calls_booked_1st)}</td>
         <td class="num" style="color:var(--text2);">${num(r.occurred_1st)}</td>
         ${c1ShowCell}
-        <td class="num ${rateClass(r.qual_rate)}">${pct(r.qual_rate)}</td>
+        <td class="num ${gradeQual ? S.qual_rate.grade(r) : ''}" title="${gradeQual ? S.qual_rate.explain(r) : 'Not graded — segmenting by lead quality makes this true by definition.'}">${pct(r.qual_rate)}</td>
         <td class="num">${num(r.calls_booked_2nd)}</td>
         <td class="num" style="color:var(--text2);">${num(r.occurred_2nd)}</td>
-        <td class="num ${rateClass(r.show_rate_2nd)}">${pct(r.show_rate_2nd)}</td>
-        <td class="num ${closeRateClass(r.close_rate)}" title="≥${(CLOSE_GOOD*100).toFixed(0)}% good · ≥${(CLOSE_WARN*100).toFixed(0)}% fair">${pct(r.close_rate)}</td>
-        <td class="num ${qualCloseRateClass(r.close_rate_qual)}" title="Units Closed ÷ Qualified 1st Call Shows — ≥${(QUAL_CLOSE_GOOD*100).toFixed(0)}% good · ≥${(QUAL_CLOSE_WARN*100).toFixed(0)}% fair">${pct(r.close_rate_qual)}</td>
+        <td class="num ${S.show_rate_2nd.grade(r)}" title="${S.show_rate_2nd.explain(r)}">${pct(r.show_rate_2nd)}</td>
+        <td class="num ${S.close_rate.grade(r)}" title="${S.close_rate.explain(r)}">${pct(r.close_rate)}</td>
+        <td class="num ${S.close_qual.grade(r)}" title="Units Closed ÷ Qualified 1st Call Shows · ${S.close_qual.explain(r)}">${pct(r.close_rate_qual)}</td>
         ${closedCell}
-        <td class="num" style="color:var(--text2);">${cycleTxt}</td>
+        <td class="num ${S.cycle.grade(r)}" title="${S.cycle.explain(r)}">${cycleTxt}</td>
         <td class="num" style="color:var(--green);">${r.contract_value ? money(r.contract_value) : '—'}</td>
         <td class="num" style="color:var(--green);">${r.whop_projected_total ? money(r.whop_projected_total) : '—'}</td>
         <td class="num" style="color:var(--green);">${r.cash_collected ? money(r.cash_collected) : '—'}</td>
@@ -2534,9 +2664,8 @@ async function init() {
     sel.value = AppState.repId;
   } catch { /* rep dropdown stays at "All Team" only */ }
 
-  document.querySelectorAll('#granularity-toggle .toggle-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.val === AppState.granularity);
-  });
+  const gsel = document.getElementById('trend-interval');
+  if (gsel) gsel.value = AppState.granularity;
   document.querySelectorAll('#dateby-toggle .toggle-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.val === AppState.dateBy);
   });

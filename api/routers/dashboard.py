@@ -148,7 +148,7 @@ async def by_rep(
 
 @router.get("/time-series", response_model=TimeSeriesResponse)
 async def time_series(
-    granularity: str = Query("week", description="day | week | month"),
+    granularity: str = Query("week", description="day | week | month | quarter | year"),
     rep_id: str | None = Query(None),
     params: tuple = Depends(_date_params),
     db: AsyncSession = Depends(get_db),

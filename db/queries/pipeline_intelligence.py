@@ -145,6 +145,9 @@ async def get_pipeline_intelligence(
             "occurred_1st": row.bookable_1st,       # calls that have happened (show-rate denominator)
             "shows_1st": row.shows_1st,
             "show_rate_1st": safe_rate(row.shows_1st, row.bookable_1st),
+            # Exposed so the frontend can use it as the Qual Close% denominator
+            # when sizing that column's colour scale.
+            "qualified_shows": row.qualified_shows,
             "qual_rate": safe_rate(row.qualified_shows, row.shows_1st),
             "calls_booked_2nd": row.calls_booked_2nd,
             "occurred_2nd": row.bookable_2nd,

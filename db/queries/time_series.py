@@ -1,4 +1,4 @@
-"""Time-bucketed metric queries for chart granularity (day / week / month)."""
+"""Time-bucketed metric queries for chart intervals (day / week / month / quarter / year)."""
 
 from datetime import date
 
@@ -15,7 +15,15 @@ from db.queries.common import (
 )
 from sync.ghl_client import DEAL_WON_STAGE_ID
 
-_TRUNC_MAP = {"day": "day", "week": "week", "month": "month"}
+# Chart interval → Postgres date_trunc unit. All five are native date_trunc units,
+# so widening this needs no other query change.
+_TRUNC_MAP = {
+    "day": "day",
+    "week": "week",
+    "month": "month",
+    "quarter": "quarter",
+    "year": "year",
+}
 
 
 async def get_time_series(
