@@ -131,6 +131,13 @@
       padding: 5px 9px; border-radius: 6px; font-size: 12px; cursor: pointer; margin-bottom: 16px;
     }
     .chart-box canvas { max-height: 260px; max-width: 100%; }
+    /* The trends box carries two stacked panels, so it takes the full row and
+       the funnel flows underneath. */
+    .chart-box-wide { grid-column: 1 / -1; }
+    /* Fixed-height panels: these charts run maintainAspectRatio:false, so the
+       wrapper's height governs and the generic canvas max-height must not clip. */
+    .trend-panel { position: relative; }
+    .trend-panel canvas { max-height: none !important; }
 
     /* Section header with toggle */
     .section-header {
@@ -282,11 +289,11 @@
   <div id="kpi-cards"><div class="loading">Loading...</div></div>
 
   <div class="charts-row">
-    <div class="chart-box">
+    <div class="chart-box chart-box-wide">
       <div class="chart-head">
         <h3>Rate Trends — Show · Qual · Close</h3>
         <select id="trend-interval" onchange="setGranularity(this.value)"
-                title="Bucket size for the trend line. The date range above sets the window; this sets how finely it is sliced.">
+                title="Bucket size for both panels. The date range above sets the window; this sets how finely it is sliced.">
           <option value="day">Daily</option>
           <option value="week" selected>Weekly</option>
           <option value="month">Monthly</option>
@@ -294,7 +301,13 @@
           <option value="year">Yearly</option>
         </select>
       </div>
-      <canvas id="chart-show-rate"></canvas>
+      <!-- Two panels, one shared x-axis. Rates (%) and call counts are different
+           measures on wildly different scales, so they get their own y-axis in
+           their own panel — never two scales stacked on one plot, which would
+           make an arbitrary crossover look like a real relationship. Only the
+           lower panel prints x labels; both are bucketed identically. -->
+      <div class="trend-panel" style="height:220px;"><canvas id="chart-show-rate"></canvas></div>
+      <div class="trend-panel" style="height:150px;"><canvas id="chart-trend-volume"></canvas></div>
     </div>
     <div class="chart-box">
       <h3>Stage Funnel</h3>
@@ -1429,15 +1442,19 @@ function renderKPICards(d) {
     heading('Closing') + closing;
 }
 
-// Trends chart series. All three are percentages on one 0–100 axis (never a
-// second y-scale). Hues are the first three of the repo's validated categorical
-// palette (see company.html) — this triple is CVD-checked and passes contrast
-// against BOTH the dark (#1a1d27) and light (#ffffff) chart surfaces, so one set
-// serves both themes.
+// Trend panel series. Rates are lines on a 0–100% axis; call counts are bars on
+// their own count axis in a second panel. Hues are the first five of the repo's
+// validated categorical palette — the set passes CVD + contrast against both the
+// dark (#1a1d27) and light (#ffffff) chart surfaces, and lines-vs-bars gives the
+// pair with the tightest CVD separation a second channel beyond colour.
 const TREND_SERIES = [
   { key: 'show_rate',  label: 'Show Rate',  color: '#3987e5' },
   { key: 'qual_rate',  label: 'Qual Rate',  color: '#d95926' },
   { key: 'close_rate', label: 'Close Rate', color: '#199e70' },
+];
+const TREND_VOLUME_SERIES = [
+  { key: 'calls_booked', label: 'Booked Calls', color: '#c98500' },
+  { key: 'shows',        label: 'Showed Calls', color: '#d55181' },
 ];
 
 // Bucket start → axis label / tooltip heading, per interval. Read in UTC: the
@@ -1463,21 +1480,55 @@ function trendTitle(iso, gran) {
   return base;
 }
 
+/** One line summarising the whole funnel for a bucket — appended to both panels'
+ *  tooltips so hovering either one answers "off how many calls?". */
+function trendCountsLine(d) {
+  if (!d) return [];
+  return [`\nBooked ${num(d.calls_booked)} · Showed ${num(d.shows)} · Qualified ${num(d.qualified_shows)} · Closed ${num(d.units_closed)}`];
+}
+
+// Axis chrome from theme tokens, read at render time. The page's older charts
+// hard-code dark-theme greys, which paint a near-black grid on the light surface —
+// the opposite of the recessive grid a chart wants. These two panels follow the
+// active theme instead.
+function trendAxisColors() {
+  const css = getComputedStyle(document.documentElement);
+  const tok = (n, fb) => css.getPropertyValue(n).trim() || fb;
+  return { tick: tok('--text2', '#94a3b8'), grid: tok('--border', '#2e3347') };
+}
+// The panels only read as one chart if their plot areas start at the same x.
+// "100%" and "150" are different widths, so pin the y-axis gutter on both.
+const TREND_Y_WIDTH = 52;
+const trendYFit = scale => { scale.width = TREND_Y_WIDTH; };
+
+/** Draw both trend panels from one payload. Named for the pair; the rates canvas
+ *  keeps its original id so deep links and existing callers are unaffected. */
 function renderShowRateChart(data) {
   destroyChart('showRate');
-  const ctx = document.getElementById('chart-show-rate').getContext('2d');
+  destroyChart('trendVolume');
+  const gran = AppState.granularity;
+  const labels = data.map(d => trendLabel(d.period, gran));
+  const TREND_AXIS = trendAxisColors();
+  // Chart.js splits each category slot evenly between the bar series, so at low
+  // bucket counts (a Yearly view over one year) the slot is the whole panel and
+  // the two bars fly to opposite ends. Size the group to the slot instead, so a
+  // pair always reads as a pair no matter how many buckets are on screen.
+  const panelPx = document.getElementById('chart-trend-volume')?.parentElement?.clientWidth || 900;
+  const slotPx = Math.max((panelPx - TREND_Y_WIDTH) / Math.max(labels.length, 1), 1);
+  const catPct = Math.min(0.72, Math.max(0.05, 64 / slotPx));
   // Surface token, so the ring around overlapping points reads in either theme.
   const surface = getComputedStyle(document.documentElement).getPropertyValue('--surface').trim() || '#1a1d27';
-  const gran = AppState.granularity;
-  Charts.showRate = new Chart(ctx, {
+
+  // ── Panel 1: rates (0–100%) ──
+  Charts.showRate = new Chart(document.getElementById('chart-show-rate').getContext('2d'), {
     type: 'line',
     data: {
-      labels: data.map(d => trendLabel(d.period, gran)),
-      datasets: TREND_SERIES.map(s => ({
-        label: s.label,
-        data: data.map(d => d[s.key] !== null && d[s.key] !== undefined ? +(d[s.key] * 100).toFixed(1) : null),
-        borderColor: s.color,
-        backgroundColor: s.color,
+      labels,
+      datasets: TREND_SERIES.map(sr => ({
+        label: sr.label,
+        data: data.map(d => d[sr.key] !== null && d[sr.key] !== undefined ? +(d[sr.key] * 100).toFixed(1) : null),
+        borderColor: sr.color,
+        backgroundColor: sr.color,
         borderWidth: 2,
         fill: false,
         tension: 0.3,
@@ -1490,24 +1541,67 @@ function renderShowRateChart(data) {
     },
     options: {
       responsive: true,
+      maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },   // crosshair-style: one hover, all three series
       plugins: {
-        legend: { labels: { color: '#94a3b8', usePointStyle: true, pointStyle: 'line', boxWidth: 18 } },
+        legend: { labels: { color: TREND_AXIS.tick, usePointStyle: true, pointStyle: 'line', boxWidth: 18 } },
         tooltip: {
           callbacks: {
             title: items => trendTitle(data[items[0].dataIndex]?.period, gran),
             label: c => `${c.dataset.label}: ${c.parsed.y === null ? '—' : c.parsed.y + '%'}`,
+            // Raw counts behind the rates — a rate off 3 calls reads very differently to one off 90.
+            afterBody: items => trendCountsLine(data[items[0].dataIndex]),
+          },
+        },
+      },
+      scales: {
+        // x labels live on the lower panel only — repeating them here would
+        // just eat the plot height they share.
+        x: { offset: true, ticks: { display: false }, grid: { color: TREND_AXIS.grid } },
+        y: { afterFit: trendYFit, ticks: { color: TREND_AXIS.tick, callback: v => v + '%' }, grid: { color: TREND_AXIS.grid }, min: 0, max: 100 },
+      },
+    },
+  });
+
+  // ── Panel 2: call volume (counts) ──
+  Charts.trendVolume = new Chart(document.getElementById('chart-trend-volume').getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: TREND_VOLUME_SERIES.map(sr => ({
+        label: sr.label,
+        data: data.map(d => d[sr.key] ?? 0),
+        backgroundColor: sr.color,
+        borderRadius: 4,          // rounded data-end, anchored to the baseline
+        borderSkipped: false,
+        categoryPercentage: catPct, // group width vs the bucket slot (see above)
+        barPercentage: 0.88,        // gap between the two bars within a group
+        maxBarThickness: 26,
+      })),
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { labels: { color: TREND_AXIS.tick, usePointStyle: true, pointStyle: 'rect', boxWidth: 12 } },
+        tooltip: {
+          callbacks: {
+            title: items => trendTitle(data[items[0].dataIndex]?.period, gran),
+            label: c => `${c.dataset.label}: ${num(c.parsed.y)}`,
+            // Mirror of the rates panel: the percentages this volume produced.
             afterBody: items => {
-              // Raw counts behind the rates — a rate off 3 calls reads very differently to one off 90.
               const d = data[items[0].dataIndex];
-              return d ? [`\nBooked ${num(d.calls_booked)} · Shows ${num(d.shows)} · Qualified ${num(d.qualified_shows)} · Closed ${num(d.units_closed)}`] : [];
+              if (!d) return [];
+              const p = v => v === null || v === undefined ? '—' : (v * 100).toFixed(1) + '%';
+              return [`\nShow ${p(d.show_rate)} · Qual ${p(d.qual_rate)} · Close ${p(d.close_rate)}`];
             },
           },
         },
       },
       scales: {
-        x: { ticks: { color: '#94a3b8', maxRotation: 30 }, grid: { color: '#2e3347' } },
-        y: { ticks: { color: '#94a3b8', callback: v => v + '%' }, grid: { color: '#2e3347' }, min: 0, max: 100 },
+        x: { offset: true, ticks: { color: TREND_AXIS.tick, maxRotation: 30, autoSkip: true }, grid: { display: false } },
+        y: { afterFit: trendYFit, ticks: { color: TREND_AXIS.tick, precision: 0, maxTicksLimit: 4 }, grid: { color: TREND_AXIS.grid }, beginAtZero: true },
       },
     },
   });
