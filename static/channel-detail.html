@@ -89,6 +89,7 @@
     .empty, .loading { color: var(--text2); padding: 24px; text-align: center; font-size: 13px; }
     .note { background: rgba(99,102,241,0.08); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 18px; font-size: 13px; color: var(--text2); }
     .note a { color: var(--accent2); }
+    .note.warn { background: rgba(239,68,68,0.10); border-color: rgba(239,68,68,0.45); color: var(--text); }
   </style>
 </head>
 
@@ -265,18 +266,29 @@
       const costStr = hasCost ? money(roi.cost) : '—';
       let cards;
       if (ai.calls) {
-        // Retell voice funnel: Dialed → Picked Up → Booked → Converted → Conv. Rate → Cost.
+        // Retell voice funnel: Contacts → Dials → Picked Up → Reached → Talk time → Booked → Converted.
+        const noConnect = ai.dialed > 0 && ai.picked_up === 0;
         cards = `
-        ${statCard('Dialed', num(ai.dialed), `${num(ai.dialed_contacts)} contacts · ${ai.calls.minutes} min`, null,
-          'Total Retell voice calls placed in this range (from the Retell API — the only source of call volume). Includes retries, so it exceeds the number of unique contacts dialed (shown below).')}
-        ${statCard('Picked Up', num(ai.picked_up), pct(ai.pickup_rate) + ' of dials', null,
-          'Calls a human actually answered — had talk time and a non-no-answer disconnect reason. The rest rang out, hit voicemail, or failed. Rate is per dial (retries included).')}
+        ${statCard('Contacts', num(ai.dialed_contacts), 'unique people dialled', null,
+          'Distinct phone numbers Retell dialled in this range. One contact is usually retried several times, so this is well below the dial count.')}
+        ${statCard('Dials', num(ai.dialed),
+          ai.attempts_per_contact ? `${ai.attempts_per_contact} attempts per contact` : null, null,
+          'Total call attempts Retell placed in this range — every try, retries included. This is the raw call volume that should match the Call Counts figure on the Retell dashboard.')}
+        ${statCard('Picked Up', num(ai.picked_up), pct(ai.pickup_rate) + ' of dials',
+          noConnect ? 'val-bad' : null,
+          'Dials a human actually answered — had talk time and a disconnect reason that is not no-answer/busy/declined/voicemail. Rate is per dial attempt.')}
+        ${statCard('Contacts Reached', num(ai.contacts_reached), pct(ai.reach_rate) + ' of contacts',
+          noConnect ? 'val-bad' : null,
+          'Distinct people who answered at least one call — how many of the contacts dialled we actually got on the phone, ignoring retries.')}
+        ${statCard('Avg Pickup Time', ai.avg_talk_sec === null || ai.avg_talk_sec === undefined ? '—' : ai.avg_talk_sec + 's',
+          `${ai.calls.minutes} min total`, null,
+          'Average talk time on answered calls only. Unanswered dials are excluded — including them would pull this to ~0 and stop it measuring conversation quality. Total is minutes across all dials.')}
         ${statCard('Booked', num(ai.booked), null, null,
-          'Calls that produced a booked opportunity (Sales pipeline, internal contacts excluded).')}
+          'Opportunities booked from this channel in this range (Sales pipeline, internal contacts excluded). Dated by the selected date dimension, not by call date — a contact dialled today may book later.')}
         ${statCard('Converted', num(ai.won), 'won', null,
           'Booked opportunities that reached the Deal Won stage.')}
         ${statCard('Conv. Rate', pct(ai.conv_rate), 'booked ÷ contacts', rateCls(ai.conv_rate, 0.01, 0.003),
-          'Booked ÷ unique contacts dialed — top-of-funnel booking conversion (matches the ~1.3% baseline; uses unique contacts, not raw dials, since a contact is retried many times).')}
+          'Booked ÷ unique contacts dialled — top-of-funnel booking conversion (matches the ~1.3% baseline; uses unique contacts, not raw dials, since a contact is retried many times).')}
         ${statCard('Cost', costStr, hasCost ? (COST_SRC_LABEL[roi.cost_source] || 'this range') : 'set in ROI', null,
           'Channel cost for this range — auto-pulled from Retell billing, else the Xero "Retellai" expense line; a manual value in the ROI section overrides. Drives ROI and cost-per-X.')}
         ${statCard('Held', num(ai.held), 'showed up', null,
@@ -296,7 +308,18 @@
         ${statCard('Cash', money(ai.cash_collected), null, 'pos',
           "Cash collected to date on this channel's won deals (all installments, reconciled).")}`;
       }
+      // Every dial answered by nobody is a telephony failure, not a performance result —
+      // call it out rather than letting a silent 0% pickup read as a bad-leads problem.
+      const deadLine = (ai.calls && ai.dialed > 0 && ai.picked_up === 0)
+        ? `<div class="note warn" style="margin-top:12px">
+            <strong>No calls connected in this range.</strong> All ${num(ai.dialed)} dials to
+            ${num(ai.dialed_contacts)} contacts ended without talk time — typically a carrier
+            spam-block or telephony issue on the outbound number rather than a lead-quality
+            problem. Check the Retell number's status before reading anything into the rates above.
+          </div>`
+        : '';
       return `<div class="section"><h2>AI Booking Performance</h2><div class="stat-grid">${cards}</div>
+      ${deadLine}
       <div class="note" style="margin-top:12px">
         <strong>Attribution confidence:</strong> ${num(c.source_confirmed)} source-confirmed ·
         ${num(c.tag_inferred)} tag-inferred (${tagPct}%). Tag-inferred = bot-worked, booked during

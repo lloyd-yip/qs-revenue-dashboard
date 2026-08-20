@@ -6,7 +6,7 @@ the attribution-confidence split (source-confirmed vs tag-inferred), the AI data
 tiles, and the Retell voice-call reconciliation list.
 """
 
-from datetime import date
+from datetime import date, datetime, time, timedelta, timezone
 
 from sqlalchemy import and_, case, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -45,6 +45,18 @@ NOT_ANSWERED_REASONS = [
     "voicemail_reached", "voicemail", "machine_detected", "registered_call_timeout",
     "user_declined",
 ]
+
+
+def call_window(start: date, end: date):
+    """SQL filter: retell_calls whose started_at falls inside [start, end] *inclusive of end*.
+
+    started_at is a timestamptz while the API hands us plain dates, so a naive
+    `started_at <= end` silently drops every call made on the last selected day
+    (end resolves to midnight). Compare against a half-open UTC interval instead.
+    """
+    lo = datetime.combine(start, time.min, tzinfo=timezone.utc)
+    hi = datetime.combine(end + timedelta(days=1), time.min, tzinfo=timezone.utc)
+    return and_(RetellCall.started_at >= lo, RetellCall.started_at < hi)
 
 
 def picked_up_expr():
@@ -93,9 +105,7 @@ async def get_auto_channel_cost(
     """
     if channel == "Retell (VERA)":
         cents = (await session.execute(
-            select(func.coalesce(func.sum(RetellCall.cost_cents), 0)).where(
-                and_(RetellCall.started_at >= start, RetellCall.started_at <= end)
-            )
+            select(func.coalesce(func.sum(RetellCall.cost_cents), 0)).where(call_window(start, end))
         )).scalar() or 0
         if cents and cents > 0:
             return round(cents / 100.0, 2), "retell"
@@ -157,21 +167,35 @@ async def get_ai_channel_stats(
     }
 
     if channel == "Retell (VERA)":
+        # Retell call volume is dated by when the call was placed (started_at), independent
+        # of the opportunity date_by dimension above. MUST be windowed — an unfiltered
+        # aggregate here reports all-time dials against a range-scoped booked count.
+        answered = picked_up_expr()
         cr = (await session.execute(
             select(
                 func.count(RetellCall.id).label("n"),
                 func.coalesce(func.sum(RetellCall.duration_sec), 0).label("secs"),
                 func.count(case((RetellCall.ghl_contact_id.isnot(None), 1))).label("matched"),
-                func.count(case((picked_up_expr(), 1))).label("picked_up"),
+                func.count(case((answered, 1))).label("picked_up"),
                 func.count(func.distinct(RetellCall.to_number)).label("contacts"),
-            )
+                func.count(func.distinct(case((answered, RetellCall.to_number)))).label("reached"),
+                func.coalesce(func.sum(case((answered, RetellCall.duration_sec))), 0).label("talk_secs"),
+            ).where(call_window(start, end))
         )).one()
         dialed = cr.n
         contacts = cr.contacts or 0
+        picked_up = cr.picked_up or 0
+        reached = cr.reached or 0
         stats["dialed"] = dialed
         stats["dialed_contacts"] = contacts
-        stats["picked_up"] = cr.picked_up
-        stats["pickup_rate"] = round(cr.picked_up / dialed, 4) if dialed else None
+        stats["attempts_per_contact"] = round(dialed / contacts, 1) if contacts else None
+        stats["picked_up"] = picked_up
+        stats["pickup_rate"] = round(picked_up / dialed, 4) if dialed else None
+        stats["contacts_reached"] = reached
+        stats["reach_rate"] = round(reached / contacts, 4) if contacts else None
+        # Avg talk time on answered calls only — averaging over unanswered dials would
+        # drag it to ~0 and stop being a conversation-quality signal.
+        stats["avg_talk_sec"] = round(cr.talk_secs / picked_up, 1) if picked_up else None
         # Booking conversion per unique contact dialed (matches the ~1.3% baseline; raw dials
         # include retries so booked ÷ contacts is the meaningful top-of-funnel rate).
         stats["conv_rate"] = round(booked / contacts, 4) if contacts else None
@@ -179,7 +203,7 @@ async def get_ai_channel_stats(
             "count": dialed,
             "minutes": round(cr.secs / 60.0, 1),
             "matched": cr.matched,
-            "picked_up": cr.picked_up,
+            "picked_up": picked_up,
         }
     return stats
 
@@ -207,7 +231,7 @@ async def get_retell_calls(
 
     q = (
         select(RetellCall)
-        .where(and_(RetellCall.started_at >= start, RetellCall.started_at <= end))
+        .where(call_window(start, end))
         .order_by(RetellCall.started_at.desc())
         .limit(limit)
     )
@@ -256,7 +280,7 @@ async def get_retell_agent_breakdown(
             func.count(func.distinct(RetellCall.to_number)).label("contacts"),
             func.count(case((RetellCall.ghl_contact_id.isnot(None), 1))).label("matched"),
         )
-        .where(and_(RetellCall.started_at >= start, RetellCall.started_at <= end))
+        .where(call_window(start, end))
         .group_by(RetellCall.agent_id)
         .order_by(func.count(RetellCall.id).desc())
     )).all()
