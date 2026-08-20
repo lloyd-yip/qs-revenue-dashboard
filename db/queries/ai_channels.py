@@ -95,15 +95,112 @@ _CHANNEL_COST_VENDORS = {
 }
 
 
+def _months_in_range(start: date, end: date) -> list[tuple[date, date]]:
+    """Every calendar month the range touches, as (first_day, last_day) pairs."""
+    out, cur = [], start.replace(day=1)
+    while cur <= end:
+        last = (cur + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+        out.append((cur, last))
+        cur = last + timedelta(days=1)
+    return out
+
+
+async def _call_usage(session: AsyncSession, lo: date, hi: date) -> tuple[int, int]:
+    """(dials, talk_seconds) for calls placed in [lo, hi]."""
+    r = (await session.execute(
+        select(
+            func.count(RetellCall.id),
+            func.coalesce(func.sum(RetellCall.duration_sec), 0),
+        ).where(call_window(lo, hi))
+    )).one()
+    return r[0] or 0, r[1] or 0
+
+
+async def get_retell_cost_for_range(session: AsyncSession, start: date, end: date) -> dict:
+    """Allocate Retell's real monthly spend (Xero invoices) across [start, end].
+
+    Retell bills by usage, not as a flat subscription, so splitting a month's invoice by
+    calendar days misprices any range where volume was uneven — a 9-day window can hold
+    half the month's dials. Each overlapping month is therefore allocated by the range's
+    share of that month's talk minutes, falling back to dial count when nothing connected
+    (August: every call declined, so minutes are 0 but the dials still cost money), and to
+    days only when the month has no calls at all.
+
+    Returns the allocated cost plus a per-month audit trail and the list of months in range
+    that have calls but no reconciled invoice yet — those are excluded from the total rather
+    than guessed at, so the figure is never quietly understated without saying so.
+    """
+    vendor_match = or_(*[
+        ExpenseLineItem.vendor.ilike(f"%{k}%") for k in _CHANNEL_COST_VENDORS["Retell (VERA)"]
+    ])
+    invoices = (await session.execute(
+        select(
+            ExpenseLineItem.period_start, ExpenseLineItem.period_end, ExpenseLineItem.amount
+        ).where(and_(
+            vendor_match,
+            ExpenseLineItem.period_start <= end,
+            ExpenseLineItem.period_end >= start,
+        ))
+    )).all()
+
+    total = 0.0
+    months: list[dict] = []
+    covered: set[tuple[int, int]] = set()
+    for ps, pe, amount in invoices:
+        amount = float(amount or 0)
+        m_dials, m_secs = await _call_usage(session, ps, pe)
+        olo, ohi = max(ps, start), min(pe, end)
+        r_dials, r_secs = await _call_usage(session, olo, ohi)
+        if m_secs:
+            share, basis = r_secs / m_secs, "minutes"
+        elif m_dials:
+            share, basis = r_dials / m_dials, "dials"
+        else:
+            share, basis = ((ohi - olo).days + 1) / ((pe - ps).days + 1), "days"
+        allocated = amount * share
+        total += allocated
+        covered.add((ps.year, ps.month))
+        months.append({
+            "month": ps.strftime("%Y-%m"),
+            "invoiced": round(amount, 2),
+            "allocated": round(allocated, 2),
+            "share": round(share, 4),
+            "basis": basis,
+        })
+
+    # Months the range covers that have calls but no invoice reconciled yet.
+    unreconciled = []
+    for ps, pe in _months_in_range(start, end):
+        if (ps.year, ps.month) in covered:
+            continue
+        dials, _ = await _call_usage(session, max(ps, start), min(pe, end))
+        if dials:
+            unreconciled.append({"month": ps.strftime("%Y-%m"), "dials": dials})
+
+    months.sort(key=lambda m: m["month"])
+    return {
+        "cost": round(total, 2) if months else None,
+        "months": months,
+        "unreconciled": unreconciled,
+    }
+
+
 async def get_auto_channel_cost(
     session: AsyncSession, channel: str, start: date, end: date
 ) -> tuple[float | None, str | None]:
     """Auto-resolve a channel's cost for the range. Returns (amount, source).
 
-    Priority: Retell's own per-call cost (Retell channel only) → Xero expense line
-    matched by vendor keyword (e.g. 'Retellai'), prorated to the range. None if neither.
+    Priority for Retell: the reconciled Xero invoices, usage-allocated across the range →
+    Retell's own per-call cost → a flat day-prorated Xero line. The invoices come first
+    because they are what was actually paid; per-call cost_cents is only populated on a
+    minority of calls (Retell started returning it mid-July), so preferring it reported
+    $23.75 against a range whose real invoiced spend was $191.58.
     """
     if channel == "Retell (VERA)":
+        allocated = await get_retell_cost_for_range(session, start, end)
+        if allocated["cost"] is not None:
+            return allocated["cost"], "xero"
+
         cents = (await session.execute(
             select(func.coalesce(func.sum(RetellCall.cost_cents), 0)).where(call_window(start, end))
         )).scalar() or 0

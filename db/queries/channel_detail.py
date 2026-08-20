@@ -106,7 +106,7 @@ async def get_channel_detail(
         "avg_deal_size": round(projected / closed, 2) if closed else None,
     }
 
-    # ROI cost: manual override wins; otherwise auto-pull (Retell billing → Xero "Retellai").
+    # ROI cost: manual override wins; otherwise auto-pull (Xero invoices → Retell billing).
     manual = await get_channel_cost(session, channel, start, end)
     cost = manual
     cost_source = "manual" if manual is not None else None
@@ -115,10 +115,20 @@ async def get_channel_detail(
         auto, src = await get_auto_channel_cost(session, channel, start, end)
         if auto is not None:
             cost, cost_source = auto, src
+
+    # Retell: attach the per-month audit trail behind the number (which invoices were used,
+    # how each was split into the range) plus any months still awaiting reconciliation, so
+    # a partial-coverage cost is never presented as if it covered the whole range.
+    cost_detail = None
+    if channel == "Retell (VERA)":
+        from db.queries.ai_channels import get_retell_cost_for_range
+        cost_detail = await get_retell_cost_for_range(session, start, end)
+
     roi = {
         "cost": cost,
         "manual_set": manual is not None,
         "cost_source": cost_source,  # manual | retell | xero | None
+        "cost_detail": cost_detail,
         "is_set": cost is not None,
         "roi": round(cash / cost, 2) if cost else None,
         "contract_roi": round(projected / cost, 2) if cost else None,

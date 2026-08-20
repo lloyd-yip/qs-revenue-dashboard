@@ -209,7 +209,7 @@
       return `<div class="lq-bar">${bar}</div><div class="lq-legend">${legend}</div>`;
     }
 
-    const COST_SRC_LABEL = { retell: 'Retell billing', xero: 'Xero expense', manual: 'manual entry' };
+    const COST_SRC_LABEL = { retell: 'Retell per-call billing', xero: 'Xero invoices', manual: 'manual entry' };
     function renderRoi(roi) {
       const manualSet = roi.manual_set;
       const costVal = manualSet ? Math.round(roi.cost) : '';
@@ -323,6 +323,35 @@
       }
     }
 
+    // Explains where the per-stage costs came from, and — critically — flags any month in
+    // the range whose Retell invoice has not been reconciled yet. Without that flag a
+    // partially-covered range would silently understate every cost-per-X figure.
+    function renderCostNote(roi) {
+      const d = roi && roi.cost_detail;
+      if (!d) return '';
+      const unrec = d.unreconciled || [];
+      const parts = (d.months || []).map(m =>
+        `${m.month}: ${money2(m.invoiced)} invoiced${m.share < 0.999 ? ` × ${pct(m.share)} of the month's ${m.basis}` : ''} → <b>${money2(m.allocated)}</b>`
+      );
+      if (roi.manual_set) {
+        return `<div class="note" style="margin-top:12px">
+          <strong>Costs use your manual override</strong> of ${money2(roi.cost)} for this range.
+          Clear it in ROI &amp; Cost Efficiency to fall back to the Xero invoices.</div>`;
+      }
+      if (!parts.length && !unrec.length) return '';
+      const body = parts.length
+        ? `<strong>Cost basis:</strong> actual Retell invoices from Xero — ${parts.join(' · ')}.
+           Partial ranges are split by share of call minutes rather than by calendar days,
+           because Retell bills on usage and daily volume is uneven.`
+        : '<strong>Cost basis:</strong> no reconciled Retell invoice covers this range yet.';
+      const warn = unrec.length
+        ? ` <span class="val-bad">${unrec.map(u => u.month).join(', ')} not reconciled yet
+           (${unrec.map(u => num(u.dials)).join(', ')} dials) — excluded from the cost above,
+           so the per-stage costs understate this range until Xero catches up.</span>`
+        : '';
+      return `<div class="note ${unrec.length ? 'warn' : ''}" style="margin-top:12px">${body}${warn}</div>`;
+    }
+
     function renderAiSection(ai, roi) {
       if (!ai) return '';
       const c = ai.confidence || {};
@@ -400,8 +429,10 @@
         : '';
       const activityHead = funnelStrip
         ? '<h2 style="margin-top:22px">Call Activity</h2>' : '';
+      const costNote = funnelStrip ? renderCostNote(roi) : '';
       return `<div class="section"><h2>AI Booking Performance</h2>
       ${funnelStrip}
+      ${costNote}
       ${deadLine}
       ${activityHead}${renderSyncRow(ai)}<div class="stat-grid">${cards}</div>
       <div class="note" style="margin-top:12px">
