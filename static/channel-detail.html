@@ -341,7 +341,7 @@
       // Present whenever Retell metered the window — a $0 there is a real result
       // (declined calls are not billed), not missing data.
       if (d.live) parts.push(
-        `live ${d.live.from} → ${d.live.to}: <b>${money2(d.live.amount)}</b>` +
+        `live ${(d.live.spans || []).join(', ')}: <b>${money2(d.live.amount)}</b>` +
         (d.live.calibration ? ` (${money2(d.live.raw)} metered on ${num(d.live.calls)} calls × ${d.live.calibration} for tax/FX)` : '')
       );
       if (!parts.length) {

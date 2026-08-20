@@ -181,7 +181,7 @@ async def get_retell_cost_for_range(session: AsyncSession, start: date, end: dat
 
     total = 0.0
     reconciled: list[dict] = []
-    covered_days: set[date] = set()
+    covered: list[tuple[date, date]] = []
     for ps, amount in invoices:
         lo, hi = _billing_window(ps)
         if hi < start or lo > end:
@@ -203,35 +203,44 @@ async def get_retell_cost_for_range(session: AsyncSession, start: date, end: dat
             "allocated": round(allocated, 2),
             "share": round(share, 4),
         })
-        d = olo
-        while d <= ohi:
-            covered_days.add(d)
-            d += timedelta(days=1)
+        covered.append((olo, ohi))
 
-    # Anything in range that no invoice covers: price it live from Retell's own metering.
+    # Whatever no invoice covers gets priced live. The uncovered spans are derived in
+    # Python from the (disjoint, month-sized) invoice windows — walking the range a day at
+    # a time would cost two round-trips per day, which is minutes on a 3-month range.
+    covered.sort()
+    gaps: list[tuple[date, date]] = []
+    cursor = start
+    for clo, chi in covered:
+        if clo > cursor:
+            gaps.append((cursor, clo - timedelta(days=1)))
+        cursor = max(cursor, chi + timedelta(days=1))
+    if cursor <= end:
+        gaps.append((cursor, end))
+
     live_raw = 0.0
     live_priced = 0  # calls carrying a cost — distinguishes a real $0 from missing data
-    live_from = live_to = None
-    d = start
-    while d <= end:
-        if d not in covered_days:
-            live_raw += await _call_spend(session, d, d)
-            live_priced += await _priced_calls(session, d, d)
-            live_from = live_from or d
-            live_to = d
-        d += timedelta(days=1)
+    spans: list[str] = []
+    for glo, ghi in gaps:
+        gap_priced = await _priced_calls(session, glo, ghi)
+        if not gap_priced:
+            continue  # a stretch with no calls at all is not a live period, just empty
+        live_raw += await _call_spend(session, glo, ghi)
+        live_priced += gap_priced
+        spans.append(f"{glo.isoformat()}→{ghi.isoformat()}")
 
     live = None
-    if live_from is not None and live_priced:
+    if live_priced:
         amount = live_raw * (calibration or 1.0)
         total += amount
+        # Reported as discrete spans: an uncovered head and tail must not be printed as one
+        # continuous period with the reconciled months silently in between.
         live = {
             "amount": round(amount, 2),
             "raw": round(live_raw, 2),
             "calls": live_priced,
             "calibration": round(calibration, 4) if calibration else None,
-            "from": live_from.isoformat(),
-            "to": live_to.isoformat(),
+            "spans": spans,
         }
 
     # A metered $0 is a real answer (August: every call declined, so nothing billed) and must
