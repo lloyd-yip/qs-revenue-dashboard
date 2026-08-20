@@ -3,7 +3,7 @@
 import asyncio
 import logging
 
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.schemas.responses import SyncStatusResponse, SyncTriggerResponse
@@ -121,10 +121,20 @@ async def reclassify_ai():
 
 
 @router.post("/retell")
-async def trigger_retell_sync(background_tasks: BackgroundTasks):
-    """Pull Retell voice calls, match to GHL contacts by phone, upsert. Background."""
-    background_tasks.add_task(_run_retell_sync_background)
-    return {"message": "Retell call sync triggered. Check /api/dashboard/retell/calls after it runs."}
+async def trigger_retell_sync(
+    background_tasks: BackgroundTasks,
+    full: bool = Query(False, description="Re-pull the entire history instead of just new calls"),
+):
+    """Pull Retell voice calls, match to GHL contacts by phone, upsert. Background.
+
+    Defaults to incremental (calls since the latest stored one) so the dashboard's
+    "Sync now" button returns in seconds; full=true re-pulls everything.
+    """
+    background_tasks.add_task(_run_retell_sync_background, full)
+    return {
+        "message": "Retell call sync triggered — refresh in a few seconds.",
+        "mode": "full" if full else "incremental",
+    }
 
 
 @router.post("/retell/match-contacts")
@@ -281,10 +291,10 @@ async def _run_contact_backfill_background(only_missing: bool) -> None:
         logger.error("Contact-tag backfill failed: %s", exc)
 
 
-async def _run_retell_sync_background() -> None:
+async def _run_retell_sync_background(full: bool = False) -> None:
     from sync.retell_sync import run_retell_sync
     try:
-        summary = await run_retell_sync()
+        summary = await run_retell_sync(incremental=not full)
         logger.info("Retell sync complete: %s", summary)
     except Exception as exc:
         logger.error("Retell sync failed: %s", exc)

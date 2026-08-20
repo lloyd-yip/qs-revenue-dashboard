@@ -18,6 +18,7 @@ from sqlalchemy import select, text
 
 from api.routers import metrics, sync as sync_router
 from api.routers import connectors as connectors_router
+from api.routers import ai_channels as ai_channels_router
 from api.routers import dashboard as dashboard_router
 from api.routers import webhooks as webhooks_router
 from api.routers import rep_settings as rep_settings_router
@@ -237,6 +238,10 @@ app.include_router(sync_router.router, dependencies=[Depends(verify_token)])
 
 # Dashboard router — no auth, browser-facing read-only analytics
 app.include_router(dashboard_router.router)
+
+# AI-channel (Retell / Appointwise) endpoints — extracted from dashboard.py.
+# Browser-facing/no-auth, same convention as the dashboard router above.
+app.include_router(ai_channels_router.router)
 
 # Webhooks router — NO bearer auth (external callers); each endpoint verifies its own secret
 app.include_router(webhooks_router.router)

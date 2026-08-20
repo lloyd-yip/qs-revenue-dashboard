@@ -199,12 +199,26 @@ async def get_ai_channel_stats(
         # Booking conversion per unique contact dialed (matches the ~1.3% baseline; raw dials
         # include retries so booked ÷ contacts is the meaningful top-of-funnel rate).
         stats["conv_rate"] = round(booked / contacts, 4) if contacts else None
+        # Step-to-step conversion for the funnel strip: each stage against the one before it,
+        # which is what localises a leak (a low overall rate can't tell you *where* it leaks).
+        stats["book_rate_of_reached"] = round(booked / reached, 4) if reached else None
+        stats["win_rate_of_booked"] = round(row.won / booked, 4) if booked else None
         stats["calls"] = {
             "count": dialed,
             "minutes": round(cr.secs / 60.0, 1),
             "matched": cr.matched,
             "picked_up": picked_up,
         }
+        # Data freshness — deliberately NOT windowed: these describe the feed itself, so the
+        # page can say how current the numbers are regardless of which range is selected.
+        fresh = (await session.execute(
+            select(
+                func.max(RetellCall.updated_at).label("synced"),
+                func.max(RetellCall.started_at).label("latest_call"),
+            )
+        )).one()
+        stats["last_synced_at"] = fresh.synced.isoformat() if fresh.synced else None
+        stats["latest_call_at"] = fresh.latest_call.isoformat() if fresh.latest_call else None
     return stats
 
 

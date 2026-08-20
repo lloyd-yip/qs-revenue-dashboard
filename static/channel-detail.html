@@ -59,6 +59,25 @@
     .stat .sub { font-size: 11px; color: var(--text2); margin-top: 3px; }
     .val-good { color: var(--green); } .val-warn { color: var(--yellow); } .val-bad { color: var(--red); }
 
+    /* Funnel strip — one card per stage, each with its own rate + unit cost. The bar
+       encodes the stage's share of Contacts, so the drop-off is visible at a glance. */
+    .funnel-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+    .fstage { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; display: flex; flex-direction: column; }
+    .fstage .fs-head { display: flex; align-items: center; gap: 7px; }
+    .fstage .fs-step { width: 17px; height: 17px; border-radius: 50%; background: var(--surface2); border: 1px solid var(--border); color: var(--text2); font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex: none; }
+    .fstage .fs-label { font-size: 11px; color: var(--text2); font-weight: 600; text-transform: uppercase; letter-spacing: .3px; }
+    .fstage .fs-value { font-size: 26px; font-weight: 700; margin-top: 8px; letter-spacing: -0.5px; line-height: 1.1; }
+    .fstage .fs-rate { font-size: 12px; font-weight: 600; margin-top: 4px; }
+    .fstage .fs-rate .fs-of { color: var(--text2); font-weight: 500; }
+    .fstage .fs-bar { height: 4px; border-radius: 3px; background: var(--surface2); margin-top: 10px; overflow: hidden; }
+    .fstage .fs-fill { height: 100%; border-radius: 3px; background: var(--accent); min-width: 2px; }
+    .fstage .fs-cost { margin-top: auto; padding-top: 10px; font-size: 12px; color: var(--text2); border-top: 1px solid var(--border); margin-top: 12px; }
+    .fstage .fs-cost b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+    /* Sync-freshness strip */
+    .sync-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; font-size: 12px; color: var(--text2); }
+    .sync-row .btn { padding: 6px 13px; font-size: 12px; }
+
     /* ROI card */
     .roi-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; }
     .roi-input-row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 16px; }
@@ -165,6 +184,7 @@
     }
 
     const esc = s => String(s).replace(/"/g, '&quot;');
+    let CURRENT_AI = null;  // latest AI payload — lets the sync poller detect a fresh pull
     function statCard(label, value, sub, cls, tip) {
       const t = tip ? ` data-tip="${esc(tip)}"` : '';
       return `<div class="stat"${t}><div class="label">${label}</div><div class="value ${cls || ''}">${value}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
@@ -257,6 +277,52 @@
         <tbody>${rows}</tbody></table></div>`;
     }
 
+    // Relative "3h ago" style stamp for sync freshness.
+    function ago(iso) {
+      if (!iso) return 'never';
+      const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+      if (mins < 1) return 'just now';
+      if (mins < 60) return mins + 'm ago';
+      const h = Math.round(mins / 60);
+      if (h < 48) return h + 'h ago';
+      return Math.round(h / 24) + 'd ago';
+    }
+
+    function renderSyncRow(ai) {
+      if (!ai.calls) return '';
+      return `<div class="sync-row">
+        <span>Call data synced <strong>${ago(ai.last_synced_at)}</strong> ·
+        latest call <strong>${ago(ai.latest_call_at)}</strong> ·
+        auto-syncs every 6h (01:40 / 07:40 / 13:40 / 19:40 UTC)</span>
+        <button class="btn ghost" id="retell-sync-btn" onclick="syncRetell()">Sync now</button>
+        <span id="retell-sync-msg"></span>
+      </div>`;
+    }
+
+    async function syncRetell() {
+      const btn = document.getElementById('retell-sync-btn');
+      const msg = document.getElementById('retell-sync-msg');
+      btn.disabled = true; btn.textContent = 'Syncing…'; msg.textContent = '';
+      try {
+        const res = await fetch('/api/dashboard/retell/refresh', { method: 'POST' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        // The pull runs in a background task, so poll the stats until the sync stamp moves
+        // rather than reloading into the same numbers.
+        const before = CURRENT_AI && CURRENT_AI.last_synced_at;
+        msg.textContent = 'Pulling new calls…';
+        for (let i = 0; i < 20; i++) {
+          await new Promise(r => setTimeout(r, 3000));
+          const j = await (await fetch(`/api/dashboard/channel-detail/ai?${qs()}`)).json();
+          if (j.data && j.data.last_synced_at !== before) { location.reload(); return; }
+        }
+        msg.textContent = 'Still running — refresh in a moment.';
+      } catch (e) {
+        msg.textContent = 'Sync failed: ' + e.message;
+      } finally {
+        btn.disabled = false; btn.textContent = 'Sync now';
+      }
+    }
+
     function renderAiSection(ai, roi) {
       if (!ai) return '';
       const c = ai.confidence || {};
@@ -264,33 +330,47 @@
       const tagPct = total ? Math.round((c.tag_inferred / total) * 100) : 0;
       const hasCost = roi && roi.is_set;
       const costStr = hasCost ? money(roi.cost) : '—';
-      let cards;
+      let cards, funnelStrip = '';
       if (ai.calls) {
-        // Retell voice funnel: Contacts → Dials → Picked Up → Reached → Talk time → Booked → Converted.
         const noConnect = ai.dialed > 0 && ai.picked_up === 0;
+        // Cost per funnel stage: total channel cost split across whatever that stage produced.
+        const per = n => (hasCost && n) ? money2(roi.cost / n) : '—';
+        const stage = (step, label, value, rate, ofWhat, costLabel, costN, tip, bad) => {
+          const w = ai.dialed_contacts ? Math.max((value / ai.dialed_contacts) * 100, value ? 1.5 : 0) : 0;
+          return `<div class="fstage" data-tip="${esc(tip)}">
+            <div class="fs-head"><span class="fs-step">${step}</span><span class="fs-label">${label}</span></div>
+            <div class="fs-value ${bad ? 'val-bad' : ''}">${num(value)}</div>
+            <div class="fs-rate ${bad ? 'val-bad' : ''}">${ofWhat === null ? '<span class="fs-of">top of funnel</span>' : `${pct(rate)} <span class="fs-of">of ${ofWhat}</span>`}</div>
+            <div class="fs-bar"><div class="fs-fill" style="width:${w}%"></div></div>
+            <div class="fs-cost"><b>${per(costN)}</b> ${costLabel}</div>
+          </div>`;
+        };
+        // Contacts → Contacts Reached → Booked → Converted. Each step's rate is conversion
+        // from the step before it, which is what shows where the funnel actually leaks.
+        cards = null;
+        funnelStrip = `<div class="funnel-strip">
+          ${stage(1, 'Contacts', ai.dialed_contacts, null, null, 'per contact', ai.dialed_contacts,
+            'Unique people Retell dialled in this range — distinct phone numbers, retries collapsed. The top of the funnel.')}
+          ${stage(2, 'Contacts Reached', ai.contacts_reached, ai.reach_rate, 'contacts', 'per contact reached', ai.contacts_reached,
+            'Distinct people who actually answered and had talk time. Rate is reached ÷ contacts — the share of the list we got on the phone.', noConnect)}
+          ${stage(3, 'Booked', ai.booked, ai.book_rate_of_reached, 'reached', 'per booking', ai.booked,
+            'Opportunities booked from this channel (Sales pipeline, internal contacts excluded). Rate is booked ÷ contacts reached — how well answered calls turn into a meeting. Note bookings are dated by the selected date dimension, so a contact dialled today may book in a later range.')}
+          ${stage(4, 'Converted', ai.won, ai.win_rate_of_booked, 'booked', 'per customer', ai.won,
+            'Booked opportunities that reached the Deal Won stage. Rate is won ÷ booked — the close rate on this channel. Cost per customer is this channel\'s acquisition cost.')}
+        </div>`;
+        // Call activity sits below the funnel: it explains the Contacts → Reached step
+        // (how hard we worked the list) without competing with the funnel itself.
         cards = `
-        ${statCard('Contacts', num(ai.dialed_contacts), 'unique people dialled', null,
-          'Distinct phone numbers Retell dialled in this range. One contact is usually retried several times, so this is well below the dial count.')}
         ${statCard('Dials', num(ai.dialed),
           ai.attempts_per_contact ? `${ai.attempts_per_contact} attempts per contact` : null, null,
-          'Total call attempts Retell placed in this range — every try, retries included. This is the raw call volume that should match the Call Counts figure on the Retell dashboard.')}
-        ${statCard('Picked Up', num(ai.picked_up), pct(ai.pickup_rate) + ' of dials',
-          noConnect ? 'val-bad' : null,
-          'Dials a human actually answered — had talk time and a disconnect reason that is not no-answer/busy/declined/voicemail. Rate is per dial attempt.')}
-        ${statCard('Contacts Reached', num(ai.contacts_reached), pct(ai.reach_rate) + ' of contacts',
-          noConnect ? 'val-bad' : null,
-          'Distinct people who answered at least one call — how many of the contacts dialled we actually got on the phone, ignoring retries.')}
+          'Total call attempts placed in this range — every try, retries included. This is the raw call volume that should match Call Counts on the Retell dashboard.')}
+        ${statCard('Picked Up', num(ai.picked_up), pct(ai.pickup_rate) + ' of dials', noConnect ? 'val-bad' : null,
+          'Dial attempts a human answered. Differs from Contacts Reached: that counts distinct people, this counts calls — one person answering twice is 2 pickups but 1 contact reached.')}
         ${statCard('Avg Pickup Time', ai.avg_talk_sec === null || ai.avg_talk_sec === undefined ? '—' : ai.avg_talk_sec + 's',
           `${ai.calls.minutes} min total`, null,
-          'Average talk time on answered calls only. Unanswered dials are excluded — including them would pull this to ~0 and stop it measuring conversation quality. Total is minutes across all dials.')}
-        ${statCard('Booked', num(ai.booked), null, null,
-          'Opportunities booked from this channel in this range (Sales pipeline, internal contacts excluded). Dated by the selected date dimension, not by call date — a contact dialled today may book later.')}
-        ${statCard('Converted', num(ai.won), 'won', null,
-          'Booked opportunities that reached the Deal Won stage.')}
-        ${statCard('Conv. Rate', pct(ai.conv_rate), 'booked ÷ contacts', rateCls(ai.conv_rate, 0.01, 0.003),
-          'Booked ÷ unique contacts dialled — top-of-funnel booking conversion (matches the ~1.3% baseline; uses unique contacts, not raw dials, since a contact is retried many times).')}
-        ${statCard('Cost', costStr, hasCost ? (COST_SRC_LABEL[roi.cost_source] || 'this range') : 'set in ROI', null,
-          'Channel cost for this range — auto-pulled from Retell billing, else the Xero "Retellai" expense line; a manual value in the ROI section overrides. Drives ROI and cost-per-X.')}
+          'Average talk time on answered calls only. Unanswered dials are excluded — including them would pull this to ~0 and stop it measuring conversation quality.')}
+        ${statCard('Total Cost', costStr, hasCost ? (COST_SRC_LABEL[roi.cost_source] || 'this range') : 'set in ROI', null,
+          'Channel cost for this range — auto-pulled from Retell billing, else the Xero "Retellai" expense line; a manual value in the ROI section overrides. This is what the per-stage costs above divide up.')}
         ${statCard('Held', num(ai.held), 'showed up', null,
           "Booked calls the prospect attended — held-call stages or Call-1 status 'Showed'.")}
         ${statCard('Held Rate', pct(ai.held_rate), null, rateCls(ai.held_rate, 0.5, 0.25), 'Held ÷ Booked.')}
@@ -318,8 +398,12 @@
             problem. Check the Retell number's status before reading anything into the rates above.
           </div>`
         : '';
-      return `<div class="section"><h2>AI Booking Performance</h2><div class="stat-grid">${cards}</div>
+      const activityHead = funnelStrip
+        ? '<h2 style="margin-top:22px">Call Activity</h2>' : '';
+      return `<div class="section"><h2>AI Booking Performance</h2>
+      ${funnelStrip}
       ${deadLine}
+      ${activityHead}${renderSyncRow(ai)}<div class="stat-grid">${cards}</div>
       <div class="note" style="margin-top:12px">
         <strong>Attribution confidence:</strong> ${num(c.source_confirmed)} source-confirmed ·
         ${num(c.tag_inferred)} tag-inferred (${tagPct}%). Tag-inferred = bot-worked, booked during
@@ -562,6 +646,7 @@
       const quality = `<div class="section"><h2>Lead Quality (1st-call shows)</h2>${renderQualityBar(h)}</div>`;
       const reps = `<div class="section"><h2>Rep Breakdown</h2>${renderRepTable(detail.reps)}</div>`;
       const closesHtml = `<div class="section"><h2>Closed Deals</h2>${renderCloses(closes)}</div>`;
+      CURRENT_AI = ai;
       const aiHtml = renderAiSection(ai, detail.roi);
       const dqHtml = isAI ? renderDqTiles(dqTiles) : '';
       const agentHtml = detail.channel === RETELL_CHANNEL ? renderAgentTable(agents) : '';

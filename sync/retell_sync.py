@@ -194,7 +194,14 @@ async def _upsert_calls(session, rows: list[dict]) -> None:
             .values(**row)
             .on_conflict_do_update(
                 index_elements=["retell_call_id"],
-                set_={k: v for k, v in row.items() if k != "retell_call_id"},
+                # updated_at must be set explicitly: the model's onupdate=func.now() is an
+                # ORM-level hook and does not fire for a Core on_conflict_do_update, so
+                # without this the column would freeze at first-insert time and stop being
+                # a usable "last synced" signal.
+                set_={
+                    **{k: v for k, v in row.items() if k != "retell_call_id"},
+                    "updated_at": func.now(),
+                },
             )
         )
         await session.execute(stmt)

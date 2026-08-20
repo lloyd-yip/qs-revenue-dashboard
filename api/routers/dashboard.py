@@ -64,15 +64,6 @@ from db.queries.lead_source import (
 )
 from db.queries.channel_detail import get_channel_detail
 from db.queries.channel_cost import delete_channel_cost, get_channel_cost, set_channel_cost
-from db.queries.ai_channels import (
-    get_ai_channel_stats,
-    get_ai_data_quality,
-    get_appointwise_agent_breakdown,
-    get_appointwise_sms_stats,
-    get_retell_agent_breakdown,
-    get_retell_calls,
-    get_vera_chat_contacts,
-)
 from db.queries.data_quality import get_data_quality_issues
 from db.queries.debug_drilldown import get_drilldown_opps
 from db.queries.funnel_economics import get_auto_funnel_economics, get_period_inputs, upsert_marketing_spend, upsert_rep_compensations
@@ -92,28 +83,15 @@ from db.queries.wise_transfers import get_wise_transfers_for_deal, get_all_wise_
 from db.queries.slwa import get_slwa_closes, get_slwa_weekly_dashboard, upsert_slwa_weekly_input
 from db.queries.sync_status import get_recent_sync_runs
 from db.queries.time_series import get_time_series
+from api.utils.dashboard_params import date_params, meta
 from db.session import get_db
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
 
-def _meta(start: date, end: date, date_by: str) -> MetaMixin:
-    return MetaMixin(
-        date_start=start,
-        date_end=end,
-        date_by=date_by,
-        generated_at=datetime.now(timezone.utc),
-    )
-
-
-def _date_params(
-    start: date = Query(..., description="Start date (YYYY-MM-DD)"),
-    end: date = Query(..., description="End date (YYYY-MM-DD)"),
-    date_by: str = Query("appointment", description="Date dimension: 'appointment' or 'created'"),
-) -> tuple[date, date, str]:
-    if date_by not in ("appointment", "booked", "created"):
-        date_by = "appointment"
-    return start, end, date_by
+# Shared with the sibling ai_channels router — aliased so existing call sites are unchanged.
+_meta = meta
+_date_params = date_params
 
 
 @router.get("/reps", response_model=RepsResponse)
@@ -257,113 +235,6 @@ async def save_channel_detail_cost(
         await set_channel_cost(db, body.channel, start, end, body.cost)
         cost = body.cost
     return {"channel": body.channel, "cost": cost, "is_set": cost is not None}
-
-
-@router.get("/channel-detail/ai")
-async def channel_detail_ai(
-    channel: str = Query(...),
-    params: tuple = Depends(_date_params),
-    db: AsyncSession = Depends(get_db),
-):
-    """AI-channel extras (booked/held/confidence + Retell call volume) — Retell/Appointwise only."""
-    start, end, date_by = params
-    data = await get_ai_channel_stats(db, channel, start, end, date_by)
-    return {"data": data, "meta": _meta(start, end, date_by)}
-
-
-@router.get("/retell/calls")
-async def retell_calls(
-    filter: str = Query("all", description="all | dq"),
-    connection: str = Query("all", description="all | picked_up | no_answer"),
-    min_minutes: float = Query(0.0, ge=0, description="Only calls at least this many minutes"),
-    params: tuple = Depends(_date_params),
-    db: AsyncSession = Depends(get_db),
-):
-    """Retell voice-call reconciliation list. Filter by disqualified, connection, and length."""
-    start, end, date_by = params
-    conn = connection if connection in ("picked_up", "no_answer") else "all"
-    data = await get_retell_calls(
-        db, start, end, "dq" if filter == "dq" else "all", conn, min_minutes
-    )
-    return {"data": data, "meta": _meta(start, end, date_by)}
-
-
-@router.get("/retell/recording/{call_id}")
-async def retell_recording(call_id: str, db: AsyncSession = Depends(get_db)):
-    """Stream a Retell call recording through the server (dodges CORS + URL expiry)."""
-    import httpx
-    from fastapi.responses import StreamingResponse
-    from sqlalchemy import select as _select
-    from db.models import RetellCall
-
-    row = (await db.execute(
-        _select(RetellCall.recording_url).where(RetellCall.retell_call_id == call_id)
-    )).one_or_none()
-    url = row[0] if row else None
-    if not url:
-        # Try to refresh the URL from Retell.
-        from api.utils.retell_utils import get_retell_config
-        from sync.retell_client import RetellClient
-        cfg = await get_retell_config()
-        if cfg.api_key:
-            call = await RetellClient(cfg.api_key).get_call(call_id)
-            url = (call or {}).get("recording_url")
-    if not url:
-        raise HTTPException(status_code=404, detail="No recording for this call.")
-
-    async def _stream():
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            async with client.stream("GET", url) as resp:
-                resp.raise_for_status()
-                async for chunk in resp.aiter_bytes():
-                    yield chunk
-
-    return StreamingResponse(_stream(), media_type="audio/mpeg")
-
-
-@router.get("/retell/agents")
-async def retell_agents(
-    params: tuple = Depends(_date_params),
-    db: AsyncSession = Depends(get_db),
-):
-    """Per-Retell-agent call performance (names resolved via the Retell API when connected)."""
-    start, end, date_by = params
-    data = await get_retell_agent_breakdown(db, start, end)
-    if data:
-        from api.utils.retell_utils import get_retell_config
-        from sync.retell_client import RetellClient
-        cfg = await get_retell_config()
-        names = await RetellClient(cfg.api_key).list_agents() if cfg.api_key else {}
-        for row in data:
-            row["agent_name"] = names.get(row["agent_id"])
-    return {"data": data, "meta": _meta(start, end, date_by)}
-
-
-@router.get("/appointwise/sms")
-async def appointwise_sms(db: AsyncSession = Depends(get_db)):
-    """Appointwise SMS engagement (from GHL Conversations)."""
-    return {"data": await get_appointwise_sms_stats(db)}
-
-
-@router.get("/appointwise/agents")
-async def appointwise_agents(db: AsyncSession = Depends(get_db)):
-    """Per-Appointwise-agent performance (from webhook events). Empty until webhooks flow."""
-    return {"data": await get_appointwise_agent_breakdown(db)}
-
-
-@router.get("/ai/data-quality")
-async def ai_data_quality(db: AsyncSession = Depends(get_db)):
-    """AI data-quality tiles (leaks, ownerless wons, tag gaps, source='call', freshness)."""
-    return {"data": await get_ai_data_quality(db)}
-
-
-@router.get("/ai/vera-chat-contacts")
-async def ai_vera_chat_contacts(
-    limit: int = Query(5, ge=1, le=20),
-    db: AsyncSession = Depends(get_db),
-):
-    """Vera-chat opps (folded into Appointwise) — for fact-checking the classification."""
-    return {"data": await get_vera_chat_contacts(db, limit)}
 
 
 @router.get("/slwa/weekly", response_model=SLWADashboardResponse)
