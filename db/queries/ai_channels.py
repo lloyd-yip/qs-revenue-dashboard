@@ -7,6 +7,7 @@ tiles, and the Retell voice-call reconciliation list.
 """
 
 from datetime import date, datetime, time, timedelta, timezone
+from statistics import median
 
 from sqlalchemy import and_, case, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -95,16 +96,6 @@ _CHANNEL_COST_VENDORS = {
 }
 
 
-def _months_in_range(start: date, end: date) -> list[tuple[date, date]]:
-    """Every calendar month the range touches, as (first_day, last_day) pairs."""
-    out, cur = [], start.replace(day=1)
-    while cur <= end:
-        last = (cur + timedelta(days=32)).replace(day=1) - timedelta(days=1)
-        out.append((cur, last))
-        cur = last + timedelta(days=1)
-    return out
-
-
 async def _call_usage(session: AsyncSession, lo: date, hi: date) -> tuple[int, int]:
     """(dials, talk_seconds) for calls placed in [lo, hi]."""
     r = (await session.execute(
@@ -116,72 +107,148 @@ async def _call_usage(session: AsyncSession, lo: date, hi: date) -> tuple[int, i
     return r[0] or 0, r[1] or 0
 
 
+async def _priced_calls(session: AsyncSession, lo: date, hi: date) -> int:
+    """How many calls in [lo, hi] carry a Retell cost — a metered $0 is data, NULL is not."""
+    return (await session.execute(
+        select(func.count(RetellCall.id)).where(
+            and_(call_window(lo, hi), RetellCall.cost_usd.isnot(None))
+        )
+    )).scalar() or 0
+
+
+async def _call_spend(session: AsyncSession, lo: date, hi: date) -> float:
+    """Retell's own per-call cost (USD) for calls placed in [lo, hi]."""
+    v = (await session.execute(
+        select(func.coalesce(func.sum(RetellCall.cost_usd), 0)).where(call_window(lo, hi))
+    )).scalar()
+    return float(v or 0)
+
+
+# Retell issues one invoice per month dated the 25th, covering usage from the previous
+# 25th. Verified against the billing page: summing per-call combined_cost over exactly that
+# window reproduces each invoice's line items to within 0.06%. Xero books the invoice in the
+# month it was received, so a Xero row for month M describes usage (M-1)-25 → M-25.
+RETELL_INVOICE_DAY = 25
+
+
+def _billing_window(period_start: date) -> tuple[date, date]:
+    """Usage window covered by the invoice booked in period_start's month, as an
+    INCLUSIVE (first_day, last_day) pair for call_window().
+
+    The invoice is cut on the 25th and covers up to — but not including — that day, so the
+    last billed day is the 24th. Returning the 25th here would let two consecutive invoices
+    both claim it and inflate every window's metered spend.
+    """
+    cut = period_start.replace(day=RETELL_INVOICE_DAY)
+    prev_month_end = period_start - timedelta(days=1)
+    lo = prev_month_end.replace(day=RETELL_INVOICE_DAY)
+    return lo, cut - timedelta(days=1)
+
+
 async def get_retell_cost_for_range(session: AsyncSession, start: date, end: date) -> dict:
-    """Allocate Retell's real monthly spend (Xero invoices) across [start, end].
+    """Cost for [start, end], reconciled where possible and live where not.
 
-    Retell bills by usage, not as a flat subscription, so splitting a month's invoice by
-    calendar days misprices any range where volume was uneven — a 9-day window can hold
-    half the month's dials. Each overlapping month is therefore allocated by the range's
-    share of that month's talk minutes, falling back to dial count when nothing connected
-    (August: every call declined, so minutes are 0 but the dials still cost money), and to
-    days only when the month has no calls at all.
+    Every call carries its own price (Retell's call_cost.combined_cost), so cost is
+    attributed per call rather than prorated — exact at any range granularity, including
+    partial days, and with no dependence on volume being evenly spread.
 
-    Returns the allocated cost plus a per-month audit trail and the list of months in range
-    that have calls but no reconciled invoice yet — those are excluded from the total rather
-    than guessed at, so the figure is never quietly understated without saying so.
+    Two sources, in the order the user asked for:
+      * RECONCILED — a month with a Xero invoice is authoritative. The invoice is split
+        back over its real 25th-to-25th usage window in proportion to the per-call spend
+        of the calls inside the selected range.
+      * LIVE — months with no invoice yet (the current one) use Retell's own per-call
+        spend, grossed up by a calibration factor measured from the reconciled months
+        (tax + EUR→USD; ~1.25 observed). Flagged as an estimate, so the current month's
+        line keeps moving instead of reading as zero until the bookkeeper catches up.
     """
     vendor_match = or_(*[
         ExpenseLineItem.vendor.ilike(f"%{k}%") for k in _CHANNEL_COST_VENDORS["Retell (VERA)"]
     ])
     invoices = (await session.execute(
-        select(
-            ExpenseLineItem.period_start, ExpenseLineItem.period_end, ExpenseLineItem.amount
-        ).where(and_(
-            vendor_match,
-            ExpenseLineItem.period_start <= end,
-            ExpenseLineItem.period_end >= start,
-        ))
+        select(ExpenseLineItem.period_start, ExpenseLineItem.amount)
+        .where(vendor_match).order_by(ExpenseLineItem.period_start)
     )).all()
 
+    # Calibration: invoiced total ÷ raw per-call spend over that invoice's own window.
+    # Median across months so a one-off (a partial first month, a promo) can't skew it.
+    ratios: list[float] = []
+    for ps, amount in invoices:
+        lo, hi = _billing_window(ps)
+        raw = await _call_spend(session, lo, hi)
+        if raw > 0 and amount:
+            ratios.append(float(amount) / raw)
+    calibration = median(ratios) if ratios else None
+
     total = 0.0
-    months: list[dict] = []
-    covered: set[tuple[int, int]] = set()
-    for ps, pe, amount in invoices:
+    reconciled: list[dict] = []
+    covered_days: set[date] = set()
+    for ps, amount in invoices:
+        lo, hi = _billing_window(ps)
+        if hi < start or lo > end:
+            continue
         amount = float(amount or 0)
-        m_dials, m_secs = await _call_usage(session, ps, pe)
-        olo, ohi = max(ps, start), min(pe, end)
-        r_dials, r_secs = await _call_usage(session, olo, ohi)
-        if m_secs:
-            share, basis = r_secs / m_secs, "minutes"
-        elif m_dials:
-            share, basis = r_dials / m_dials, "dials"
+        window_spend = await _call_spend(session, lo, hi)
+        olo, ohi = max(lo, start), min(hi, end)
+        range_spend = await _call_spend(session, olo, ohi)
+        if window_spend > 0:
+            share = range_spend / window_spend
         else:
-            share, basis = ((ohi - olo).days + 1) / ((pe - ps).days + 1), "days"
+            share = ((ohi - olo).days + 1) / ((hi - lo).days + 1)
         allocated = amount * share
         total += allocated
-        covered.add((ps.year, ps.month))
-        months.append({
+        reconciled.append({
             "month": ps.strftime("%Y-%m"),
+            "window": f"{lo.isoformat()}→{hi.isoformat()}",
             "invoiced": round(amount, 2),
             "allocated": round(allocated, 2),
             "share": round(share, 4),
-            "basis": basis,
         })
+        d = olo
+        while d <= ohi:
+            covered_days.add(d)
+            d += timedelta(days=1)
 
-    # Months the range covers that have calls but no invoice reconciled yet.
-    unreconciled = []
-    for ps, pe in _months_in_range(start, end):
-        if (ps.year, ps.month) in covered:
-            continue
-        dials, _ = await _call_usage(session, max(ps, start), min(pe, end))
-        if dials:
-            unreconciled.append({"month": ps.strftime("%Y-%m"), "dials": dials})
+    # Anything in range that no invoice covers: price it live from Retell's own metering.
+    live_raw = 0.0
+    live_priced = 0  # calls carrying a cost — distinguishes a real $0 from missing data
+    live_from = live_to = None
+    d = start
+    while d <= end:
+        if d not in covered_days:
+            live_raw += await _call_spend(session, d, d)
+            live_priced += await _priced_calls(session, d, d)
+            live_from = live_from or d
+            live_to = d
+        d += timedelta(days=1)
 
-    months.sort(key=lambda m: m["month"])
+    live = None
+    if live_from is not None and live_priced:
+        amount = live_raw * (calibration or 1.0)
+        total += amount
+        live = {
+            "amount": round(amount, 2),
+            "raw": round(live_raw, 2),
+            "calls": live_priced,
+            "calibration": round(calibration, 4) if calibration else None,
+            "from": live_from.isoformat(),
+            "to": live_to.isoformat(),
+        }
+
+    # A metered $0 is a real answer (August: every call declined, so nothing billed) and must
+    # not be reported as "no data" — only an empty range with nothing priced is unknown.
+    has_any = bool(reconciled) or live is not None
+    basis = (
+        "mixed" if reconciled and live
+        else "xero" if reconciled
+        else "live" if live
+        else None
+    )
     return {
-        "cost": round(total, 2) if months else None,
-        "months": months,
-        "unreconciled": unreconciled,
+        "cost": round(total, 2) if has_any else None,
+        "reconciled": reconciled,
+        "live": live,
+        "calibration": round(calibration, 4) if calibration else None,
+        "basis": basis,
     }
 
 
@@ -197,15 +264,10 @@ async def get_auto_channel_cost(
     $23.75 against a range whose real invoiced spend was $191.58.
     """
     if channel == "Retell (VERA)":
-        allocated = await get_retell_cost_for_range(session, start, end)
-        if allocated["cost"] is not None:
-            return allocated["cost"], "xero"
-
-        cents = (await session.execute(
-            select(func.coalesce(func.sum(RetellCall.cost_cents), 0)).where(call_window(start, end))
-        )).scalar() or 0
-        if cents and cents > 0:
-            return round(cents / 100.0, 2), "retell"
+        resolved = await get_retell_cost_for_range(session, start, end)
+        if resolved["cost"] is not None:
+            # 'xero' = fully reconciled, 'retell' = contains a live (estimated) portion.
+            return resolved["cost"], "xero" if resolved["basis"] == "xero" else "retell"
 
     keywords = _CHANNEL_COST_VENDORS.get(channel, [])
     if keywords:

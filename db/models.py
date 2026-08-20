@@ -215,7 +215,10 @@ class RetellCall(Base):
     duration_sec: Mapped[int | None] = mapped_column(Integer, nullable=True)
     call_status: Mapped[str | None] = mapped_column(String, nullable=True)
     disconnect_reason: Mapped[str | None] = mapped_column(String, nullable=True)
-    cost_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)  # Retell combined_cost (cents)
+    cost_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)  # legacy, truncated — use cost_usd
+    # Exact per-call cost in USD. Retell's combined_cost is a float in CENTS, so storing it
+    # as an int floored every sub-cent call to zero; this keeps the real value.
+    cost_usd: Mapped[float | None] = mapped_column(Numeric(12, 6), nullable=True)
     recording_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     transcript: Mapped[str | None] = mapped_column(Text, nullable=True)
     analysis: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # sentiment, call_successful, custom flags

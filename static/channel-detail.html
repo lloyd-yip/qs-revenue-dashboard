@@ -323,33 +323,46 @@
       }
     }
 
-    // Explains where the per-stage costs came from, and — critically — flags any month in
-    // the range whose Retell invoice has not been reconciled yet. Without that flag a
-    // partially-covered range would silently understate every cost-per-X figure.
+    // Explains where the per-stage costs came from: which invoices were used, how each was
+    // split back over its real billing window, and how much of the range is still a live
+    // estimate rather than a reconciled figure.
     function renderCostNote(roi) {
       const d = roi && roi.cost_detail;
       if (!d) return '';
-      const unrec = d.unreconciled || [];
-      const parts = (d.months || []).map(m =>
-        `${m.month}: ${money2(m.invoiced)} invoiced${m.share < 0.999 ? ` × ${pct(m.share)} of the month's ${m.basis}` : ''} → <b>${money2(m.allocated)}</b>`
-      );
       if (roi.manual_set) {
         return `<div class="note" style="margin-top:12px">
           <strong>Costs use your manual override</strong> of ${money2(roi.cost)} for this range.
-          Clear it in ROI &amp; Cost Efficiency to fall back to the Xero invoices.</div>`;
+          Clear it in ROI &amp; Cost Efficiency to fall back to Retell + Xero.</div>`;
       }
-      if (!parts.length && !unrec.length) return '';
-      const body = parts.length
-        ? `<strong>Cost basis:</strong> actual Retell invoices from Xero — ${parts.join(' · ')}.
-           Partial ranges are split by share of call minutes rather than by calendar days,
-           because Retell bills on usage and daily volume is uneven.`
-        : '<strong>Cost basis:</strong> no reconciled Retell invoice covers this range yet.';
-      const warn = unrec.length
-        ? ` <span class="val-bad">${unrec.map(u => u.month).join(', ')} not reconciled yet
-           (${unrec.map(u => num(u.dials)).join(', ')} dials) — excluded from the cost above,
-           so the per-stage costs understate this range until Xero catches up.</span>`
-        : '';
-      return `<div class="note ${unrec.length ? 'warn' : ''}" style="margin-top:12px">${body}${warn}</div>`;
+      const parts = [];
+      (d.reconciled || []).forEach(m => parts.push(
+        `${m.month} invoice ${money2(m.invoiced)}${m.share < 0.999 ? ` × ${pct(m.share)}` : ''} → <b>${money2(m.allocated)}</b>`
+      ));
+      // Present whenever Retell metered the window — a $0 there is a real result
+      // (declined calls are not billed), not missing data.
+      if (d.live) parts.push(
+        `live ${d.live.from} → ${d.live.to}: <b>${money2(d.live.amount)}</b>` +
+        (d.live.calibration ? ` (${money2(d.live.raw)} metered on ${num(d.live.calls)} calls × ${d.live.calibration} for tax/FX)` : '')
+      );
+      if (!parts.length) {
+        return `<div class="note warn" style="margin-top:12px">
+          <strong>No cost data for this range.</strong> No Retell invoice covers it and no
+          metered per-call spend was recorded, so the per-stage costs cannot be computed.</div>`;
+      }
+      const isLive = d.basis === 'live' || d.basis === 'mixed';
+      const lead = d.basis === 'xero'
+        ? '<strong>Cost basis — reconciled:</strong>'
+        : d.basis === 'live'
+          ? '<strong>Cost basis — live estimate:</strong>'
+          : '<strong>Cost basis — part reconciled, part live:</strong>';
+      const tail = isLive
+        ? ` The live portion is Retell's own metered per-call spend, grossed up by the
+            factor measured from past invoices (tax + EUR→USD). It moves as calls land and
+            is replaced by the real invoice once the month is closed in Xero.`
+        : ` Each invoice is split back over its real ${'25th-to-25th'} billing window in
+            proportion to the per-call spend inside this range, so partial ranges are exact
+            rather than prorated by calendar days.`;
+      return `<div class="note" style="margin-top:12px">${lead} ${parts.join(' · ')}.${tail}</div>`;
     }
 
     function renderAiSection(ai, roi) {

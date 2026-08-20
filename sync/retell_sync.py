@@ -70,9 +70,11 @@ def _row_from_call(call: dict, phone_index: dict[str, tuple[str, str]]) -> dict:
 
     analysis = call.get("call_analysis") or None
     duration_ms = call.get("duration_ms")
-    # Retell per-call cost (combined_cost is in cents). Present on newer API responses.
+    # Retell per-call cost. combined_cost is a FLOAT denominated in cents (0.55, 4.1833333),
+    # so it must not be int()-ed — that floored every sub-cent call to zero. Stored in USD.
     cost = call.get("call_cost") or {}
-    cost_cents = cost.get("combined_cost") if isinstance(cost, dict) else None
+    combined = cost.get("combined_cost") if isinstance(cost, dict) else None
+    cost_usd = round(combined / 100.0, 6) if isinstance(combined, (int, float)) else None
     return {
         "retell_call_id": call.get("call_id"),
         "agent_id": call.get("agent_id"),
@@ -83,7 +85,7 @@ def _row_from_call(call: dict, phone_index: dict[str, tuple[str, str]]) -> dict:
         "duration_sec": int(duration_ms / 1000) if duration_ms else None,
         "call_status": call.get("call_status"),
         "disconnect_reason": call.get("disconnection_reason"),
-        "cost_cents": int(cost_cents) if isinstance(cost_cents, (int, float)) else None,
+        "cost_usd": cost_usd,
         "recording_url": call.get("recording_url"),
         "transcript": call.get("transcript"),
         "analysis": analysis,
